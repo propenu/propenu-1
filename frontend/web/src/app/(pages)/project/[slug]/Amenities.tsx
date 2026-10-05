@@ -15,9 +15,19 @@ function getAmenityTitle(amenity: IAmenity) {
   return amenity.title ?? amenity.key ?? "Amenity";
 }
 
+function isDefaultAmenityIcon(icon?: string) {
+  return String(icon || "")
+    .trim()
+    .toLowerCase()
+    .endsWith("/icons/amenities/default.svg");
+}
+
 function getAmenityIcon(amenity: IAmenity) {
-  if (amenity.icon) return amenity.icon.trim();
-  return amenityTitleToIconPath(getAmenityTitle(amenity));
+  if (amenity.icon && !isDefaultAmenityIcon(amenity.icon)) {
+    return amenity.icon.trim();
+  }
+
+  return amenityTitleToIconPath(amenity.key ?? getAmenityTitle(amenity));
 }
 
 export default function Amenities({ project }: AmenitiesProps) {

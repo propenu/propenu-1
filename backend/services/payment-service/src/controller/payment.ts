@@ -10,6 +10,7 @@ import {
   sendSubscriptionActivated,
 } from "../../../../shared/whatsapp/whatsapp.helper";
 import User from "../../../user-service/src/models/userModel";
+import { notifyPaymentFailedByOrderId } from "../services/paymentNotificationService";
 
 const isAgentRole = (roleName?: string) =>
   roleName === "agent" || roleName === "sales_agent";
@@ -100,6 +101,14 @@ export async function createPayment(req: AuthRequest, res: Response) {
 
     res.json(result);
   } catch (error: any) {
+    try {
+      await notifyPaymentFailedByOrderId({
+        razorpayOrderId: req.body?.razorpay_order_id,
+        fallbackUserId: req.user?.id || null,
+      });
+    } catch (notifyError) {
+      console.error("[payment] failed to send payment failure notification", notifyError);
+    }
     res.status(400).json({ message: error.message });
   }
 }

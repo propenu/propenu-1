@@ -9,6 +9,7 @@ import builderPlanPdfPreview from "./routes/builderPlanPdfPreview";
 import accountRoutes from "./routes/accountRoutes";
 import builderPlanRoutes from "./routes/builderPlanRoute";
 import builderInvoiceRoutes from "./routes/builderInvoiceRoute";
+import { startSubscriptionNotificationJob } from "./services/paymentNotificationService";
 
 
 dotenv.config({ quiet: true });
@@ -24,6 +25,7 @@ async function start() {
   try {
 
     await connectDB();
+    startSubscriptionNotificationJob();
 
     app.get("/", (req, res) => {
       res.json({ message: "Payment Service is running" });

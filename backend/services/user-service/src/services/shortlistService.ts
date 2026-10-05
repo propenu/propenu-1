@@ -1757,7 +1757,22 @@ type NotificationFeedItem = {
     | "contact_requested"
     | "brochure_downloaded"
     | "high_time_spent"
-    | "ticket_created";
+    | "ticket_created"
+    | "property_approved"
+    | "property_rejected"
+    | "project_approved"
+    | "project_rejected"
+    | "listing_expiring"
+    | "listing_expired"
+    | "promotion_started"
+    | "promotion_expired"
+    | "search_match"
+    | "payment_success"
+    | "payment_failed"
+    | "subscription_activated"
+    | "subscription_expiring"
+    | "subscription_expired"
+    | "plan_upgrade_reminder";
   createdAt?: Date | string | null;
   user?: {
     id?: string;
@@ -1774,6 +1789,64 @@ type NotificationFeedItem = {
   };
   message?: string;
   timeSpentMinutes?: number | null;
+};
+
+const LIFECYCLE_NOTIFICATION_TYPES = [
+  "property_approved",
+  "property_rejected",
+  "project_approved",
+  "project_rejected",
+  "listing_expiring",
+  "listing_expired",
+  "promotion_started",
+  "promotion_expired",
+] as const;
+
+const USER_NOTIFICATION_TYPES = [
+  ...LIFECYCLE_NOTIFICATION_TYPES,
+  "search_match",
+  "payment_success",
+  "payment_failed",
+  "subscription_activated",
+  "subscription_expiring",
+  "subscription_expired",
+  "plan_upgrade_reminder",
+] as const;
+
+const getStoredNotificationsForUser = async (userId: string) => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) return [];
+
+  const cutoffDate = getNotificationCutoffDate();
+  const rows = await mongoose.connection
+    .collection("usernotifications")
+    .find({
+      userId: new mongoose.Types.ObjectId(userId),
+      type: { $in: [...USER_NOTIFICATION_TYPES] },
+      createdAt: { $gte: cutoffDate },
+    })
+    .sort({ createdAt: -1 })
+    .toArray();
+
+  return rows.map((row: any) => ({
+    id: `lifecycle-${String(row._id)}`,
+    type: row.type,
+    createdAt: row.createdAt ?? null,
+    user: {
+      id: userId,
+      name: "You",
+      phone: "",
+      email: "",
+      role: "User",
+      userCode: "",
+    },
+    project: {
+      id: row.listingId ? String(row.listingId) : "",
+      title: row.title || "Listing Update",
+      slug: row.slug || undefined,
+    },
+    message: row.body || row.title || "Listing update",
+    timeSpentMinutes: null,
+  })) as NotificationFeedItem[];
 };
 
 const getTicketNotificationsForRequester = async (requesterUserId: string) => {
@@ -1931,8 +2004,10 @@ const getPropertyOwnerNotifications = async (ownerId: string) => {
     },
   ] as const;
 
-  const notifications: NotificationFeedItem[] =
-    await getTicketNotificationsForRequester(ownerId);
+  const notifications: NotificationFeedItem[] = [
+    ...(await getTicketNotificationsForRequester(ownerId)),
+    ...(await getStoredNotificationsForUser(ownerId)),
+  ];
 
   await Promise.all(
     propertyModels.map(async ({ shortlistPropertyTypes, leadPropertyTypes, model }) => {

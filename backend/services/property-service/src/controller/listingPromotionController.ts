@@ -10,6 +10,7 @@ import Agricultural from "../models/agriculturalModel";
 import User from "../models/userModel";
 import { sendBoostActivatedEmail } from "../../../../shared/email/email.helper";
 import { resolveVisibleLeadLimit } from "../utils/promotionAccess";
+import { notifyLifecycleEvent } from "../services/lifecycleNotificationService";
 
 type PromotionType = "normal" | "featured" | "sponsored" | "prime";
 
@@ -88,8 +89,15 @@ export function createListingPromotionHandlers(category: keyof typeof CATEGORY_M
     throw new Error(`Unknown listing category: ${category}`);
   }
 
-  const withModel = (handler: (req: AuthRequest, res: Response, Model: Model<any>) => Promise<any>) => {
-    return (req: AuthRequest, res: Response) => handler(req, res, Model);
+  const withModel = (
+    handler: (
+      req: AuthRequest,
+      res: Response,
+      Model: Model<any>,
+      category: keyof typeof CATEGORY_MODELS,
+    ) => Promise<any>,
+  ) => {
+    return (req: AuthRequest, res: Response) => handler(req, res, Model, category);
   };
 
   return {
@@ -100,7 +108,12 @@ export function createListingPromotionHandlers(category: keyof typeof CATEGORY_M
   };
 }
 
-async function promoteListing(req: AuthRequest, res: Response, Model: Model<any>) {
+async function promoteListing(
+  req: AuthRequest,
+  res: Response,
+  Model: Model<any>,
+  category: keyof typeof CATEGORY_MODELS,
+) {
   try {
     const { type, days, visibleLeadLimit, sponsoredAd } = req.body;
 
@@ -172,6 +185,17 @@ async function promoteListing(req: AuthRequest, res: Response, Model: Model<any>
     property.promotion = promotion as any;
     property.markModified("promotion");
     await property.save();
+
+    if (type !== "normal") {
+      void notifyLifecycleEvent({
+        type: "promotion_started",
+        listing: property,
+        kind: "property",
+        category,
+        promotionType: type,
+        expiresAt: promotion.boostExpiry || null,
+      });
+    }
 
     if (type !== "normal" && property.createdBy) {
       User.findById(property.createdBy)
@@ -322,7 +346,12 @@ async function renewListing(req: AuthRequest, res: Response, Model: Model<any>) 
   }
 }
 
-async function expireListing(req: AuthRequest, res: Response, Model: Model<any>) {
+async function expireListing(
+  req: AuthRequest,
+  res: Response,
+  Model: Model<any>,
+  category: keyof typeof CATEGORY_MODELS,
+) {
   try {
     const property = await Model.findById(req.params.id);
     if (!property) {
@@ -343,10 +372,23 @@ async function expireListing(req: AuthRequest, res: Response, Model: Model<any>)
       visibleLeadLimit: 0,
     } as IPromotion;
 
+    const previousPromotionType = property.promotion?.type || "normal";
+
     appendPromotionHistory(property, req, promotion, "Promotion expired manually");
     property.promotion = promotion as any;
     property.markModified("promotion");
     await property.save();
+
+    if (previousPromotionType !== "normal") {
+      void notifyLifecycleEvent({
+        type: "promotion_expired",
+        listing: property,
+        kind: "property",
+        category,
+        promotionType: previousPromotionType,
+        dedupeKey: `promotion_expired:${String(property._id)}:${previousPromotionType}`,
+      });
+    }
 
     return res.json({
       success: true,

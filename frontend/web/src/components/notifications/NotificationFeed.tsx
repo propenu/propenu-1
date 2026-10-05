@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { FiBell, FiFilter, FiSearch } from "react-icons/fi";
 
 import NopropertiesSvg from "@/svg/NopropertiesSvg";
@@ -8,9 +9,24 @@ import NopropertiesSvg from "@/svg/NopropertiesSvg";
 export type NotificationType =
   | "project_shortlisted"
   | "property_shortlisted"
+  | "search_match"
   | "contact_requested"
   | "brochure_downloaded"
   | "high_time_spent"
+  | "property_approved"
+  | "property_rejected"
+  | "project_approved"
+  | "project_rejected"
+  | "listing_expiring"
+  | "listing_expired"
+  | "promotion_started"
+  | "promotion_expired"
+  | "payment_success"
+  | "payment_failed"
+  | "subscription_activated"
+  | "subscription_expiring"
+  | "subscription_expired"
+  | "plan_upgrade_reminder"
   | "ticket_created"
   | "ticket_assigned"
   | "ticket_updated"
@@ -48,6 +64,10 @@ export interface NotificationItem {
   project?: NotificationProject;
   message?: string;
   timeSpentMinutes?: number | null;
+  path?: string | null;
+  url?: string | null;
+  webUrl?: string | null;
+  deepLink?: string | null;
 }
 
 export interface NotificationSummary {
@@ -84,12 +104,35 @@ const TICKET_NOTIFICATION_TYPES: NotificationType[] = [
   "ticket_priority_changed",
 ];
 
+const LIFECYCLE_NOTIFICATION_TYPES: NotificationType[] = [
+  "property_approved",
+  "property_rejected",
+  "project_approved",
+  "project_rejected",
+  "listing_expiring",
+  "listing_expired",
+  "promotion_started",
+  "promotion_expired",
+];
+
+const PAYMENT_NOTIFICATION_TYPES: NotificationType[] = [
+  "payment_success",
+  "payment_failed",
+  "subscription_activated",
+  "subscription_expiring",
+  "subscription_expired",
+  "plan_upgrade_reminder",
+];
+
 const FILTERS: Array<{ id: FilterType | "tickets"; label: string }> = [
   { id: "all", label: "All" },
+  { id: "search_match", label: "Matching Property" },
   { id: "project_shortlisted", label: "Project Shortlists" },
   { id: "property_shortlisted", label: "Property Shortlists" },
   { id: "contact_requested", label: "Contacts" },
   { id: "tickets", label: "Tickets" },
+  { id: "property_approved", label: "Lifecycle" },
+  { id: "payment_success", label: "Payments" },
   { id: "brochure_downloaded", label: "Brochure" },
   { id: "high_time_spent", label: "Time Spent" },
 ];
@@ -190,8 +233,36 @@ const getRoleLabel = (role?: string) => {
 const isTicketNotification = (type: NotificationType) =>
   TICKET_NOTIFICATION_TYPES.includes(type);
 
+const isLifecycleNotification = (type: NotificationType) =>
+  LIFECYCLE_NOTIFICATION_TYPES.includes(type);
+
+const isPaymentNotification = (type: NotificationType) =>
+  PAYMENT_NOTIFICATION_TYPES.includes(type);
+
 const getNotificationAccentClasses = (type: NotificationType) => {
   switch (type) {
+    case "search_match":
+      return "bg-sky-50 text-sky-700 ring-sky-100";
+    case "payment_success":
+    case "subscription_activated":
+      return "bg-emerald-50 text-emerald-700 ring-emerald-100";
+    case "payment_failed":
+    case "subscription_expired":
+      return "bg-red-50 text-red-700 ring-red-100";
+    case "subscription_expiring":
+    case "plan_upgrade_reminder":
+      return "bg-yellow-50 text-yellow-700 ring-yellow-100";
+    case "property_approved":
+    case "project_approved":
+    case "promotion_started":
+      return "bg-emerald-50 text-emerald-700 ring-emerald-100";
+    case "property_rejected":
+    case "project_rejected":
+    case "listing_expired":
+    case "promotion_expired":
+      return "bg-red-50 text-red-700 ring-red-100";
+    case "listing_expiring":
+      return "bg-yellow-50 text-yellow-700 ring-yellow-100";
     case "brochure_downloaded":
       return "bg-violet-50 text-violet-700 ring-violet-100";
     case "ticket_created":
@@ -219,6 +290,36 @@ const getNotificationAccentClasses = (type: NotificationType) => {
 
 const getNotificationLabel = (type: NotificationType) => {
   switch (type) {
+    case "search_match":
+      return "Matching Property";
+    case "payment_success":
+      return "Payment Success";
+    case "payment_failed":
+      return "Payment Failed";
+    case "subscription_activated":
+      return "Subscription Activated";
+    case "subscription_expiring":
+      return "Subscription Expiring";
+    case "subscription_expired":
+      return "Subscription Expired";
+    case "plan_upgrade_reminder":
+      return "Upgrade Reminder";
+    case "property_approved":
+      return "Property Approved";
+    case "property_rejected":
+      return "Property Rejected";
+    case "project_approved":
+      return "Project Approved";
+    case "project_rejected":
+      return "Project Rejected";
+    case "listing_expiring":
+      return "Listing Expiring";
+    case "listing_expired":
+      return "Listing Expired";
+    case "promotion_started":
+      return "Promotion Started";
+    case "promotion_expired":
+      return "Promotion Expired";
     case "brochure_downloaded":
       return "Brochure";
     case "ticket_created":
@@ -253,6 +354,21 @@ const getNotificationLabel = (type: NotificationType) => {
   }
 };
 
+const getNotificationHref = (item: NotificationItem) => {
+  const rawHref = item.path || item.webUrl || item.url;
+  if (!rawHref) return "";
+  const origin =
+    typeof window === "undefined" ? "https://propenu.com" : window.location.origin;
+
+  try {
+    const parsed = new URL(rawHref, origin);
+    if (parsed.origin !== origin) return parsed.href;
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return rawHref.startsWith("/") ? rawHref : `/${rawHref}`;
+  }
+};
+
 const NotificationFeed = ({
   containerClassName,
   description,
@@ -263,6 +379,7 @@ const NotificationFeed = ({
   summary,
   title = "Notifications",
 }: NotificationFeedProps) => {
+  const router = useRouter();
   const [activeFilter, setActiveFilter] = useState<FilterType | "tickets">("all");
   const [activeDateFilter, setActiveDateFilter] = useState<DateRangeFilter>("all");
   const [searchValue, setSearchValue] = useState("");
@@ -276,6 +393,10 @@ const NotificationFeed = ({
           filter.id === "all" ||
           (filter.id === "tickets"
             ? notifications.some((item) => isTicketNotification(item.type))
+            : filter.id === "property_approved"
+              ? notifications.some((item) => isLifecycleNotification(item.type))
+            : filter.id === "payment_success"
+              ? notifications.some((item) => isPaymentNotification(item.type))
             : notifications.some((item) => item.type === filter.id)),
       ),
     [notifications],
@@ -305,6 +426,10 @@ const NotificationFeed = ({
         activeFilter === "all" ||
         (activeFilter === "tickets"
           ? isTicketNotification(item.type)
+          : activeFilter === "property_approved"
+            ? isLifecycleNotification(item.type)
+          : activeFilter === "payment_success"
+            ? isPaymentNotification(item.type)
           : item.type === activeFilter);
       const matchesDateRange = isWithinDateRange(item.createdAt, activeDateFilter);
       const matchesSearch =
@@ -335,6 +460,18 @@ const NotificationFeed = ({
   useEffect(() => {
     setCurrentPage(1);
   }, [activeFilter, activeDateFilter, searchValue]);
+
+  const openNotification = (item: NotificationItem) => {
+    const href = getNotificationHref(item);
+    if (!href) return;
+
+    if (/^https?:\/\//i.test(href)) {
+      window.location.assign(href);
+      return;
+    }
+
+    router.push(href);
+  };
 
   const resolvedSummary = {
     total: summary?.total ?? notifications.length,
@@ -514,7 +651,18 @@ const NotificationFeed = ({
           {paginatedNotifications.map((item, index) => (
             <article
               key={`${item.id}-${item.createdAt ?? "unknown"}-${index}`}
-              className="space-y-2.5 px-3 py-3"
+              onClick={() => openNotification(item)}
+              role={getNotificationHref(item) ? "button" : undefined}
+              tabIndex={getNotificationHref(item) ? 0 : undefined}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openNotification(item);
+                }
+              }}
+              className={`space-y-2.5 px-3 py-3 ${
+                getNotificationHref(item) ? "cursor-pointer transition hover:bg-[#FCFDFD]" : ""
+              }`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -600,7 +748,17 @@ const NotificationFeed = ({
               {paginatedNotifications.map((item, index) => (
                 <tr
                   key={`${item.id}-${item.createdAt ?? "unknown"}-${index}`}
-                  className="transition hover:bg-[#FCFDFD]"
+                  onClick={() => openNotification(item)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openNotification(item);
+                    }
+                  }}
+                  tabIndex={getNotificationHref(item) ? 0 : undefined}
+                  className={`transition hover:bg-[#FCFDFD] ${
+                    getNotificationHref(item) ? "cursor-pointer" : ""
+                  }`}
                 >
                   <td className="px-4 py-3 text-sm text-gray-700">
                     <p>{formatDate(item.createdAt)}</p>

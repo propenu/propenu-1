@@ -1,6 +1,7 @@
 // subscriptionServices
 import { Subscription } from "../models/subscriptionModel";
 import { Plan } from "../models/planModel";
+import { notifySubscriptionActivated } from "./paymentNotificationService";
 
 export async function activateSubscription(userId: string, 
 roleName: "user" | "agent" | "owner" | "builder",
@@ -38,7 +39,13 @@ roleName: "user" | "agent" | "owner" | "builder",
     payload.category = plan.category;
   }
 
-  return Subscription.create(payload);
+  const subscription = await Subscription.create(payload);
+  await notifySubscriptionActivated({
+    subscription,
+    planName: plan.name || plan.code,
+  });
+
+  return subscription;
 }
 
 export async function upgradeSubscription(

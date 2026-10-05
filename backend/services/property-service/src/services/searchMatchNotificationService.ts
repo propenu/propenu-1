@@ -1,5 +1,5 @@
 import mongoose, { Types } from "mongoose";
-import { sendBulkPush } from "../../../../shared/notifications/push.service";
+import { sendPlatformPush } from "../../../../shared/notifications/push.service";
 import {
   getActiveDeviceTokenRowsForUsers,
 } from "../../../../shared/notifications/deviceTokens";
@@ -412,8 +412,38 @@ export async function notifySearchMatchesForListing({
     const url = `${WEBSITE}${path}`;
     const deepLink = `propenu://${path.replace(/^\//, "")}`;
     const { title, body } = getNotificationCopy({ listing: listingObject, category });
-    const result = await sendBulkPush({
-      tokens: deviceRows.map((row) => row.token),
+    const nowForFeed = new Date();
+    await db.collection("usernotifications").insertMany(
+      eligibleUserIds.map((userId) => ({
+        notificationKey: `search_match:${String(userId)}:${kind}:${listingId}`,
+        userId,
+        type: "search_match",
+        category: "search",
+        title,
+        body,
+        listingKind: kind,
+        listingId,
+        listingCategory: category,
+        slug: String(listingObject.slug),
+        path,
+        url,
+        deepLink,
+        metadata: {
+          searchMatchedAt: nowForFeed,
+        },
+        readAt: null,
+        createdAt: nowForFeed,
+        updatedAt: nowForFeed,
+      })),
+      { ordered: false },
+    ).catch((error: any) => {
+      if (error?.code !== 11000) {
+        console.error("Failed to store search match notifications:", error);
+      }
+    });
+
+    const result = await sendPlatformPush({
+      devices: deviceRows,
       title,
       body,
       data: {

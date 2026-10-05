@@ -30,6 +30,7 @@ import {
 } from "../../../../shared/email/email.helper";
 import { sendTemplateNotification } from "../../../../shared/notifications/push.service";
 import { notifySearchMatchesForListing } from "../services/searchMatchNotificationService";
+import { notifyLifecycleEvent } from "../services/lifecycleNotificationService";
 import {
   buildPostedByAudit,
   isDirectAgentRole,
@@ -892,6 +893,14 @@ export const verifyAgricultiralDocument = async (
         if ((pushResult?.successCount ?? 0) > 0) {
           notificationStatus.push = true;
         }
+        await notifyLifecycleEvent({
+          type: "property_approved",
+          listing: updated as any,
+          kind: "property",
+          category: "agricultural",
+          userId,
+          sendPush: false,
+        });
       } catch (notifyError) {
         console.error("Notification error:", notifyError);
       }
@@ -940,6 +949,15 @@ export const verifyAgricultiralDocument = async (
         if ((pushResult?.successCount ?? 0) > 0) {
           notificationStatus.push = true;
         }
+        await notifyLifecycleEvent({
+          type: "property_rejected",
+          listing: updated as any,
+          kind: "property",
+          category: "agricultural",
+          userId,
+          rejectedReason: reason,
+          sendPush: false,
+        });
       } catch (notifyError) {
         console.error("Rejection notification error:", notifyError);
       }
@@ -1046,6 +1064,14 @@ export const approveAgriculturalProperty = async (
       if ((pushResult?.successCount ?? 0) > 0) {
         notificationStatus.push = true;
       }
+      await notifyLifecycleEvent({
+        type: "property_approved",
+        listing: property as any,
+        kind: "property",
+        category: "agricultural",
+        userId: (agent as any)?._id,
+        sendPush: false,
+      });
     } catch (err) {
       console.error("Approval notification sending failed:", err);
     }

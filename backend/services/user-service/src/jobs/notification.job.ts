@@ -4,6 +4,10 @@ import { sendBulkPush } from "../../../../shared/notifications/push.service";
 import { getActiveDeviceTokensForUsers } from "../../../../shared/notifications/deviceTokens";
 
 export const startNotificationJob = () => {
+  if (process.env.ENABLE_TEST_PUSH_JOB !== "true") {
+    return;
+  }
+
   
   cron.schedule("*/1 * * * *", async () => {
 

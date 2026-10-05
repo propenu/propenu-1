@@ -10,6 +10,10 @@ import { generateInvoicePdf } from "../utils/generateInvoicePdf";
 import User from "../../../user-service/src/models/userModel";
 import { generateBusinessNumber } from "../utils/generateBusinessNumber";
 import { PLAN_RANK } from "../utils/planRank";
+import {
+  notifyPaymentEvent,
+  notifySubscriptionActivated,
+} from "./paymentNotificationService";
 
 type VerifyPaymentResult = {
   success: true;
@@ -17,6 +21,11 @@ type VerifyPaymentResult = {
   subscriptionName?: string;
   subscriptionUserType?: string;
   invoiceUrl?: string;
+  subscriptionId?: string;
+  paymentId?: string;
+  planCode?: string;
+  amount?: number | null | undefined;
+  endDate?: Date | null | undefined;
   message?: string;
 };
 
@@ -142,7 +151,7 @@ export async function createPaymentOrder(
     );
 
     // Create subscription
-    await Subscription.create({
+    const subscription = await Subscription.create({
       userId,
       userType: plan.userType,
       category: plan.category || "both",
@@ -160,9 +169,16 @@ export async function createPaymentOrder(
       },
     });
 
+    await notifySubscriptionActivated({
+      subscription,
+      planName: plan.name || plan.code,
+      amount: 0,
+    });
+
     return {
       free: true,
       subscriptionName: plan.name || plan.code,
+      subscriptionId: String(subscription._id),
       message: "Free plan activated",
     };
   }
@@ -280,7 +296,7 @@ export async function verifyPaymentAndActivate(
   }
 
   const activeSubscription = await Subscription.findOne({
-    userId: payment.userId,
+    userId: String(payment.userId),
     category: plan.category,
     status: "active",
   });
@@ -401,10 +417,35 @@ export async function verifyPaymentAndActivate(
 
   console.log("✅ Subscription activated:", subscription._id);
 
+  await notifyPaymentEvent({
+    type: "payment_success",
+    userId: String(payment.userId),
+    planName: plan.name || plan.code,
+    planCode: plan.code,
+    subscriptionId: subscription._id,
+    paymentId: payment._id,
+    amount: payment.amount,
+    invoiceUrl,
+    dedupeKey: `payment_success:${String(payment._id)}`,
+  });
+
+  await notifySubscriptionActivated({
+    subscription,
+    planName: plan.name || plan.code,
+    amount: payment.amount,
+    paymentId: payment._id,
+    invoiceUrl,
+  });
+
   return {
     success: true,
     subscriptionName: plan.name || plan.code,
     subscriptionUserType: plan.userType,
+    subscriptionId: String(subscription._id),
+    paymentId: String(payment._id),
+    planCode: plan.code,
+    amount: payment.amount,
+    endDate: subscription.endDate,
     invoiceUrl,
     message: "Payment verified & subscription activated",
   };

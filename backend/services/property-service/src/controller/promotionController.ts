@@ -5,6 +5,7 @@ import { buildManualPromotion, normalizeSponsoredAd } from "../services/promotio
 import { IPromotion } from "../models/sharedSchemas";
 import { AuthRequest } from "../middlewares/authMiddleware";
 import { resolveVisibleLeadLimit } from "../utils/promotionAccess";
+import { notifyLifecycleEvent } from "../services/lifecycleNotificationService";
 
 type PromotionType = "normal" | "featured" | "sponsored" | "prime";
 
@@ -145,6 +146,17 @@ export const promoteProperty = async (req: AuthRequest, res: Response) => {
 
     await property.save();
 
+    if (type !== "normal") {
+      void notifyLifecycleEvent({
+        type: "promotion_started",
+        listing: property,
+        kind: "project",
+        category: property.categoryType,
+        promotionType: type,
+        expiresAt: promotion.boostExpiry || null,
+      });
+    }
+
     return res.status(200).json({
       success: true,
       message: "Property promoted successfully",
@@ -274,6 +286,7 @@ export const expirePromotion = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    const previousPromotionType = property.promotion?.type || "normal";
     const promotion = {
       type: "normal",
       priority: 0,
@@ -287,6 +300,17 @@ export const expirePromotion = async (req: AuthRequest, res: Response) => {
     property.promotion = promotion as any;
 
     await property.save();
+
+    if (previousPromotionType !== "normal") {
+      void notifyLifecycleEvent({
+        type: "promotion_expired",
+        listing: property,
+        kind: "project",
+        category: property.categoryType,
+        promotionType: previousPromotionType,
+        dedupeKey: `promotion_expired:${String(property._id)}:${previousPromotionType}`,
+      });
+    }
 
     return res.json({
       success: true,

@@ -2,7 +2,7 @@
 
 import { Request, Response } from "express";
 import User, { IUser } from "../models/userModel";
-import { sendBulkPush } from "../../../../shared/notifications/push.service";
+import { sendPlatformPush } from "../../../../shared/notifications/push.service";
 import { HydratedDocument } from "mongoose";
 import Role from "../models/roleModel";
 import { uploadToS3 } from "../utils/s3Upload";
@@ -291,9 +291,7 @@ export const sendCustomNotification = async (req: Request, res: Response) => {
     const recipientUserIds = users.map((u) => u._id);
     const tokenUserMap = await getActiveDeviceTokenRowsForUsers(recipientUserIds);
 
-    const tokens = tokenUserMap.map((t) => t.token);
-
-    if (!tokens.length) {
+    if (!tokenUserMap.length) {
       return res.status(404).json({
         success: false,
         message: "No valid tokens",
@@ -301,8 +299,8 @@ export const sendCustomNotification = async (req: Request, res: Response) => {
     }
 
     // ✅ Send push
-    const response = await sendBulkPush({
-      tokens,
+    const response = await sendPlatformPush({
+      devices: tokenUserMap,
       title,
       body,
       ...(image ? { image } : {}),

@@ -26,6 +26,7 @@ import {
 } from "../../../../shared/email/email.helper";
 import { sendTemplateNotification } from "../../../../shared/notifications/push.service";
 import { notifySearchMatchesForListing } from "../services/searchMatchNotificationService";
+import { notifyLifecycleEvent } from "../services/lifecycleNotificationService";
 import {
   buildPostedByAudit,
   isDirectAgentRole,
@@ -895,6 +896,14 @@ export const verifyCommercialDocument = async (
         if ((pushResult?.successCount ?? 0) > 0) {
           notificationStatus.push = true;
         }
+        await notifyLifecycleEvent({
+          type: "property_approved",
+          listing: updated as any,
+          kind: "property",
+          category: "commercial",
+          userId,
+          sendPush: false,
+        });
       } catch (notifyError) {
         console.error("Notification error:", notifyError);
       }
@@ -943,6 +952,15 @@ export const verifyCommercialDocument = async (
         if ((pushResult?.successCount ?? 0) > 0) {
           notificationStatus.push = true;
         }
+        await notifyLifecycleEvent({
+          type: "property_rejected",
+          listing: updated as any,
+          kind: "property",
+          category: "commercial",
+          userId,
+          rejectedReason: reason,
+          sendPush: false,
+        });
       } catch (notifyError) {
         console.error("Rejection notification error:", notifyError);
       }
@@ -1053,6 +1071,14 @@ export const approveCommercialProperty = async (
       if ((pushResult?.successCount ?? 0) > 0) {
         notificationStatus.push = true;
       }
+      await notifyLifecycleEvent({
+        type: "property_approved",
+        listing: property as any,
+        kind: "property",
+        category: "commercial",
+        userId: (agent as any)?._id,
+        sendPush: false,
+      });
     } catch (err) {
       console.error("Approval notification sending failed:", err);
     }

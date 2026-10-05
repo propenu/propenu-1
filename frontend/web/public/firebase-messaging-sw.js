@@ -14,6 +14,15 @@ const SITE_ORIGIN = self.location.origin;
 
 function normalizePath(path) {
   if (!path || typeof path !== "string") return "";
+  if (/^propenu:\/\//i.test(path)) {
+    try {
+      const parsed = new URL(path);
+      return `/${parsed.hostname}${parsed.pathname}${parsed.search}`.replace(/\/{2,}/g, "/");
+    } catch {
+      return "";
+    }
+  }
+
   if (/^https?:\/\//i.test(path)) {
     try {
       return new URL(path).pathname + new URL(path).search;
@@ -30,15 +39,30 @@ function getPayloadData(notification) {
 }
 
 function buildTargetUrl(data = {}) {
-  if (data.url) {
+  const fallbackUrl = data.webUrl || data.fallbackUrl || data.url;
+  if (fallbackUrl) {
     try {
-      return new URL(data.url, SITE_ORIGIN).href;
+      const parsed = new URL(fallbackUrl, SITE_ORIGIN);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return parsed.href;
+      }
     } catch {
       // Fall through to path reconstruction.
     }
   }
 
-  const path = normalizePath(data.path || data.targetPath || data.link);
+  if (data.url) {
+    try {
+      const parsed = new URL(data.url, SITE_ORIGIN);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return parsed.href;
+      }
+    } catch {
+      // Fall through to path reconstruction.
+    }
+  }
+
+  const path = normalizePath(data.path || data.targetPath || data.link || data.deepLink);
   if (path) return new URL(path, SITE_ORIGIN).href;
 
   const slug = String(data.slug || "").trim();

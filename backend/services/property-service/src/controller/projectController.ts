@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import { canApproveProjectByHierarchy } from "../utils/projectApprovalPolicy";
 import { BuilderOnboardingService } from "../services/builderOnboardingService";
 import { notifySearchMatchesForListing } from "../services/searchMatchNotificationService";
+import { notifyLifecycleEvent } from "../services/lifecycleNotificationService";
 
 const resolveCreatorMeta = (project: any) => {
   const createdBy = project?.createdBy;
@@ -110,6 +111,12 @@ export const approveProject = async (req: AuthRequest, res: Response) => {
     project.approvedAt = new Date();
 
     await project.save();
+    void notifyLifecycleEvent({
+      type: "project_approved",
+      listing: project,
+      kind: "project",
+      category: project.categoryType as any,
+    });
     void notifySearchMatchesForListing({
       listing: project,
       kind: "project",
@@ -185,6 +192,13 @@ export const rejectProject = async (req: AuthRequest, res: Response) => {
     project.rejectedReason = reason || "Rejected by manager";
 
     await project.save();
+    void notifyLifecycleEvent({
+      type: "project_rejected",
+      listing: project,
+      kind: "project",
+      category: project.categoryType as any,
+      rejectedReason: project.rejectedReason,
+    });
 
     return res.status(200).json({
       success: true,

@@ -13,6 +13,12 @@ export interface IDeviceToken extends Document {
   updatedAt: Date;
 }
 
+export type ActiveDeviceTokenRow = {
+  userId: Types.ObjectId;
+  token: string;
+  platform: DevicePlatform;
+};
+
 export const DeviceTokenSchema = new Schema<IDeviceToken>(
   {
     userId: {
@@ -100,7 +106,7 @@ export const getActiveDeviceTokensForUsers = async (
 
 export const getActiveDeviceTokenRowsForUsers = async (
   userIds: Array<string | Types.ObjectId>,
-): Promise<Array<{ userId: Types.ObjectId; token: string }>> => {
+): Promise<ActiveDeviceTokenRow[]> => {
   const objectIds = toObjectIds(userIds);
   if (!objectIds.length) return [];
 
@@ -114,7 +120,7 @@ export const getActiveDeviceTokenRowsForUsers = async (
       token: { $nin: [null, ""] },
       isActive: { $ne: false },
     })
-    .project({ userId: 1, token: 1 })
+    .project({ userId: 1, token: 1, platform: 1 })
     .toArray();
 
   const seenTokens = new Set<string>();
@@ -127,9 +133,64 @@ export const getActiveDeviceTokenRowsForUsers = async (
       {
         userId: row.userId as Types.ObjectId,
         token,
+        platform: normalizeDevicePlatform(row.platform),
       },
     ];
   });
+};
+
+export const getActiveDeviceTokenRowsByTokens = async (
+  tokens: string[],
+): Promise<ActiveDeviceTokenRow[]> => {
+  const validTokens = Array.from(
+    new Set(tokens.map((token) => String(token || "").trim()).filter(Boolean)),
+  );
+  if (!validTokens.length) return [];
+
+  const db = mongoose.connection.db;
+  if (!db) {
+    return validTokens.map((token) => ({
+      userId: new Types.ObjectId(),
+      token,
+      platform: "unknown",
+    }));
+  }
+
+  const deviceRows = await db
+    .collection("devicetokens")
+    .find({
+      token: { $in: validTokens },
+      isActive: { $ne: false },
+    })
+    .project({ userId: 1, token: 1, platform: 1 })
+    .toArray();
+
+  const foundTokens = new Set<string>();
+  const rows = deviceRows.flatMap((row) => {
+    const token = String(row.token || "").trim();
+    if (!token || foundTokens.has(token)) return [];
+
+    foundTokens.add(token);
+    return [
+      {
+        userId: row.userId as Types.ObjectId,
+        token,
+        platform: normalizeDevicePlatform(row.platform),
+      },
+    ];
+  });
+
+  validTokens.forEach((token) => {
+    if (!foundTokens.has(token)) {
+      rows.push({
+        userId: new Types.ObjectId(),
+        token,
+        platform: "unknown",
+      });
+    }
+  });
+
+  return rows;
 };
 
 export const upsertDeviceToken = async ({

@@ -61,6 +61,7 @@ export interface IBaseListing {
   followUpWorkStatus?: "assigned" | "in_progress" | "completed" | null;
   followUpWorkUpdatedAt?: Date | null;
   followUpWorkUpdatedBy?: Types.ObjectId | null;
+  followUpCompletionReason?: string | null;
   relationshipManager?: {
     userId?: Types.ObjectId | string | null;
     designation?: string;

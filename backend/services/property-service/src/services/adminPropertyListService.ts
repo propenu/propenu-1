@@ -82,6 +82,7 @@ const CARD_PROJECT = {
   completion: 1,
   followUpAssignedTo: 1,
   followUpWorkStatus: 1,
+  followUpCompletionReason: 1,
   _category: 1,
 };
 

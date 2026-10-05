@@ -92,7 +92,7 @@ const parseObjectIds = (raw: string) =>
     .map((id) => new mongoose.Types.ObjectId(id));
 
 const QUEUE_SELECT =
-  "name email phone roleId isActive accountStatus phoneVerified locality city state pincode createdAt updatedAt lastLoginAt followUpAssignedTo followUpAssignedAt followUpWorkStatus followUpWorkUpdatedAt kyc";
+  "name email phone roleId isActive accountStatus phoneVerified locality city state pincode createdAt updatedAt lastLoginAt followUpAssignedTo followUpAssignedAt followUpWorkStatus followUpWorkUpdatedAt followUpCompletionReason kyc";
 
 type TrackKey =
   | "created_today"
@@ -250,6 +250,7 @@ const formatQueueUser = (user: any) => {
     followUpWorkUpdatedAt: user.followUpWorkUpdatedAt || null,
     followUpWorkStatus:
       user.followUpWorkStatus || (followUpAssignedTo ? "assigned" : null),
+    followUpCompletionReason: user.followUpCompletionReason || null,
     followUpAssignedTo,
     roleId: role?._id ? String(role._id) : user.roleId ? String(user.roleId) : null,
     roleName: role?.name || null,

@@ -97,7 +97,19 @@ export const updateListingFollowUpWorkStatus = async (
       });
     }
 
+    const completionReason = String(req.body?.completionReason || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 500);
+    if (rawStatus === "completed" && completionReason.length < 8) {
+      return res.status(400).json({
+        message: "Enter how this case was completed (at least 8 characters)",
+        code: "COMPLETION_REASON_REQUIRED",
+      });
+    }
+
     doc.followUpWorkStatus = rawStatus;
+    doc.followUpCompletionReason = rawStatus === "completed" ? completionReason : null;
     doc.followUpWorkUpdatedAt = new Date();
     doc.followUpWorkUpdatedBy = new mongoose.Types.ObjectId(actorId);
     await doc.save();
@@ -110,6 +122,7 @@ export const updateListingFollowUpWorkStatus = async (
         entity,
         followUpAssignedTo: ownerId || String(doc.followUpAssignedTo || "") || null,
         followUpWorkStatus: doc.followUpWorkStatus,
+        followUpCompletionReason: doc.followUpCompletionReason || null,
         followUpWorkUpdatedAt: doc.followUpWorkUpdatedAt,
       },
     });

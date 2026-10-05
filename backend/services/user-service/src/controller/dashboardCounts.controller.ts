@@ -5,6 +5,7 @@ import Role from "../models/roleModel";
 import { AuthRequest } from "../middlewares/authMiddleware";
 import {
   PLATFORM_END_USER_ROLE_NAMES,
+  canonicalRoleName,
   getDescendantRoleIds,
   resolveVisibleRoleIdsForActor,
 } from "../utils/roleHierarchy";
@@ -213,11 +214,44 @@ const emptySidebarBucket = () => ({
 
 const ONBOARDING_STATUSES = ["location_pending", "kyc_pending", "pending", "incomplete"];
 
-const ROLE_TO_BUCKET: Record<string, "owners" | "builders" | "agents" | "builderStaff"> = {
-  user: "owners",
-  agent: "agents",
-  builder: "builders",
-  builder_staff: "builderStaff",
+const PLATFORM_CANONICAL_ROLES = new Set<string>(PLATFORM_END_USER_ROLE_NAMES);
+
+type SidebarRaw = { total: number; pending: number; inactive: number; login: number };
+
+const emptySidebarRaw = (): SidebarRaw => ({
+  total: 0,
+  pending: 0,
+  inactive: 0,
+  login: 0,
+});
+
+const absorbSidebarRaw = (into: SidebarRaw, row: Record<string, any> | undefined) => {
+  into.total += Number(row?.total || 0);
+  into.pending += Number(row?.pending || 0);
+  into.inactive += Number(row?.inactive || 0);
+  into.login += Number(row?.login || 0);
+};
+
+/**
+ * Alias role documents share one canonical name (sales_agent → sales_executive).
+ * Once any id of a canonical role is in scope, every alias id is in scope too,
+ * so the badge matches the role directory (which lists those aliases together).
+ */
+const expandAliasRoleIds = (
+  roles: Array<{ _id: unknown; name?: string }>,
+  seedIds: Set<string> | null,
+) => {
+  if (!seedIds) return roles.map((role) => role._id);
+  const allowed = new Set<string>();
+  for (const role of roles) {
+    if (!seedIds.has(String(role._id))) continue;
+    const canon = canonicalRoleName(role.name);
+    if (canon) allowed.add(canon);
+  }
+  if (!allowed.size) return [];
+  return roles
+    .filter((role) => allowed.has(canonicalRoleName(role.name)))
+    .map((role) => role._id);
 };
 
 const isCceRole = (roleName = "") => {
@@ -300,48 +334,36 @@ export const getSidebarUserCounts = async (req: AuthRequest, res: Response) => {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "_");
     const today = istTodayBounds();
-    const createdToday = { createdAt: { $gte: today.start, $lte: today.end } };
-
-    const platformRoles = await Role.find({
-      name: { $in: [...PLATFORM_END_USER_ROLE_NAMES] },
-    })
-      .select("_id name")
-      .lean();
-    const platformIds = platformRoles.map((role) => role._id as mongoose.Types.ObjectId);
-    const roleNameById = new Map(
-      platformRoles.map((role: any) => [String(role._id), String(role.name || "")]),
-    );
-
+    const isOrgWide = actorRoleKey === "super_admin" || actorRoleKey === "admin";
     const actorId = req.user?.id || req.user?._id || req.user?.sub;
-    const operator = await User.findById(actorId).select("roleId").lean();
-    const marketplaceMatch: Record<string, any> = { ...createdToday };
 
-    if (actorRoleKey !== "super_admin" && actorRoleKey !== "admin") {
-      const visibleRoleIds = await resolveVisibleRoleIdsForActor({
-        actorRoleId: operator?.roleId ?? null,
-        actorRoleName: actorRole,
-        permissions: req.user?.permissions || [],
-      });
-      if (visibleRoleIds) {
-        const allowed = new Set(visibleRoleIds.map(String));
-        marketplaceMatch.roleId = {
-          $in: platformIds.filter((id) => allowed.has(String(id))),
-        };
+    const [roles, operator] = await Promise.all([
+      Role.find({}).select("_id name").lean(),
+      actorId ? User.findById(actorId).select("roleId").lean() : Promise.resolve(null),
+    ]);
+
+    let scopeIds: unknown[] = [];
+    if (isOrgWide) {
+      scopeIds = expandAliasRoleIds(roles, null);
+    } else {
+      const [visibleRoleIds, descendantRoleIds] = await Promise.all([
+        resolveVisibleRoleIdsForActor({
+          actorRoleId: operator?.roleId ?? null,
+          actorRoleName: actorRole,
+          permissions: req.user?.permissions || [],
+        }),
+        operator?.roleId ? getDescendantRoleIds(operator.roleId) : Promise.resolve([]),
+      ]);
+      // null visible ids = org-wide. Otherwise marketplace roles the actor may
+      // list, plus every sub-role under the role assigned to this user.
+      const seed = new Set<string>();
+      if (!visibleRoleIds) {
+        scopeIds = expandAliasRoleIds(roles, null);
       } else {
-        marketplaceMatch.roleId = { $in: platformIds };
+        visibleRoleIds.forEach((id) => seed.add(String(id)));
+        descendantRoleIds.forEach((id) => seed.add(String(id)));
+        scopeIds = expandAliasRoleIds(roles, seed);
       }
-    } else {
-      marketplaceMatch.roleId = { $in: platformIds };
-    }
-
-    const teamMatch: Record<string, any> = { ...createdToday };
-    if (actorRoleKey === "super_admin" || actorRoleKey === "admin") {
-      teamMatch.roleId = { $nin: platformIds };
-    } else {
-      const descendantRoleIds = operator?.roleId
-        ? await getDescendantRoleIds(operator.roleId)
-        : [];
-      teamMatch.roleId = { $in: descendantRoleIds };
     }
 
     const meId =
@@ -350,15 +372,21 @@ export const getSidebarUserCounts = async (req: AuthRequest, res: Response) => {
         : null;
     const wantFollowUp = Boolean(meId && isCceRole(actorRole));
 
-    const [marketRows, teamRows, followUpRows] = await Promise.all([
-      User.aggregate([
-        { $match: marketplaceMatch },
-        { $group: { _id: "$roleId", ...withLoginToday(today.start, today.end) } },
-      ]).option({ maxTimeMS: 12000 }),
-      User.aggregate([
-        { $match: teamMatch },
-        { $group: { _id: null, ...withLoginToday(today.start, today.end) } },
-      ]).option({ maxTimeMS: 12000 }),
+    const roleMatch =
+      scopeIds.length > 0
+        ? {
+            createdAt: { $gte: today.start, $lte: today.end },
+            roleId: { $in: scopeIds },
+          }
+        : null;
+
+    const [roleRows, followUpRows] = await Promise.all([
+      roleMatch
+        ? User.aggregate([
+            { $match: roleMatch },
+            { $group: { _id: "$roleId", ...withLoginToday(today.start, today.end) } },
+          ]).option({ maxTimeMS: 12000 })
+        : Promise.resolve([]),
       wantFollowUp
         ? User.aggregate([
             {
@@ -377,19 +405,27 @@ export const getSidebarUserCounts = async (req: AuthRequest, res: Response) => {
         : Promise.resolve([]),
     ]);
 
-    const buckets = {
-      owners: emptySidebarBucket(),
-      builders: emptySidebarBucket(),
-      agents: emptySidebarBucket(),
-      builderStaff: emptySidebarBucket(),
-    };
-
-    for (const row of marketRows || []) {
-      const roleName = roleNameById.get(String(row?._id)) || "";
-      const key = ROLE_TO_BUCKET[roleName];
-      if (!key) continue;
-      buckets[key] = normalizeBucket(row);
+    const roleNameById = new Map(
+      roles.map((role: { _id?: unknown; name?: string }) => [
+        String(role._id),
+        String(role.name || ""),
+      ]),
+    );
+    const byCanonical = new Map<string, SidebarRaw>();
+    for (const row of roleRows || []) {
+      const canon = canonicalRoleName(roleNameById.get(String(row?._id)) || "");
+      if (!canon) continue;
+      const current = byCanonical.get(canon) || emptySidebarRaw();
+      absorbSidebarRaw(current, row);
+      byCanonical.set(canon, current);
     }
+
+    const buckets = {
+      owners: normalizeBucket(byCanonical.get("user")),
+      builders: normalizeBucket(byCanonical.get("builder")),
+      agents: normalizeBucket(byCanonical.get("agent")),
+      builderStaff: normalizeBucket(byCanonical.get("builder_staff")),
+    };
 
     const users = emptySidebarBucket();
     for (const key of Object.keys(buckets) as Array<keyof typeof buckets>) {
@@ -400,6 +436,15 @@ export const getSidebarUserCounts = async (req: AuthRequest, res: Response) => {
       users.inactive += bucket.inactive;
       users.login += bucket.login;
       users.onboarding += bucket.onboarding;
+    }
+
+    const teamRaw = emptySidebarRaw();
+    const rolesOut: Record<string, ReturnType<typeof normalizeBucket>> = {};
+    for (const [canon, raw] of byCanonical) {
+      const bucket = normalizeBucket(raw);
+      rolesOut[canon] = bucket;
+      if (PLATFORM_CANONICAL_ROLES.has(canon)) continue;
+      absorbSidebarRaw(teamRaw, raw);
     }
 
     const followUpFacet = followUpRows?.[0] || {};
@@ -413,7 +458,8 @@ export const getSidebarUserCounts = async (req: AuthRequest, res: Response) => {
         timezone: "Asia/Kolkata",
         ...buckets,
         users,
-        teamDirectory: normalizeBucket(teamRows?.[0]),
+        teamDirectory: normalizeBucket(teamRaw),
+        roles: rolesOut,
         followUp: {
           onboarding: Number(followUpFacet.count?.[0]?.n || assignedCreatorIds.length || 0),
           assignedCreatorIds,

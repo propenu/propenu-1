@@ -1,6 +1,7 @@
 require("dotenv").config();
 
-const BASE = "https://api.bizrow.app";
+//const BASE = "https://api.bizrow.app";
+const BASE = "https://propenu.in";
 const slug = process.env.WHATSAPP_WEBHOOK_SLUG || "tyent";
 const token = process.env.WHATSAPP_TOKEN || "";
 const verify = process.env.WHATSAPP_VERIFY_TOKEN || "";

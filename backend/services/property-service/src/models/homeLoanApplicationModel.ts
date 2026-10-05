@@ -16,6 +16,9 @@ export interface IHomeLoanApplicationDocument extends Document {
   pageUrl?: string | null;
   status: HomeLoanApplicationStatus;
   assignedTo?: Types.ObjectId | null;
+  assignedAt?: Date | null;
+  assignMethod?: "location_round_robin" | "round_robin" | "existing_owner" | null;
+  completionReason?: string | null;
   notes: Array<{
     text: string;
     createdBy?: Types.ObjectId | null;
@@ -56,6 +59,13 @@ const homeLoanApplicationSchema = new Schema<IHomeLoanApplicationDocument>(
       index: true,
     },
     assignedTo: { type: Schema.Types.ObjectId, ref: "User", default: null, index: true },
+    assignedAt: { type: Date, default: null },
+    assignMethod: {
+      type: String,
+      enum: ["location_round_robin", "round_robin", "existing_owner"],
+      default: undefined,
+    },
+    completionReason: { type: String, trim: true, maxlength: 500, default: null },
     notes: { type: [noteSchema], default: [] },
     metadata: { type: Schema.Types.Mixed, default: {} },
   },
@@ -68,6 +78,8 @@ const homeLoanApplicationSchema = new Schema<IHomeLoanApplicationDocument>(
 
 homeLoanApplicationSchema.index({ createdAt: -1 });
 homeLoanApplicationSchema.index({ status: 1, createdAt: -1 });
+homeLoanApplicationSchema.index({ assignedTo: 1, createdAt: -1 });
+homeLoanApplicationSchema.index({ userId: 1, createdAt: -1 });
 
 const HomeLoanApplication: Model<IHomeLoanApplicationDocument> =
   (mongoose.models.HomeLoanApplication as Model<IHomeLoanApplicationDocument>) ||

@@ -288,6 +288,7 @@ export interface IFeaturedProject {
   followUpWorkStatus?: "assigned" | "in_progress" | "completed" | null;
   followUpWorkUpdatedAt?: Date | null;
   followUpWorkUpdatedBy?: Types.ObjectId | string | null;
+  followUpCompletionReason?: string | null;
   relationshipManager?: {
     userId?: Types.ObjectId | string | null;
     designation?: string;

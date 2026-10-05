@@ -476,6 +476,12 @@ export const BaseFields = {
     ref: "User",
     default: null,
   },
+  followUpCompletionReason: {
+    type: String,
+    trim: true,
+    maxlength: 500,
+    default: null,
+  },
   relationshipManager: {
     type: RelationshipManagerAssignmentSchema,
     default: null,

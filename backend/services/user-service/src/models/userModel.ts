@@ -64,6 +64,8 @@ export interface IUser extends mongoose.Document {
   followUpWorkStatus?: "assigned" | "in_progress" | "completed" | null;
   followUpWorkUpdatedAt?: Date | null;
   followUpWorkUpdatedBy?: Types.ObjectId | null;
+  /** Required when customer support marks the case completed. */
+  followUpCompletionReason?: string | null;
   /**
    * Temporary browse/header location (city+state only) used for early CCE assign
    * before the Location step. Cleared when real locality/city/state/pincode are saved.
@@ -304,6 +306,12 @@ const UserSchema = new mongoose.Schema(
     followUpWorkUpdatedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      default: null,
+    },
+    followUpCompletionReason: {
+      type: String,
+      trim: true,
+      maxlength: 500,
       default: null,
     },
 

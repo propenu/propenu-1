@@ -91,7 +91,20 @@ export const updateFollowUpWorkStatus = async (req: AuthRequest, res: Response) 
       });
     }
 
+    const completionReason = String(req.body?.completionReason || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 500);
+    if (rawStatus === "completed" && completionReason.length < 8) {
+      return res.status(400).json({
+        message: "Enter how this case was completed (at least 8 characters)",
+        code: "COMPLETION_REASON_REQUIRED",
+      });
+    }
+
     target.followUpWorkStatus = rawStatus as FollowUpWorkStatus;
+    target.followUpCompletionReason =
+      rawStatus === "completed" ? completionReason : null;
     target.followUpWorkUpdatedAt = new Date();
     target.followUpWorkUpdatedBy = new mongoose.Types.ObjectId(actorId);
     await target.save();
@@ -102,6 +115,7 @@ export const updateFollowUpWorkStatus = async (req: AuthRequest, res: Response) 
       data: {
         userId: String(target._id),
         followUpWorkStatus: target.followUpWorkStatus,
+        followUpCompletionReason: target.followUpCompletionReason || null,
         followUpWorkUpdatedAt: target.followUpWorkUpdatedAt,
         followUpAssignedTo: assigneeId || null,
       },

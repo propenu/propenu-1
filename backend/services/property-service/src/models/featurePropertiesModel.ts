@@ -382,6 +382,12 @@ const FeaturePropertySchema = new Schema<IFeaturedProjectDocument>(
       ref: "User",
       default: null,
     },
+    followUpCompletionReason: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      default: null,
+    },
     relationshipManager: {
       type: RelationshipManagerAssignmentSchema,
       default: null,

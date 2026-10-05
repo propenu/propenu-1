@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FiBell, FiFilter, FiSearch } from "react-icons/fi";
+import { toast } from "sonner";
 
 import NopropertiesSvg from "@/svg/NopropertiesSvg";
+import { initWebPushToken } from "@/utilies/initWebPush";
 
 export type NotificationType =
   | "project_shortlisted"
@@ -384,7 +386,20 @@ const NotificationFeed = ({
   const [activeDateFilter, setActiveDateFilter] = useState<DateRangeFilter>("all");
   const [searchValue, setSearchValue] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(
+    "unsupported",
+  );
+  const [isPushEnabling, setIsPushEnabling] = useState(false);
   const pageSize = 25;
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setPushPermission("unsupported");
+      return;
+    }
+
+    setPushPermission(Notification.permission);
+  }, []);
 
   const availableFilters = useMemo(
     () =>
@@ -473,6 +488,45 @@ const NotificationFeed = ({
     router.push(href);
   };
 
+  const enablePushNotifications = async () => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      toast.error("Push notifications are not supported in this browser.");
+      return;
+    }
+
+    if (Notification.permission === "denied") {
+      setPushPermission("denied");
+      toast.error("Notifications are blocked. Enable them from your browser site settings.");
+      return;
+    }
+
+    setIsPushEnabling(true);
+    try {
+      const result = await initWebPushToken();
+      setPushPermission(Notification.permission);
+
+      if (result) {
+        toast.success("Push notifications enabled for this account.");
+        return;
+      }
+
+      toast.error("Could not enable push notifications. Please check browser permission.");
+    } catch (pushError) {
+      console.error("Push notification setup failed:", pushError);
+      setPushPermission(Notification.permission);
+      toast.error("Push notification setup failed.");
+    } finally {
+      setIsPushEnabling(false);
+    }
+  };
+
+  const pushButtonLabel =
+    pushPermission === "granted"
+      ? "Push On"
+      : pushPermission === "denied"
+        ? "Push Blocked"
+        : "Enable Push";
+
   const resolvedSummary = {
     total: summary?.total ?? notifications.length,
     unread: summary?.unread ?? 0,
@@ -516,8 +570,26 @@ const NotificationFeed = ({
     return (
       <div className={`mx-auto max-w-7xl space-y-4 sm:space-y-6 ${containerClassName ?? ""}`.trim()}>
         <div className="rounded-xl border border-green-100 bg-linear-to-r from-green-50 via-white to-emerald-50 px-4 py-4 sm:rounded-2xl sm:px-5 sm:py-6">
-          <h1 className="text-xl font-semibold text-gray-900 sm:text-2xl md:text-3xl">{title}</h1>
-          <p className="mt-1.5 max-w-3xl text-xs leading-5 text-gray-600 sm:mt-2 sm:text-sm md:text-base">{description}</p>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900 sm:text-2xl md:text-3xl">{title}</h1>
+              <p className="mt-1.5 max-w-3xl text-xs leading-5 text-gray-600 sm:mt-2 sm:text-sm md:text-base">{description}</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={enablePushNotifications}
+              disabled={
+                isPushEnabling ||
+                pushPermission === "granted" ||
+                pushPermission === "unsupported"
+              }
+              className="inline-flex w-fit items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-medium text-[#21884B] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-70 sm:px-4 sm:py-2 sm:text-sm"
+            >
+              <FiBell className="h-4 w-4" />
+              <span>{isPushEnabling ? "Enabling..." : pushButtonLabel}</span>
+            </button>
+          </div>
         </div>
 
         <div className="rounded-xl border border-[#E4ECE7] bg-white py-10 text-center text-gray-500 sm:rounded-2xl sm:py-14">
@@ -541,9 +613,25 @@ const NotificationFeed = ({
             <p className="mt-1.5 max-w-3xl text-xs leading-5 text-gray-600 sm:mt-2 sm:text-sm md:text-base">{description}</p>
           </div>
 
-          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-medium text-[#21884B] sm:px-4 sm:py-2 sm:text-sm">
-            <FiBell className="h-4 w-4" />
-            <span>{resolvedSummary.total} notifications</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={enablePushNotifications}
+              disabled={
+                isPushEnabling ||
+                pushPermission === "granted" ||
+                pushPermission === "unsupported"
+              }
+              className="inline-flex w-fit items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-medium text-[#21884B] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-70 sm:px-4 sm:py-2 sm:text-sm"
+            >
+              <FiBell className="h-4 w-4" />
+              <span>{isPushEnabling ? "Enabling..." : pushButtonLabel}</span>
+            </button>
+
+            <div className="inline-flex w-fit items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-medium text-[#21884B] sm:px-4 sm:py-2 sm:text-sm">
+              <FiBell className="h-4 w-4" />
+              <span>{resolvedSummary.total} notifications</span>
+            </div>
           </div>
         </div>
       </div>

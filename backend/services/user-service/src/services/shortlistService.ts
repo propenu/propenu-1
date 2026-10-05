@@ -32,6 +32,15 @@ const toTitleCase = (value?: string | null) =>
     .toLowerCase()
     .replace(/\b[a-z]/g, (char) => char.toUpperCase());
 
+const getNotificationAudienceForRole = (roleName?: string) => {
+  const normalizedRole = String(roleName || "").trim().toLowerCase();
+
+  if (normalizedRole === "agent" || normalizedRole === "sales_agent") return "agent";
+  if (normalizedRole === "builder" || normalizedRole === "builder_staff") return "builder";
+  if (normalizedRole === "admin" || normalizedRole === "super_admin") return "admin";
+  return "owner";
+};
+
 const sendShortlistPush = async ({
   ownerId,
   actorUserId,
@@ -46,20 +55,36 @@ const sendShortlistPush = async ({
   propertyType: string;
 }) => {
   try {
-    const [buyer, ownerTokens] = await Promise.all([
+    const [buyer, owner, ownerTokens] = await Promise.all([
       User.findById(actorUserId).select("name").lean(),
+      User.findById(ownerId).select("roleId").populate("roleId", "name").lean(),
       getActiveDeviceTokensForUsers([ownerId]),
     ]);
 
-    if (!ownerTokens.length) return;
+    if (!ownerTokens.length) {
+      console.warn("Shortlist push skipped: owner has no active device tokens", {
+        ownerId: String(ownerId),
+        propertyId,
+        propertyType,
+      });
+      return;
+    }
 
     const buyerName = buyer?.name || "A user";
     const type =
       propertyType === "FeaturedProject"
         ? "project_shortlisted"
         : "property_shortlisted";
+    const ownerRoleName =
+      typeof owner?.roleId === "object" && owner.roleId && "name" in owner.roleId
+        ? String((owner.roleId as any).name || "")
+        : "";
+    const audience =
+      propertyType === "FeaturedProject"
+        ? "builder"
+        : getNotificationAudienceForRole(ownerRoleName);
 
-    await sendBulkPush({
+    const result = await sendBulkPush({
       tokens: ownerTokens,
       title:
         propertyType === "FeaturedProject"
@@ -68,11 +93,22 @@ const sendShortlistPush = async ({
       body: `${buyerName} shortlisted ${propertyTitle}.`,
       data: {
         type,
-        audience: propertyType === "FeaturedProject" ? "builder" : "owner",
+        audience,
         projectId: propertyId,
         propertyType,
         actorUserId: String(actorUserId),
       },
+    });
+
+    console.log("Shortlist push sent", {
+      ownerId: String(ownerId),
+      actorUserId: String(actorUserId),
+      propertyId,
+      propertyType,
+      audience,
+      tokenCount: ownerTokens.length,
+      successCount: result.successCount,
+      failureCount: result.failureCount,
     });
   } catch (error) {
     console.error("Error sending shortlist push:", error);

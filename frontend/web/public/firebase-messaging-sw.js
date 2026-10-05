@@ -87,11 +87,23 @@ function buildTargetUrl(data = {}) {
 messaging.onBackgroundMessage((payload) => {
   const notification = payload.notification || {};
   const data = payload.data || {};
+  const title =
+    notification.title ||
+    data.title ||
+    data.notificationTitle ||
+    "Propenu";
+  const body =
+    notification.body ||
+    data.body ||
+    data.message ||
+    "You have a new notification.";
 
-  self.registration.showNotification(notification.title || "Propenu", {
-    body: notification.body || "",
+  self.registration.showNotification(title, {
+    body,
     icon: notification.icon || "/icons/icon-192x192.png",
+    badge: "/icons/icon-192x192.png",
     image: notification.image,
+    tag: data.type || data.category || "propenu-notification",
     data,
   });
 });

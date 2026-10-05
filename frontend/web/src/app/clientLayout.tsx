@@ -1,17 +1,19 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { onMessage, type MessagePayload } from "firebase/messaging";
 import { Provider } from "react-redux";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
 import Footer, { FooterLegalBar } from "@/components/Footer";
 import FloatingWhatsAppButton from "@/components/FloatingWhatsAppButton";
 import Navbar from "@/components/Navbar";
 import MobileBottomNav from "@/components/MobileBottomNav";
 import { ModalProvider, useModal } from "@/app/context/ModalContext";
 import { me } from "@/data/ClientData";
+import { getFirebaseMessaging } from "@/lib/firebase";
 import { store } from "@/Redux/store";
 import { initWebPushToken } from "@/utilies/initWebPush";
 import { absoluteSiteUrl, normalizeCanonicalPath } from "@/utilies/siteUrl";
@@ -30,6 +32,75 @@ const SKIP_CANONICAL_ROUTES = [
   "/builder/invite",
   "/unsubscribe",
 ];
+
+const NOTIFICATION_QUERY_KEYS = new Set([
+  "admin-notifications-feed",
+  "agent-notifications-badge",
+  "agent-notifications-feed-v1",
+  "builder-notifications-badge",
+  "builder-notifications-feed-v2",
+  "user-notifications-badge",
+  "user-notifications-feed-v1",
+]);
+
+const normalizeNotificationPath = (value?: string) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  if (/^propenu:\/\//i.test(raw)) {
+    try {
+      const parsed = new URL(raw);
+      return `/${parsed.hostname}${parsed.pathname}${parsed.search}`.replace(
+        /\/{2,}/g,
+        "/",
+      );
+    } catch {
+      return "";
+    }
+  }
+
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const parsed = new URL(raw);
+      if (parsed.origin !== window.location.origin) return parsed.href;
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    } catch {
+      return "";
+    }
+  }
+
+  return raw.startsWith("/") ? raw : `/${raw}`;
+};
+
+const getForegroundNotificationHref = (payload: MessagePayload) => {
+  const data = payload.data || {};
+  const rawHref =
+    data.webUrl ||
+    data.url ||
+    data.path ||
+    data.targetPath ||
+    data.link ||
+    data.deepLink;
+
+  return normalizeNotificationPath(rawHref);
+};
+
+const getForegroundNotificationText = (payload: MessagePayload) => {
+  const data = payload.data || {};
+
+  return {
+    title:
+      payload.notification?.title ||
+      data.title ||
+      data.notificationTitle ||
+      "Propenu",
+    body:
+      payload.notification?.body ||
+      data.body ||
+      data.message ||
+      "You have a new notification.",
+  };
+};
 
 export default function ClientProviders({
   children,
@@ -51,6 +122,7 @@ function ClientProvidersContent({
   const [queryClient] = React.useState(() => new QueryClient());
 
   const pathname = usePathname();
+  const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [hasOpenDialog, setHasOpenDialog] = useState(false);
   const { isAgentRegistrationModalOpen } = useModal();
@@ -125,6 +197,64 @@ function ClientProvidersContent({
 
     initPush();
   }, [user]);
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    let isMounted = true;
+
+    const invalidateNotificationQueries = () => {
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const queryKey = query.queryKey[0];
+          return (
+            typeof queryKey === "string" &&
+            NOTIFICATION_QUERY_KEYS.has(queryKey)
+          );
+        },
+      });
+    };
+
+    const openHref = (href: string) => {
+      if (!href) return;
+
+      if (/^https?:\/\//i.test(href)) {
+        window.location.assign(href);
+        return;
+      }
+
+      router.push(href);
+    };
+
+    getFirebaseMessaging()
+      .then((messaging) => {
+        if (!isMounted || !messaging) return;
+
+        unsubscribe = onMessage(messaging, (payload) => {
+          const { title, body } = getForegroundNotificationText(payload);
+          const href = getForegroundNotificationHref(payload);
+
+          invalidateNotificationQueries();
+
+          toast.message(title, {
+            description: body,
+            action: href
+              ? {
+                  label: "Open",
+                  onClick: () => openHref(href),
+                }
+              : undefined,
+          });
+        });
+      })
+      .catch((error) => {
+        console.error("Foreground push listener setup failed:", error);
+      });
+
+    return () => {
+      isMounted = false;
+      unsubscribe?.();
+    };
+  }, [queryClient, router]);
 
   useEffect(() => {
     const syncDialogState = () => {

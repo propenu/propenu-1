@@ -66,7 +66,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta
@@ -84,6 +84,35 @@ new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
 j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
 })(window,document,'script','dataLayer','GTM-TJMKXQR5');`}
+        </Script>
+        <Script id="strip-extension-hydration-attrs" strategy="beforeInteractive">
+          {`(() => {
+  const attr = "bis_skin_checked";
+  const strip = (root = document) => {
+    root.querySelectorAll?.("[" + attr + "]").forEach((node) => node.removeAttribute(attr));
+  };
+  strip();
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === "attributes" && mutation.attributeName === attr) {
+        mutation.target.removeAttribute(attr);
+      }
+      mutation.addedNodes.forEach((node) => {
+        if (node.nodeType === 1) {
+          node.removeAttribute?.(attr);
+          strip(node);
+        }
+      });
+    }
+  });
+  observer.observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: [attr],
+  });
+  window.addEventListener("load", () => observer.disconnect(), { once: true });
+})();`}
         </Script>
 
         <Script

@@ -438,6 +438,7 @@ export const AMENITIES_FOR_FEATURED_PROJECT = [
   { key: "yoga_hall", title: "Yoga Hall" },
   { key: "spa", title: "Spa & Wellness Center" },
   { key: "club_house", title: "Club House" },
+  { key: "amphitheatre", title: "Amphitheatre" },
   { key: "mini_theatre", title: "Mini Theatre" },
   { key: "co_working", title: "Co-Working Space" },
 
@@ -454,11 +455,13 @@ export const AMENITIES_FOR_FEATURED_PROJECT = [
   { key: "fire_safety", title: "Fire Safety System" },
 
   { key: "covered_parking", title: "Covered Parking" },
+  { key: "parking", title: "Parking" },
   { key: "visitor_parking", title: "Visitor Parking" },
   { key: "ev_charging", title: "EV Charging Station" },
   { key: "wheelchair_access", title: "Wheelchair Access" },
 
   { key: "power_backup", title: "Power Backup" },
+  { key: "elevator", title: "Elevator" },
   { key: "lift", title: "High Speed Elevators" },
   { key: "water_harvesting", title: "Rain Water Harvesting" },
   { key: "solar_lighting", title: "Solar Lighting" },

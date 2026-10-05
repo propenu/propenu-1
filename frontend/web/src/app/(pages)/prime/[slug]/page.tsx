@@ -191,6 +191,7 @@ export default async function Page({ params }: PageProps) {
     propertyType: project?.propertyType,
     color: project?.color?.trim(),
     reraNumber: project?.reraNumber,
+    possessionDate: project?.possessionDate,
   };
 
   const amenities = {

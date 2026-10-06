@@ -28,7 +28,7 @@ dotenv.config({ quiet: true });
 const app = express();
 // Admin edit sends the loaded listing as JSON. The website basic step stays small.
 // 100kb (the default) rejects that admin save before the route runs.
-const jsonBodyLimit = "10mb";
+const jsonBodyLimit = "50mb";
 app.use(express.json({ limit: jsonBodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: jsonBodyLimit }));
 
@@ -119,7 +119,7 @@ async function start() {
     );
 
     app.listen(Number(port), "0.0.0.0", () => {
-      console.log(`proportey running on 0.0.0.0:${port}`);
+      console.log(`proportey running on 0.0.0.0:${port} json limit ${jsonBodyLimit}`);
     });
   } catch (err) {
     console.error("Failed to start proportey server", err);

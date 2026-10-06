@@ -19,6 +19,25 @@ const allowedBuilderProfileFields = [
   "pincode",
 ] as const;
 
+const clearableBuilderProfileFields = new Set<string>([
+  "email",
+  "locality",
+  "city",
+  "state",
+  "pincode",
+]);
+
+const builderProfileFieldLabels: Record<string, string> = {
+  name: "Name",
+  companyName: "Company name",
+  email: "Email",
+  address: "Office address",
+  locality: "Locality",
+  city: "City",
+  state: "State",
+  pincode: "Pincode",
+};
+
 type MulterFiles =
   | {
       avatar?: Express.Multer.File[];
@@ -171,13 +190,37 @@ const buildProfileUpdates = (body: Record<string, unknown>) => {
 
     if (typeof body[key] === "string") {
       const cleaned = body[key].trim();
-      updates[key] = key === "email" ? cleaned.toLowerCase() || undefined : cleaned;
+      if (clearableBuilderProfileFields.has(key) && cleaned === "") {
+        updates[key] = undefined;
+        continue;
+      }
+
+      updates[key] = key === "email" ? cleaned.toLowerCase() : cleaned;
     } else {
       updates[key] = body[key];
     }
   }
 
   return updates;
+};
+
+const getBuilderProfileValidationMessage = (error: any) => {
+  const firstError = Object.values(error?.errors || {})[0] as any;
+  const field = firstError?.path ? String(firstError.path) : "";
+  const label = builderProfileFieldLabels[field] || field || "Field";
+  const kind = firstError?.kind ? String(firstError.kind) : "";
+  const min = firstError?.properties?.minlength ?? firstError?.properties?.min;
+  const max = firstError?.properties?.maxlength ?? firstError?.properties?.max;
+
+  if (kind === "required") return `${label} is required`;
+  if (kind === "minlength" && min) {
+    return `${label} must be at least ${min} characters`;
+  }
+  if (kind === "maxlength" && max) {
+    return `${label} must be at most ${max} characters`;
+  }
+
+  return firstError?.message || "Please check the profile details and try again";
 };
 
 const buildOrgProfileUpdates = (body: Record<string, any>) => {
@@ -420,9 +463,8 @@ export const updateBuilderProfile = async (req: AuthRequest, res: Response) => {
     }
 
     if (error?.name === "ValidationError") {
-      const firstError = Object.values(error.errors || {})[0] as any;
       return res.status(400).json({
-        message: firstError?.message || "Validation failed",
+        message: getBuilderProfileValidationMessage(error),
       });
     }
 
@@ -584,9 +626,8 @@ export const verifyBuilderPhoneChangeOtp = async (
     }
 
     if (error?.name === "ValidationError") {
-      const firstError = Object.values(error.errors || {})[0] as any;
       return res.status(400).json({
-        message: firstError?.message || "Validation failed",
+        message: getBuilderProfileValidationMessage(error),
       });
     }
 
@@ -695,9 +736,8 @@ export const updateBuilderProfileById = async (
     }
 
     if (error?.name === "ValidationError") {
-      const firstError = Object.values(error.errors || {})[0] as any;
       return res.status(400).json({
-        message: firstError?.message || "Validation failed",
+        message: getBuilderProfileValidationMessage(error),
       });
     }
 

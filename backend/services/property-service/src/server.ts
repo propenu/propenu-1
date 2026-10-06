@@ -26,8 +26,11 @@ import { syncLocationsFromActiveListings } from "./services/locationServices";
 dotenv.config({ quiet: true });
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Admin edit sends the loaded listing as JSON. The website basic step stays small.
+// 100kb (the default) rejects that admin save before the route runs.
+const jsonBodyLimit = "10mb";
+app.use(express.json({ limit: jsonBodyLimit }));
+app.use(express.urlencoded({ extended: true, limit: jsonBodyLimit }));
 
 const port = process.env.PORT ?? 4003;
 
@@ -93,7 +96,27 @@ async function start() {
     app.use("/api/properties/home-loans", homeLoanApplicationRoute);
     app.use("/api/properties/interactions", userInteractionRoute);
 
-    
+    app.use(
+      (
+        err: any,
+        _req: express.Request,
+        res: express.Response,
+        next: express.NextFunction,
+      ) => {
+        if (res.headersSent) {
+          next(err);
+          return;
+        }
+        if (err?.type === "entity.too.large" || err?.name === "PayloadTooLargeError") {
+          res.status(413).json({
+            message:
+              "This save is too large. Save the written details here, and upload photos on the gallery step.",
+          });
+          return;
+        }
+        next(err);
+      },
+    );
 
     app.listen(Number(port), "0.0.0.0", () => {
       console.log(`proportey running on 0.0.0.0:${port}`);

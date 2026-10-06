@@ -35,6 +35,7 @@ import {
   stampListingApproved,
   submitAgentListingForReview,
 } from "../utils/agentSubmission";
+import { stripInlineMediaFromBasicStep } from "../utils/basicStepPayload";
 
 function parseMaybeJSON<T = any>(value: any): T | undefined {
   if (value === undefined || value === null || value === "") return undefined;
@@ -80,7 +81,7 @@ const SERVER_MANAGED_STEP_FIELDS = [
 
 function sanitizeStepPayload(payload: any) {
   if (!payload || typeof payload !== "object") return {};
-  const sanitized = { ...payload };
+  const sanitized = stripInlineMediaFromBasicStep({ ...payload });
   for (const field of SERVER_MANAGED_STEP_FIELDS) {
     delete sanitized[field];
   }

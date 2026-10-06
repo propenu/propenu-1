@@ -43,6 +43,7 @@ import {
 } from "../utils/agentSubmission";
 import { assertCanApproveListing } from "../utils/listingApprovalGuard";
 import { readOwnerUserId } from "../utils/ownerUserFilter";
+import { stripInlineMediaFromBasicStep } from "../utils/basicStepPayload";
 
 /** Helper: parse values that might be JSON strings (multipart sends arrays/objects as strings). */
 function parseMaybeJSON<T = any>(value: any): T | undefined {
@@ -89,7 +90,7 @@ const SERVER_MANAGED_STEP_FIELDS = [
 
 function sanitizeStepPayload(payload: any) {
   if (!payload || typeof payload !== "object") return {};
-  const sanitized = { ...payload };
+  const sanitized = stripInlineMediaFromBasicStep({ ...payload });
   for (const field of SERVER_MANAGED_STEP_FIELDS) {
     delete sanitized[field];
   }

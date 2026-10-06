@@ -2,7 +2,15 @@
 "use client";
 
 import Link from "next/link";
-import { checkProjectLeadSubmitted, me, patchProjectLeadIntention, projectpostLeads } from "@/data/ClientData";
+import {
+  checkProjectLeadSubmitted,
+  me,
+  patchProjectLeadIntention,
+  projectpostLeads,
+  requestProjectLeadOtp,
+  verifyProjectLeadOtp,
+} from "@/data/ClientData";
+import OtpFourDigitInput from "@/components/builder/OtpFourDigitInput";
 import { useShortlist } from "@/hooks/useShortlist";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import React, { useEffect, useState } from "react";
@@ -39,6 +47,7 @@ const BUY_TIMELINE_QUESTION = "When do you plan to buy?";
 const BUDGET_QUESTION = "Your Budget?";
 const buyTimelineOptions = ["30 Days", "1 - 3 Months", "3 - 6 Months", "More than 6 Months"];
 const budgetOptions = ["50L - 1Cr", "1Cr - 2Cr", "2Cr+"];
+const LEAD_OTP_LENGTH = 4;
 
 export type Stat = {
   value: string;
@@ -201,6 +210,10 @@ export default function HeroSection({ hero }: Props) {
   const [leadId, setLeadId] = useState("");
   const [showSubmittedStep, setShowSubmittedStep] = useState(false);
   const [intentionAnswers, setIntentionAnswers] = useState<IntentionAnswer[]>([]);
+  const [leadStep, setLeadStep] = useState<"form" | "otp">("form");
+  const [leadOtp, setLeadOtp] = useState("");
+  const [leadOtpError, setLeadOtpError] = useState("");
+  const [leadOtpSubmitting, setLeadOtpSubmitting] = useState(false);
 
   const developer = h.developer;
   const createdBy = h.createdBy;
@@ -250,8 +263,7 @@ export default function HeroSection({ hero }: Props) {
   const hasPrefilledUserDetails =
     Boolean(loggedInUser) &&
     Boolean(form.name.trim()) &&
-    Boolean(form.phone.trim()) &&
-    Boolean(form.email.trim());
+    Boolean(form.phone.trim());
 
   const { data: existingLeadData } = useQuery({
     queryKey: ["prime-project-lead-submitted", h.projectId, userLeadPhone, userLeadEmail],
@@ -294,6 +306,9 @@ export default function HeroSection({ hero }: Props) {
       const createdLeadId = response?.data?._id || response?.data?.id || "";
       setLeadId(createdLeadId);
       setShowSubmittedStep(true);
+      setLeadStep("form");
+      setLeadOtp("");
+      setLeadOtpError("");
       setForm(getUserPrefill(loggedInUser));
     },
     onError: (error) => {
@@ -328,32 +343,97 @@ export default function HeroSection({ hero }: Props) {
       return next;
     });
   };
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-  e.preventDefault();
 
-  if (!isValidPhoneNumber(form.phone)) {
-    toast.error("Please enter a valid phone number");
-    return;
-  }
+  const finalizeLeadSubmission = () => {
+    leadsMutation.mutate({
+      name: form.name.trim(),
+      phone: form.phone,
+      email: form.email.trim(),
+      projectId: h.projectId,
+      remarks: "Requested contact details",
+    });
+  };
 
-  if (!isValidEmail(form.email)) {
-    toast.error("Please enter a valid email address");
-    return;
-  }
+  const requestLeadOtp = async () => {
+    setLeadOtpSubmitting(true);
+    setLeadOtpError("");
 
-  if (!hasPrefilledUserDetails && !termsAccepted) {
-    toast.error("Please accept the Terms & Conditions");
-    return;
-  }
+    try {
+      await requestProjectLeadOtp({
+        phone: form.phone,
+        projectId: h.projectId || undefined,
+      });
+      setLeadStep("otp");
+      setLeadOtp("");
+      toast.success("OTP sent to your mobile number");
+    } catch (error) {
+      const errorMessage = getLeadErrorMessage(error);
+      setLeadOtpError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setLeadOtpSubmitting(false);
+    }
+  };
 
-  leadsMutation.mutate({
-    name: form.name,
-    phone: form.phone,
-    email: form.email.trim(),
-    projectId: h.projectId,
-    remarks: "Requested contact details",
-  });
-};
+  const handleVerifyLeadOtp = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    const cleanOtp = leadOtp.trim();
+    if (cleanOtp.length !== LEAD_OTP_LENGTH) {
+      setLeadOtpError("Please enter a 4-digit OTP");
+      return;
+    }
+
+    setLeadOtpSubmitting(true);
+    setLeadOtpError("");
+
+    try {
+      await verifyProjectLeadOtp({
+        phone: form.phone,
+        otp: cleanOtp,
+        projectId: h.projectId || undefined,
+      });
+      toast.success("Phone number verified successfully");
+      finalizeLeadSubmission();
+    } catch (error) {
+      const errorMessage = getLeadErrorMessage(error);
+      setLeadOtpError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setLeadOtpSubmitting(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    if (!form.name.trim()) {
+      toast.error("Please enter your name");
+      return;
+    }
+
+    if (!isValidPhoneNumber(form.phone)) {
+      toast.error("Please enter a valid phone number");
+      return;
+    }
+
+    if (form.email.trim() && !isValidEmail(form.email)) {
+      toast.error("Please enter a valid email address");
+      return;
+    }
+
+    if (!hasPrefilledUserDetails && !termsAccepted) {
+      toast.error("Please accept the Terms & Conditions");
+      return;
+    }
+
+    if (hasPrefilledUserDetails) {
+      finalizeLeadSubmission();
+      return;
+    }
+
+    await requestLeadOtp();
+  };
 
 
   function handleChange(
@@ -369,6 +449,11 @@ export default function HeroSection({ hero }: Props) {
             ? sanitizeNameInput(value)
             : value,
     }));
+    if (leadStep === "otp") {
+      setLeadStep("form");
+      setLeadOtp("");
+    }
+    if (leadOtpError) setLeadOtpError("");
   }
 
   function handleInvalid(
@@ -608,6 +693,77 @@ export default function HeroSection({ hero }: Props) {
 
                   <div className="border-t border-slate-200">{intentionQuestions}</div>
                 </div>
+              ) : leadStep === "otp" ? (
+                <>
+                  <h3 className="mb-2 text-base font-semibold text-white sm:mb-4 sm:text-lg">
+                    Verify Mobile Number
+                  </h3>
+
+                  <form onSubmit={handleVerifyLeadOtp} className="space-y-3">
+                    <div className="rounded-md border border-white/20 bg-white/10 px-3 py-3 text-center">
+                      <p className="text-xs text-white/80">
+                        Enter the 4-digit OTP sent to
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-white">{form.phone}</p>
+                    </div>
+
+                    <div className="py-1">
+                      <OtpFourDigitInput
+                        value={leadOtp}
+                        onChange={(value) => {
+                          setLeadOtp(value);
+                          setLeadOtpError("");
+                        }}
+                        disabled={leadOtpSubmitting || leadsMutation.isPending}
+                        error={Boolean(leadOtpError)}
+                        autoFocus
+                      />
+                    </div>
+
+                    {leadOtpError ? (
+                      <p className="text-center text-xs font-medium text-red-200">
+                        {leadOtpError}
+                      </p>
+                    ) : null}
+
+                    <button
+                      type="submit"
+                      disabled={
+                        leadOtpSubmitting ||
+                        leadsMutation.isPending ||
+                        leadOtp.length !== LEAD_OTP_LENGTH
+                      }
+                      style={{ backgroundColor: h.color || "#27AE60" }}
+                      className="w-full cursor-pointer rounded-md py-1.5 text-sm font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-70 sm:py-2 sm:text-base"
+                    >
+                      {leadOtpSubmitting || leadsMutation.isPending
+                        ? "Verifying..."
+                        : "Verify & Continue"}
+                    </button>
+
+                    <div className="flex items-center justify-between text-xs text-white/80">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLeadStep("form");
+                          setLeadOtp("");
+                          setLeadOtpError("");
+                        }}
+                        className="font-medium underline underline-offset-2 hover:text-white"
+                      >
+                        Edit Contact Info
+                      </button>
+                      <button
+                        type="button"
+                        onClick={requestLeadOtp}
+                        disabled={leadOtpSubmitting || leadsMutation.isPending}
+                        className="font-semibold underline-offset-2 hover:underline disabled:opacity-60"
+                      >
+                        Resend OTP
+                      </button>
+                    </div>
+                  </form>
+                </>
               ) : (
                 <>
                   <h3 className="mb-2 text-base font-semibold text-white sm:mb-4 sm:text-lg">
@@ -658,7 +814,6 @@ export default function HeroSection({ hero }: Props) {
                           pattern="[^\s@]+@[^\s@]+\.[^\s@]+"
                           title="Please enter a valid email address"
                           placeholder="Your Email"
-                          required
                           className="w-full rounded-md border border-white/20 bg-white/10 px-2.5 py-1.5 text-xs text-white outline-none placeholder-white/70 focus:ring-2 focus:ring-yellow-400 sm:px-3 sm:py-2 sm:text-sm"
                         />
 
@@ -703,11 +858,15 @@ export default function HeroSection({ hero }: Props) {
 
                     <button
                       type="submit"
-                      disabled={leadsMutation.isPending}
+                      disabled={leadsMutation.isPending || leadOtpSubmitting}
                       style={{ backgroundColor: h.color || "#27AE60" }}
                       className="w-full cursor-pointer rounded-md py-1.5 text-sm font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-70 sm:py-2 sm:text-base"
                     >
-                      {leadsMutation.isPending ? "Submitting..." : "Get Contact Details"}
+                      {leadOtpSubmitting
+                        ? "Sending OTP..."
+                        : leadsMutation.isPending
+                          ? "Submitting..."
+                          : "Get Contact Details"}
                     </button>
                   </form>
                 </>

@@ -14,10 +14,10 @@ type InfoFieldProps = {
 type FormData = {
   name: string;
   email: string;
-  locality: string;
-  city: string;
-  state: string;
-  pincode: string;
+  locality?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
 };
 
 const SettingsPage = () => {
@@ -123,7 +123,7 @@ const SettingsPage = () => {
   return (
     <div className="sm:p-4 md:p-1 lg:p-0 font-sans text-[#4A4A4A]">
       <div className="max-w-5xl space-y-6">
-        <div className="rounded-2xl border border-green-100 bg-gradient-to-r from-green-50 via-white to-emerald-50 px-5 py-6">
+        <div className="rounded-2xl border border-green-100 bg-linear-to-r from-green-50 via-white to-emerald-50 px-5 py-6">
           <h1 className="text-2xl font-semibold text-gray-900 md:text-3xl">
             Account Settings
           </h1>
@@ -419,7 +419,7 @@ const EditableField = ({
 }: {
   label: string;
   name: string;
-  value: string;
+  value?: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }) => (
   <div className="flex flex-col gap-1">
@@ -427,7 +427,7 @@ const EditableField = ({
     <input
       type="text"
       name={name}
-      value={value}
+      value={value ?? ""}
       onChange={onChange}
       className="text-gray-800 font-medium text-sm p-2 border border-gray-200 rounded-md focus:ring-green-500 focus:border-green-500 transition"
     />

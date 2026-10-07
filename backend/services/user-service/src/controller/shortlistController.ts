@@ -24,11 +24,12 @@ try {
   return res.status(400).json({ message: "propertyId and propertyType required" });
 }
 
-    await addToShortlistService(userId, propertyId, propertyType);
+    const result = await addToShortlistService(userId, propertyId, propertyType);
 
     res.status(200).json({
       success: true,
       message: "Property shortlisted",
+      notification: result.notification,
     });
   } catch (error) {
     // Handle bad ObjectId or duplicate key errors more gracefully

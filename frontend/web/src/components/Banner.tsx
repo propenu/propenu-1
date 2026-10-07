@@ -259,13 +259,15 @@ const Banner = () => {
     const laptopConfig = pickSlide(deviceImages.laptop, slideIndex);
     const tabletConfig = pickSlide(deviceImages.tablet, slideIndex);
     const mobileConfig = pickSlide(deviceImages.mobile, slideIndex);
+    const desktopTestBannerImage = "/images/banner.webp";
 
     return (
       <div key={layerKey} className={layerClassName}>
         <div className="hidden xl:block w-full relative banner-device-frame banner-device-desktop">
-          {desktopConfig?.image ? (
+          {desktopTestBannerImage ? (
             <img
-              src={desktopConfig.image}
+              // src={desktopConfig?.image}
+              src={desktopTestBannerImage}
               alt="Propenu desktop banner"
               className="banner-hero-image w-full h-full object-cover"
             />

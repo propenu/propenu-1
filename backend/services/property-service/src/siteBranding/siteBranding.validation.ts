@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import {
+  BANNER_LEGACY_SLOT_SIZES,
   BANNER_MAX_BYTES,
   BANNER_SIZE_TOLERANCE_PX,
   BANNER_SLOTS,
@@ -96,12 +97,20 @@ export async function assertBannerDimensions(
   slot: BannerSlot,
 ) {
   const expected = BANNER_SLOTS[slot];
+  const allowedSizes = [
+    { width: expected.width, height: expected.height },
+    ...(BANNER_LEGACY_SLOT_SIZES[slot] || []),
+  ];
   const meta = await sharp(buffer).metadata();
   const width = meta.width || 0;
   const height = meta.height || 0;
-  const okW = Math.abs(width - expected.width) <= BANNER_SIZE_TOLERANCE_PX;
-  const okH = Math.abs(height - expected.height) <= BANNER_SIZE_TOLERANCE_PX;
-  if (!okW || !okH) {
+  const matchesAllowedSize = allowedSizes.some((size) => {
+    const okW = Math.abs(width - size.width) <= BANNER_SIZE_TOLERANCE_PX;
+    const okH = Math.abs(height - size.height) <= BANNER_SIZE_TOLERANCE_PX;
+    return okW && okH;
+  });
+
+  if (!matchesAllowedSize) {
     throw new Error(
       `${expected.label}: expected ${expected.width}×${expected.height}px, got ${width}×${height}px`,
     );

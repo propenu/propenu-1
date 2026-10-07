@@ -88,36 +88,6 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 })(window,document,'script','dataLayer','GTM-TJMKXQR5');`}
           </Script>
         )}
-        <Script id="strip-extension-hydration-attrs" strategy="beforeInteractive">
-          {`(() => {
-  const attr = "bis_skin_checked";
-  const strip = (root = document) => {
-    root.querySelectorAll?.("[" + attr + "]").forEach((node) => node.removeAttribute(attr));
-  };
-  strip();
-  const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      if (mutation.type === "attributes" && mutation.attributeName === attr) {
-        mutation.target.removeAttribute(attr);
-      }
-      mutation.addedNodes.forEach((node) => {
-        if (node.nodeType === 1) {
-          node.removeAttribute?.(attr);
-          strip(node);
-        }
-      });
-    }
-  });
-  observer.observe(document.documentElement, {
-    subtree: true,
-    childList: true,
-    attributes: true,
-    attributeFilter: [attr],
-  });
-  window.addEventListener("load", () => observer.disconnect(), { once: true });
-})();`}
-        </Script>
-
         <Script
           src="https://checkout.razorpay.com/v1/checkout.js"
           strategy="afterInteractive"

@@ -16,21 +16,12 @@ import { me } from "@/data/ClientData";
 import { getFirebaseMessaging } from "@/lib/firebase";
 import { store } from "@/Redux/store";
 import { initWebPushToken } from "@/utilies/initWebPush";
-import { absoluteSiteUrl, normalizeCanonicalPath } from "@/utilies/siteUrl";
 
 const HIDE_LAYOUT_ROUTES = [
   "/prime",
   "/postproperty",
   "/builder/onboard",
   "/builder/invite",
-];
-
-const SKIP_CANONICAL_ROUTES = [
-  "/admin",
-  "/account",
-  "/approve",
-  "/builder/invite",
-  "/unsubscribe",
 ];
 
 const NOTIFICATION_QUERY_KEYS = new Set([
@@ -102,6 +93,43 @@ const getForegroundNotificationText = (payload: MessagePayload) => {
   };
 };
 
+const showForegroundBrowserNotification = ({
+  title,
+  body,
+  href,
+  payload,
+  onClick,
+}: {
+  title: string;
+  body: string;
+  href: string;
+  payload: MessagePayload;
+  onClick: (href: string) => void;
+}) => {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+
+  try {
+    const data = payload.data || {};
+    const options: NotificationOptions & { image?: string } = {
+      body,
+      icon: payload.notification?.icon || "/icons/icon-192x192.png",
+      image: payload.notification?.image,
+      tag: data.type || data.category || "propenu-notification",
+      data: { href },
+    };
+    const notification = new Notification(title, options);
+
+    notification.onclick = () => {
+      window.focus();
+      notification.close();
+      if (href) onClick(href);
+    };
+  } catch (error) {
+    console.error("Foreground browser notification failed:", error);
+  }
+};
+
 export default function ClientProviders({
   children,
 }: {
@@ -130,29 +158,6 @@ function ClientProvidersContent({
   const hideLayout = HIDE_LAYOUT_ROUTES.some((route) =>
     pathname?.startsWith(route),
   );
-
-  useEffect(() => {
-    const canonicalPath = normalizeCanonicalPath(pathname);
-    const shouldSkipCanonical = SKIP_CANONICAL_ROUTES.some((route) =>
-      canonicalPath === route || canonicalPath.startsWith(`${route}/`),
-    );
-
-    if (shouldSkipCanonical) {
-      return;
-    }
-
-    let canonicalLink = document.querySelector<HTMLLinkElement>(
-      'link[rel="canonical"]',
-    );
-
-    if (!canonicalLink) {
-      canonicalLink = document.createElement("link");
-      canonicalLink.rel = "canonical";
-      document.head.appendChild(canonicalLink);
-    }
-
-    canonicalLink.href = absoluteSiteUrl(canonicalPath);
-  }, [pathname]);
 
   useEffect(() => {
     async function fetchUser() {
@@ -234,6 +239,14 @@ function ClientProvidersContent({
           const href = getForegroundNotificationHref(payload);
 
           invalidateNotificationQueries();
+
+          showForegroundBrowserNotification({
+            title,
+            body,
+            href,
+            payload,
+            onClick: openHref,
+          });
 
           toast.message(title, {
             description: body,

@@ -319,7 +319,12 @@ function ClientProvidersContent({
     <Provider store={store}>
       <QueryClientProvider client={queryClient}>
         {!hideLayout && !isAgentRegistrationModalOpen && <Navbar />}
-        <div className={!hideLayout ? "pb-20 lg:pb-0" : undefined}>{children}</div>
+        <div
+          suppressHydrationWarning
+          className={!hideLayout ? "pb-20 lg:pb-0" : undefined}
+        >
+          {children}
+        </div>
         {!hideLayout && !isAgentRegistrationModalOpen && (
           <MobileBottomNav
             isAuthenticated={Boolean(user?.user)}
@@ -336,7 +341,9 @@ function ClientProvidersContent({
         <div className="hidden lg:block">
           {!hideLayout ? <Footer /> : <FooterLegalBar />}
         </div>
-        <ReactQueryDevtools initialIsOpen={false} />
+        {process.env.NODE_ENV === "development" && (
+          <ReactQueryDevtools initialIsOpen={false} />
+        )}
       </QueryClientProvider>
     </Provider>
   );

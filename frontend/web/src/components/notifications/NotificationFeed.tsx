@@ -65,7 +65,6 @@ export interface NotificationItem {
   user?: NotificationUser;
   project?: NotificationProject;
   message?: string;
-  timeSpentMinutes?: number | null;
   path?: string | null;
   url?: string | null;
   webUrl?: string | null;
@@ -78,7 +77,6 @@ export interface NotificationSummary {
   shortlists?: number;
   contacts?: number;
   brochureDownloads?: number;
-  timeSpent?: number;
   tickets?: number;
 }
 
@@ -133,10 +131,9 @@ const FILTERS: Array<{ id: FilterType | "tickets"; label: string }> = [
   { id: "property_shortlisted", label: "Property Shortlists" },
   { id: "contact_requested", label: "Contacts" },
   { id: "tickets", label: "Tickets" },
-  { id: "property_approved", label: "Lifecycle" },
+  { id: "property_approved", label: "Listing Updates" },
   { id: "payment_success", label: "Payments" },
   { id: "brochure_downloaded", label: "Brochure" },
-  { id: "high_time_spent", label: "Time Spent" },
 ];
 
 const DATE_FILTERS: Array<{ id: DateRangeFilter; label: string }> = [
@@ -178,13 +175,6 @@ const formatTime = (value?: string | null) => {
     minute: "2-digit",
     hour12: true,
   });
-};
-
-const formatMinutes = (value?: number | null) => {
-  if (value == null || value <= 0) return "NA";
-  if (value < 1) return "< 1 min";
-  if (Number.isInteger(value)) return `${value} min`;
-  return `${value.toFixed(1)} min`;
 };
 
 const getNotificationTimestamp = (value?: string | null) => {
@@ -232,6 +222,14 @@ const getRoleLabel = (role?: string) => {
   return role || "User";
 };
 
+const getVisibleContactValue = (value?: string, hiddenPlaceholders: string[] = []) => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+
+  const normalized = trimmed.toLowerCase();
+  return hiddenPlaceholders.includes(normalized) ? "" : trimmed;
+};
+
 const isTicketNotification = (type: NotificationType) =>
   TICKET_NOTIFICATION_TYPES.includes(type);
 
@@ -240,6 +238,9 @@ const isLifecycleNotification = (type: NotificationType) =>
 
 const isPaymentNotification = (type: NotificationType) =>
   PAYMENT_NOTIFICATION_TYPES.includes(type);
+
+const shouldShowContactDetails = (type: NotificationType) =>
+  type === "contact_requested" || type === "brochure_downloaded";
 
 const getNotificationAccentClasses = (type: NotificationType) => {
   switch (type) {
@@ -278,8 +279,6 @@ const getNotificationAccentClasses = (type: NotificationType) => {
     case "ticket_escalated":
     case "ticket_priority_changed":
       return "bg-orange-50 text-orange-700 ring-orange-100";
-    case "high_time_spent":
-      return "bg-amber-50 text-amber-700 ring-amber-100";
     case "contact_requested":
       return "bg-rose-50 text-rose-700 ring-rose-100";
     case "property_shortlisted":
@@ -344,8 +343,6 @@ const getNotificationLabel = (type: NotificationType) => {
       return "Ticket Escalated";
     case "ticket_priority_changed":
       return "Ticket Priority Changed";
-    case "high_time_spent":
-      return "Time Spent";
     case "contact_requested":
       return "Contact Request";
     case "property_shortlisted":
@@ -401,30 +398,35 @@ const NotificationFeed = ({
     setPushPermission(Notification.permission);
   }, []);
 
+  const visibleNotifications = useMemo(
+    () => notifications.filter((item) => item.type !== "high_time_spent"),
+    [notifications],
+  );
+
   const availableFilters = useMemo(
     () =>
       FILTERS.filter(
         (filter) =>
           filter.id === "all" ||
           (filter.id === "tickets"
-            ? notifications.some((item) => isTicketNotification(item.type))
+            ? visibleNotifications.some((item) => isTicketNotification(item.type))
             : filter.id === "property_approved"
-              ? notifications.some((item) => isLifecycleNotification(item.type))
+              ? visibleNotifications.some((item) => isLifecycleNotification(item.type))
             : filter.id === "payment_success"
-              ? notifications.some((item) => isPaymentNotification(item.type))
-            : notifications.some((item) => item.type === filter.id)),
+              ? visibleNotifications.some((item) => isPaymentNotification(item.type))
+            : visibleNotifications.some((item) => item.type === filter.id)),
       ),
-    [notifications],
+    [visibleNotifications],
   );
 
   const sortedNotifications = useMemo(
     () =>
-      [...notifications].sort(
+      [...visibleNotifications].sort(
         (a, b) =>
           getNotificationTimestamp(b.createdAt) -
           getNotificationTimestamp(a.createdAt),
       ),
-    [notifications],
+    [visibleNotifications],
   );
 
   const filteredNotifications = useMemo(() => {
@@ -433,7 +435,7 @@ const NotificationFeed = ({
     return sortedNotifications.filter((item) => {
       const userName = item.user?.name || "";
       const userPhone = item.user?.phone || "";
-      const userCode = item.user?.userCode || "";
+      const userCode = getVisibleContactValue(item.user?.userCode, ["no code"]);
       const projectTitle = item.project?.title || "";
       const message = item.message || "";
 
@@ -528,26 +530,23 @@ const NotificationFeed = ({
         : "Enable Push";
 
   const resolvedSummary = {
-    total: summary?.total ?? notifications.length,
+    total: visibleNotifications.length,
     unread: summary?.unread ?? 0,
     shortlists:
       summary?.shortlists ??
-      notifications.filter(
+      visibleNotifications.filter(
         (item) =>
           item.type === "project_shortlisted" || item.type === "property_shortlisted",
       ).length,
     contacts:
       summary?.contacts ??
-      notifications.filter((item) => item.type === "contact_requested").length,
+      visibleNotifications.filter((item) => item.type === "contact_requested").length,
     tickets:
       summary?.tickets ??
-      notifications.filter((item) => isTicketNotification(item.type)).length,
+      visibleNotifications.filter((item) => isTicketNotification(item.type)).length,
     brochureDownloads:
       summary?.brochureDownloads ??
-      notifications.filter((item) => item.type === "brochure_downloaded").length,
-    timeSpent:
-      summary?.timeSpent ??
-      notifications.filter((item) => item.type === "high_time_spent").length,
+      visibleNotifications.filter((item) => item.type === "brochure_downloaded").length,
   };
 
   if (isLoading) {
@@ -566,7 +565,7 @@ const NotificationFeed = ({
     );
   }
 
-  if (!notifications.length) {
+  if (!visibleNotifications.length) {
     return (
       <div className={`mx-auto max-w-7xl space-y-4 sm:space-y-6 ${containerClassName ?? ""}`.trim()}>
         <div className="rounded-xl border border-green-100 bg-linear-to-r from-green-50 via-white to-emerald-50 px-4 py-4 sm:rounded-2xl sm:px-5 sm:py-6">
@@ -654,9 +653,9 @@ const NotificationFeed = ({
           </p>
         </div>
         <div className={`${SUMMARY_CARD_LAYOUTS[4]} rounded-xl border border-gray-100 bg-white px-3 py-2.5 shadow-sm sm:rounded-2xl sm:px-5 sm:py-4 xl:col-span-1`}>
-          <p className="text-xs font-medium leading-tight text-gray-500 sm:text-sm">Brochure / Time</p>
+          <p className="text-xs font-medium leading-tight text-gray-500 sm:text-sm">Brochure</p>
           <p className="mt-1 text-xl font-semibold text-gray-900 sm:mt-2 sm:text-2xl">
-            {resolvedSummary.brochureDownloads + resolvedSummary.timeSpent}
+            {resolvedSummary.brochureDownloads}
           </p>
         </div>
       </div>
@@ -726,188 +725,79 @@ const NotificationFeed = ({
               <div className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-center text-xs text-gray-500 sm:justify-start sm:rounded-xl sm:px-4 sm:py-2.5 sm:text-sm">
                 <FiFilter className="h-4 w-4" />
                 <span>
-                  {filteredNotifications.length} shown · Page {currentPage} of {totalPages}
+                  {filteredNotifications.length} shown - Page {currentPage} of {totalPages}
                 </span>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="divide-y divide-gray-100 md:hidden">
-          {paginatedNotifications.map((item, index) => (
-            <article
-              key={`${item.id}-${item.createdAt ?? "unknown"}-${index}`}
-              onClick={() => openNotification(item)}
-              role={getNotificationHref(item) ? "button" : undefined}
-              tabIndex={getNotificationHref(item) ? 0 : undefined}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  openNotification(item);
-                }
-              }}
-              className={`space-y-2.5 px-3 py-3 ${
-                getNotificationHref(item) ? "cursor-pointer transition hover:bg-[#FCFDFD]" : ""
-              }`}
-            >
-              <div className="flex items-start justify-between gap-2">
+        <div className="divide-y divide-gray-100">
+          {paginatedNotifications.map((item, index) => {
+            const href = getNotificationHref(item);
+            const showContactDetails = shouldShowContactDetails(item.type);
+            const userEmail = getVisibleContactValue(item.user?.email, ["no email"]);
+            const userCode = getVisibleContactValue(item.user?.userCode, ["no code"]);
+
+            return (
+              <article
+                key={`${item.id}-${item.createdAt ?? "unknown"}-${index}`}
+                onClick={() => openNotification(item)}
+                role={href ? "button" : undefined}
+                tabIndex={href ? 0 : undefined}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openNotification(item);
+                  }
+                }}
+                className={`grid gap-2 px-3 py-3.5 transition sm:px-5 md:grid-cols-[minmax(0,1fr)_112px] md:gap-4 ${
+                  href ? "cursor-pointer hover:bg-[#FCFDFD]" : ""
+                }`}
+              >
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-gray-900">
-                    {item.user?.name || "You"}
+                  <p className="text-sm leading-6 text-gray-900 md:text-[15px]">
+                    {item.message || "No message"}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-gray-500">
-                    {item.user?.userCode || "No code"}
-                  </p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className="text-[11px] font-medium text-gray-700">{formatDate(item.createdAt)}</p>
-                  <p className="mt-0.5 text-[10px] text-gray-400">{formatTime(item.createdAt)}</p>
-                </div>
-              </div>
 
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span
-                  className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${getNotificationAccentClasses(
-                    item.type,
-                  )}`}
-                >
-                  {getNotificationLabel(item.type)}
-                </span>
-                <span className="rounded-full bg-[#F3FBF6] px-2 py-0.5 text-[10px] font-semibold text-[#21884B]">
-                  {getRoleLabel(item.user?.role)}
-                </span>
-                {item.type === "high_time_spent" &&
-                item.timeSpentMinutes &&
-                item.timeSpentMinutes > 0 ? (
-                  <span className="inline-flex rounded-full bg-[#F6FBF8] px-2 py-0.5 text-[10px] font-semibold text-[#21884B]">
-                    {formatMinutes(item.timeSpentMinutes)}
-                  </span>
-                ) : null}
-              </div>
-
-              <div className="grid gap-2">
-                <div className="grid grid-cols-[64px_1fr] gap-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                    Contact
-                  </p>
-                  <div className="min-w-0 text-right">
-                    <p className="truncate text-xs text-gray-700">{item.user?.email || "No email"}</p>
-                    <p className="text-xs text-gray-700">{item.user?.phone || "No phone"}</p>
+                  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${getNotificationAccentClasses(
+                        item.type,
+                      )}`}
+                    >
+                      {getNotificationLabel(item.type)}
+                    </span>
+                    <span className="min-w-0 max-w-full truncate font-medium text-gray-700">
+                      {item.project?.title || "Untitled Project"}
+                    </span>
+                    <span>{item.user?.name || "You"}</span>
+                    <span>{getRoleLabel(item.user?.role)}</span>
+                    {showContactDetails && userEmail ? (
+                      <span className="min-w-0 truncate">
+                        {userEmail}
+                      </span>
+                    ) : null}
+                    {showContactDetails && item.user?.phone ? (
+                      <span>{item.user.phone}</span>
+                    ) : null}
+                    {showContactDetails && userCode ? (
+                      <span>{userCode}</span>
+                    ) : null}
                   </div>
                 </div>
-                <div className="grid grid-cols-[64px_1fr] gap-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                    Project
+
+                <div className="flex gap-2 text-xs text-gray-500 md:flex-col md:items-end md:gap-0 md:text-right">
+                  <p className="whitespace-nowrap font-medium text-gray-700">
+                    {formatDate(item.createdAt)}
                   </p>
-                  <p className="truncate text-right text-xs font-medium text-gray-900">
-                    {item.project?.title || "Untitled Project"}
+                  <p className="text-[11px] text-gray-400">
+                    {formatTime(item.createdAt)}
                   </p>
                 </div>
-              </div>
-
-              <div className="space-y-0.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                  Message
-                </p>
-                <p className="text-xs leading-5 text-gray-800">
-                  {item.message || "No message"}
-                </p>
-              </div>
-            </article>
-          ))}
-        </div>
-
-        <div className="hidden w-full overflow-x-auto md:block">
-          <table className="w-full min-w-[900px] border-collapse text-left xl:min-w-full">
-            <thead className="bg-[#F8FBF9]">
-              <tr className="text-xs text-gray-500 lg:text-sm">
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">User</th>
-                <th className="px-4 py-3 font-medium">Contact Detail</th>
-                <th className="px-4 py-3 font-medium">Role</th>
-                <th className="px-4 py-3 font-medium">Project</th>
-                <th className="px-4 py-3 font-medium">Message</th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-gray-100">
-              {paginatedNotifications.map((item, index) => (
-                <tr
-                  key={`${item.id}-${item.createdAt ?? "unknown"}-${index}`}
-                  onClick={() => openNotification(item)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      openNotification(item);
-                    }
-                  }}
-                  tabIndex={getNotificationHref(item) ? 0 : undefined}
-                  className={`transition hover:bg-[#FCFDFD] ${
-                    getNotificationHref(item) ? "cursor-pointer" : ""
-                  }`}
-                >
-                  <td className="px-4 py-3 text-sm text-gray-700">
-                    <p>{formatDate(item.createdAt)}</p>
-                    <p className="mt-0.5 text-[11px] text-gray-400">{formatTime(item.createdAt)}</p>
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    <div className="space-y-0.5">
-                      <p className="text-xs font-semibold leading-6 text-gray-900">
-                        {item.user?.name || "You"}
-                      </p>
-                      <p className="text-[11px] text-gray-500">
-                        {item.user?.userCode || "No code"}
-                      </p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    <div className="space-y-0.5">
-                      <p className="text-[11px] text-gray-500">
-                        {item.user?.email || "No email"}
-                      </p>
-                      <p className="text-[11px] text-gray-500">
-                        {item.user?.phone || "No phone"}
-                      </p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    <span className="rounded-full bg-[#F3FBF6] px-2.5 py-1 text-[11px] font-semibold text-[#21884B]">
-                      {getRoleLabel(item.user?.role)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    <p className="text-sm font-medium leading-5 text-gray-900">
-                      {item.project?.title || "Untitled Project"}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    <div className="space-y-1.5">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span
-                          className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ring-1 ${getNotificationAccentClasses(
-                            item.type,
-                          )}`}
-                        >
-                          {getNotificationLabel(item.type)}
-                        </span>
-                        {item.type === "high_time_spent" &&
-                        item.timeSpentMinutes &&
-                        item.timeSpentMinutes > 0 ? (
-                          <span className="inline-flex rounded-full bg-[#F6FBF8] px-2 py-1 text-[10px] font-semibold text-[#21884B]">
-                            {formatMinutes(item.timeSpentMinutes)}
-                          </span>
-                        ) : null}
-                      </div>
-
-                      <p className="text-sm leading-6 text-gray-800">
-                        {item.message || "No message"}
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              </article>
+            );
+          })}
         </div>
 
         {filteredNotifications.length > 0 ? (

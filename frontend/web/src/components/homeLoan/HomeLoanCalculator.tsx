@@ -9,8 +9,12 @@ interface HomeLoanCalculatorProps {
   initialTab?: CalculatorTab;
 }
 
+const EMI_LOAN_AMOUNT_MIN = 2000000;
+const EMI_LOAN_AMOUNT_MAX = 50000000;
+const EMI_LOAN_AMOUNT_STEP = 100000;
+
 export default function HomeLoanCalculator({
-  initialTab = "eligibility",
+  initialTab = "emi",
 }: HomeLoanCalculatorProps) {
   const [activeTab, setActiveTab] = useState<CalculatorTab>(initialTab);
   const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
@@ -40,7 +44,7 @@ export default function HomeLoanCalculator({
   // -------------------------------------------------------------
   // Tab 2: EMI Calculator State
   // -------------------------------------------------------------
-  const [loanAmount, setLoanAmount] = useState<number>(1000000); // Loan amount in INR
+  const [loanAmount, setLoanAmount] = useState<number>(EMI_LOAN_AMOUNT_MIN); // Loan amount in INR
   const [emiRate, setEmiRate] = useState<number>(7); // % p.a.
   const [emiTenure, setEmiTenure] = useState<number>(10); // Years
 
@@ -125,16 +129,6 @@ export default function HomeLoanCalculator({
         <div className="flex flex-wrap items-center gap-3 mb-8">
           <button
             type="button"
-            onClick={() => setActiveTab("eligibility")}
-            className={`px-6 py-2.5 rounded-full text-sm font-semibold transition-all duration-200 cursor-pointer ${activeTab === "eligibility"
-              ? "bg-[#27AE60] text-white shadow-xs"
-              : "bg-gray-100 text-gray-700 hover:bg-gray-200/80"
-              }`}
-          >
-            Home Loan Eligibility Calculator
-          </button>
-          <button
-            type="button"
             onClick={() => setActiveTab("emi")}
             className={`px-6 py-2.5 rounded-full text-sm font-semibold transition-all duration-200 cursor-pointer ${activeTab === "emi"
               ? "bg-[#27AE60] text-white shadow-xs"
@@ -142,6 +136,16 @@ export default function HomeLoanCalculator({
               }`}
           >
             Home Loan EMI Calculator
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("eligibility")}
+            className={`px-6 py-2.5 rounded-full text-sm font-semibold transition-all duration-200 cursor-pointer ${activeTab === "eligibility"
+              ? "bg-[#27AE60] text-white shadow-xs"
+              : "bg-gray-100 text-gray-700 hover:bg-gray-200/80"
+              }`}
+          >
+            Home Loan Eligibility Calculator
           </button>
         </div>
 
@@ -351,7 +355,12 @@ export default function HomeLoanCalculator({
                           value={formatINR(loanAmount)}
                           onChange={(e) => {
                             const val = Number(e.target.value.replace(/[^0-9]/g, ""));
-                            setLoanAmount(Math.min(val, 500000000));
+                            setLoanAmount(
+                              Math.min(
+                                EMI_LOAN_AMOUNT_MAX,
+                                Math.max(EMI_LOAN_AMOUNT_MIN, val || EMI_LOAN_AMOUNT_MIN),
+                              ),
+                            );
                           }}
                           className="w-24 sm:w-28 text-right font-semibold text-gray-900 text-sm sm:text-base bg-transparent outline-none"
                         />
@@ -359,19 +368,23 @@ export default function HomeLoanCalculator({
                     </div>
                     <input
                       type="range"
-                      min={10000}
-                      max={5000000}
-                      step={10000}
+                      min={EMI_LOAN_AMOUNT_MIN}
+                      max={EMI_LOAN_AMOUNT_MAX}
+                      step={EMI_LOAN_AMOUNT_STEP}
                       value={loanAmount}
                       onChange={(e) => setLoanAmount(Number(e.target.value))}
                       style={{
-                        background: getTrackBackground(loanAmount, 10000, 5000000),
+                        background: getTrackBackground(
+                          loanAmount,
+                          EMI_LOAN_AMOUNT_MIN,
+                          EMI_LOAN_AMOUNT_MAX,
+                        ),
                       }}
                       className="calculator-slider"
                     />
                     <div className="flex justify-between text-xs font-medium text-gray-400 mt-1.5">
-                      <span>10K</span>
-                      <span>50L</span>
+                      <span>20L</span>
+                      <span>5Cr</span>
                     </div>
                   </div>
 

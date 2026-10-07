@@ -114,6 +114,13 @@ const notifyLeadCreated = async ({
 
   if (owner?.phone) {
     sendLeadWhatsApp(owner.phone, {
+      leadType:
+        String(property?.listingType || "").toLowerCase() === "rent" ||
+        String(property?.listingType || "").toLowerCase() === "lease"
+          ? "Rental"
+          : lead.propertyType === "featuredprojects"
+            ? "Project"
+            : "Sale",
       name: userName,
       leadPhone: user?.phone || lead?.phone || "",
       email: user?.email || lead?.email || "",

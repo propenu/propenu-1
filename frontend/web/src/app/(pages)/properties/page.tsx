@@ -277,7 +277,7 @@ function PropertiesListSkeleton() {
           key={`property-skeleton-${index}`}
           className="overflow-hidden rounded-2xl border border-gray-100 bg-white p-2 shadow-sm"
         >
-          <div className="flex flex-col gap-4 md:h-[236px] md:flex-row">
+          <div className="flex flex-col gap-4 md:h-[220px] md:flex-row">
             <div className="h-48 w-full animate-pulse rounded-xl bg-gray-200 md:h-full md:w-56 md:shrink-0" />
 
             <div className="flex min-w-0 flex-1 flex-col justify-between p-2 md:p-4">

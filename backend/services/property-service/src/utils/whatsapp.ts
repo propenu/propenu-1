@@ -56,6 +56,7 @@ const sendWhatsAppTemplate = async ({
 };
 
 export async function sendLeadWhatsApp(phone: string, params: {
+  leadType?: string;
   name?: string;
   leadPhone?: string;
   email?: string;
@@ -66,10 +67,11 @@ export async function sendLeadWhatsApp(phone: string, params: {
       phone,
       templateName: "leads_template",
       parameters: [
+        params.leadType || "Lead",
         params.name || "-",
-        params.leadPhone || "-",
-        params.email || "-",
         params.interestedIn || "-",
+        params.leadPhone || "-",
+        params.email || "Not provided",
       ],
     });
   } catch (err: any) {

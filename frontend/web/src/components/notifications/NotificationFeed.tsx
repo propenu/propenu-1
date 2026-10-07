@@ -131,7 +131,7 @@ const FILTERS: Array<{ id: FilterType | "tickets"; label: string }> = [
   { id: "property_shortlisted", label: "Property Shortlists" },
   { id: "contact_requested", label: "Contacts" },
   { id: "tickets", label: "Tickets" },
-  { id: "property_approved", label: "Lifecycle" },
+  { id: "property_approved", label: "Listing Updates" },
   { id: "payment_success", label: "Payments" },
   { id: "brochure_downloaded", label: "Brochure" },
 ];
@@ -220,6 +220,14 @@ const getRoleLabel = (role?: string) => {
   if (normalized === "user") return "User";
 
   return role || "User";
+};
+
+const getVisibleContactValue = (value?: string, hiddenPlaceholders: string[] = []) => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+
+  const normalized = trimmed.toLowerCase();
+  return hiddenPlaceholders.includes(normalized) ? "" : trimmed;
 };
 
 const isTicketNotification = (type: NotificationType) =>
@@ -427,7 +435,7 @@ const NotificationFeed = ({
     return sortedNotifications.filter((item) => {
       const userName = item.user?.name || "";
       const userPhone = item.user?.phone || "";
-      const userCode = item.user?.userCode || "";
+      const userCode = getVisibleContactValue(item.user?.userCode, ["no code"]);
       const projectTitle = item.project?.title || "";
       const message = item.message || "";
 
@@ -728,6 +736,8 @@ const NotificationFeed = ({
           {paginatedNotifications.map((item, index) => {
             const href = getNotificationHref(item);
             const showContactDetails = shouldShowContactDetails(item.type);
+            const userEmail = getVisibleContactValue(item.user?.email, ["no email"]);
+            const userCode = getVisibleContactValue(item.user?.userCode, ["no code"]);
 
             return (
               <article
@@ -763,16 +773,16 @@ const NotificationFeed = ({
                     </span>
                     <span>{item.user?.name || "You"}</span>
                     <span>{getRoleLabel(item.user?.role)}</span>
-                    {showContactDetails && item.user?.email ? (
+                    {showContactDetails && userEmail ? (
                       <span className="min-w-0 truncate">
-                        {item.user.email}
+                        {userEmail}
                       </span>
                     ) : null}
                     {showContactDetails && item.user?.phone ? (
                       <span>{item.user.phone}</span>
                     ) : null}
-                    {showContactDetails && item.user?.userCode ? (
-                      <span>{item.user.userCode}</span>
+                    {showContactDetails && userCode ? (
+                      <span>{userCode}</span>
                     ) : null}
                   </div>
                 </div>

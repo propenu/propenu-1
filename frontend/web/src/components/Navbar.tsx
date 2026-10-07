@@ -46,6 +46,20 @@ const LOGO_SKELETON_CLASS =
 const LOGO_FALLBACK_CLASS =
   "flex h-full w-full items-center gap-1 overflow-hidden text-primary";
 
+const UserGreetingSkeleton = () => (
+  <div className="flex w-[210px] items-center gap-3 px-4 py-1">
+    <div className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-gray-100 ring-1 ring-gray-200" />
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="h-3 w-28 animate-pulse rounded bg-gray-100" />
+      <div className="h-2.5 w-16 animate-pulse rounded bg-gray-100" />
+    </div>
+  </div>
+);
+
+const PostPropertySkeleton = () => (
+  <div className="h-10 w-[152px] shrink-0 animate-pulse rounded-lg bg-gray-100" />
+);
+
 function getSafeRedirect(value: string | null) {
   if (!value || !value.startsWith("/") || value.startsWith("//")) {
     return "/";
@@ -69,6 +83,7 @@ const Navbar = () => {
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const mobileDropdownRef = useRef<HTMLDivElement | null>(null);
   const [user, setUser] = useState<any>(null);
+  const [isUserLoading, setIsUserLoading] = useState(true);
   const [registerStep, setRegisterStep] = useState<"personal" | "location">(
     "personal",
   );
@@ -123,13 +138,16 @@ const Navbar = () => {
 
   useEffect(() => {
     async function fetchUser() {
+      setIsUserLoading(true);
       try {
         const data = await me();
         setUser(data);
 
         const status = data?.user?.accountStatus;
 
-        localStorage.setItem("role", data.user.roleName);
+        if (data?.user?.roleName) {
+          localStorage.setItem("role", data.user.roleName);
+        }
 
         if (status === "location_pending") {
           setRegisterStep("location");
@@ -137,6 +155,9 @@ const Navbar = () => {
 
       } catch (err) {
         // user not logged in
+        setUser(null);
+      } finally {
+        setIsUserLoading(false);
       }
     }
 
@@ -414,7 +435,7 @@ const Navbar = () => {
                   </div>
                 </Link>
 
-                {!isBuilder && (
+                {!isUserLoading && !isBuilder && (
                   <Link
                     href="/postproperty"
                     className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-[#d6ebdb] bg-white px-3 text-[12px] font-semibold text-[#4a7a5d]"
@@ -687,7 +708,9 @@ const Navbar = () => {
               {/* RIGHT - desktop */}
               <div className="hidden md:flex items-center gap-4 lg:gap-6 text-[#1A1A1A] shrink-0">
                 <>
-                  {!isAuthenticated ? (
+                  {isUserLoading ? (
+                    <UserGreetingSkeleton />
+                  ) : !isAuthenticated ? (
                     <button
                       onClick={openLoginDialog}
                       className="text-sm text-gray-700 hover:text-gray-900 transition-colors cursor-pointer"
@@ -695,12 +718,16 @@ const Navbar = () => {
                       Login
                     </button>
                   ) : (
-                    <UserGreeting user={user} />
+                    <div className="w-[210px]">
+                      <UserGreeting user={user} />
+                    </div>
                   )}
                 </>
 
                 {/* CTA - secondary outlined */}
-                {!isBuilder && (
+                {isUserLoading ? (
+                  <PostPropertySkeleton />
+                ) : !isBuilder && (
                   <Link
                     href="/postproperty"
                     className="btn btn-secondary text-xs sm:text-sm whitespace-nowrap"
@@ -787,7 +814,11 @@ const Navbar = () => {
             </button>
 
             <div className="border-b border-gray-200 bg-gray-50">
-              {!user ? (
+              {isUserLoading ? (
+                <div className="flex items-center gap-3 px-4 py-4 pr-14 bg-gray-50">
+                  <UserGreetingSkeleton />
+                </div>
+              ) : !user ? (
                 <div className="flex items-center justify-between gap-3 px-4 py-4 pr-14 bg-gray-50">
                   <span className="text-xs text-gray-700 leading-snug">
                     Sign in for a <br />

@@ -41,7 +41,7 @@ const getNotificationAudienceForRole = (roleName?: string) => {
   return "owner";
 };
 
-const sendShortlistPush = async ({
+export const notifyShortlist = async ({
   ownerId,
   actorUserId,
   propertyId,
@@ -208,7 +208,7 @@ export const addToShortlistService = async (
       (property as any).buildingName ||
       "your property";
 
-    notification = await sendShortlistPush({
+    notification = await notifyShortlist({
       ownerId: (property as any).createdBy,
       actorUserId: userId,
       propertyId,

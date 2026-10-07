@@ -167,6 +167,7 @@ export const createPublicLead = async (
 
   if (ownerPhone && (lead.source || "site") !== "imported") {
     sendLeadWhatsApp(ownerPhone, {
+      leadType: "Project",
       name: lead.name,
       leadPhone: lead.phone,
       email: lead.email || "",
@@ -305,6 +306,7 @@ export const createPublicPropertyLead = async (
   if (ownerId) {
     if (ownerPhone && (lead.source || "site") !== "imported") {
       sendLeadWhatsApp(ownerPhone, {
+        leadType: listingType === "rent" || listingType === "lease" ? "Rental" : "Sale",
         name: lead.name,
         leadPhone: lead.phone,
         email: lead.email || "",

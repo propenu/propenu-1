@@ -48,6 +48,8 @@ function appendPromotionHistory(
     source: promotion.source || "manual",
     changedBy,
     changedByRole: req.user?.roleName,
+    changedByName: String(req.user?.name || "").trim() || undefined,
+    changedByEmail: String(req.user?.email || "").trim() || undefined,
     reason,
     startedAt: promotion.startDate || now,
     endedAt: null,
@@ -61,7 +63,7 @@ function appendPromotionHistory(
 
 export const promoteProperty = async (req: AuthRequest, res: Response) => {
   try {
-    const { type, days, visibleLeadLimit, sponsoredAd } = req.body;
+    const { type, days, visibleLeadLimit, sponsoredAd, startAt } = req.body;
 
     if (!type || !ALLOWED_TYPES.includes(type)) {
       return res.status(400).json({
@@ -80,12 +82,27 @@ export const promoteProperty = async (req: AuthRequest, res: Response) => {
     }
 
     const promotion: IPromotion = buildManualPromotion(type);
-
-    if (days && typeof days === "number") {
-      promotion.boostExpiry = new Date(
-        Date.now() + days * 24 * 60 * 60 * 1000,
-      );
+    const now = new Date();
+    let startDate = now;
+    if (startAt != null && startAt !== "") {
+      const requested = new Date(startAt);
+      if (Number.isNaN(requested.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid promotion schedule time",
+        });
+      }
+      if (requested.getTime() > now.getTime() + 30_000) {
+        startDate = requested;
+      }
     }
+    const durationDays =
+      typeof days === "number" && Number.isFinite(days) && days > 0 ? days : 10;
+    promotion.startDate = startDate;
+    promotion.boostExpiry = new Date(
+      startDate.getTime() + durationDays * 24 * 60 * 60 * 1000,
+    );
+    const isScheduled = startDate.getTime() > now.getTime() + 30_000;
 
     const parsedLeadLimit = (() => {
       if (visibleLeadLimit === null || visibleLeadLimit === undefined || visibleLeadLimit === "") {
@@ -119,7 +136,9 @@ export const promoteProperty = async (req: AuthRequest, res: Response) => {
       property,
       req,
       promotion,
-      `Promotion changed to ${promotion.type}`,
+      isScheduled
+        ? `Promotion scheduled as ${promotion.type}`
+        : `Promotion changed to ${promotion.type}`,
     );
 
     property.promotion = promotion as any;
@@ -146,7 +165,7 @@ export const promoteProperty = async (req: AuthRequest, res: Response) => {
 
     await property.save();
 
-    if (type !== "normal") {
+    if (type !== "normal" && !isScheduled) {
       void notifyLifecycleEvent({
         type: "promotion_started",
         listing: property,
@@ -159,7 +178,9 @@ export const promoteProperty = async (req: AuthRequest, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: "Property promoted successfully",
+      message: isScheduled
+        ? "Promotion scheduled"
+        : "Property promoted successfully",
       data: property,
     });
   } catch (err) {
@@ -287,15 +308,43 @@ export const expirePromotion = async (req: AuthRequest, res: Response) => {
     }
 
     const previousPromotionType = property.promotion?.type || "normal";
+    if (previousPromotionType === "normal") {
+      return res.status(400).json({
+        success: false,
+        message: "This project is already a normal listing",
+      });
+    }
+
+    const reason = String(req.body?.reason || "").trim();
+    if (!reason) {
+      return res.status(400).json({
+        success: false,
+        message: "A reason is required to cancel this promotion",
+      });
+    }
+    if (reason.length > 500) {
+      return res.status(400).json({
+        success: false,
+        message: "Reason must be 500 characters or less",
+      });
+    }
+
     const promotion = {
       type: "normal",
       priority: 0,
       source: "manual",
       startDate: new Date(),
+      boostExpiry: null,
+      sponsoredAd: {},
       visibleLeadLimit: 0,
     } as IPromotion;
 
-    appendPromotionHistory(property, req, promotion, "Promotion expired manually");
+    appendPromotionHistory(
+      property,
+      req,
+      promotion,
+      `Promotion cancelled: ${reason}`,
+    );
 
     property.promotion = promotion as any;
 
@@ -314,7 +363,7 @@ export const expirePromotion = async (req: AuthRequest, res: Response) => {
 
     return res.json({
       success: true,
-      message: "Promotion expired and reset to normal",
+      message: "Promotion cancelled and set to normal",
     });
   } catch (err) {
     console.error("expirePromotion error:", err);

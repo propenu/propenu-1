@@ -53,6 +53,11 @@ export default function Footer() {
             </h3>
             <ul className="space-y-4 text-sm text-gray-700 font-medium">
               <li>
+                <Link href="/new-projects" className="hover:text-primary">
+                  New Projects
+                </Link>
+              </li>
+              <li>
                 <Link href="/about" className="hover:text-primary">
                   About Us
                 </Link>

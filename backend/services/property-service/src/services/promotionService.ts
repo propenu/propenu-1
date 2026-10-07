@@ -44,6 +44,17 @@ export function normalizeSponsoredAd(
   return out;
 }
 
+/** Public boosted slots ignore a promotion whose start is still in the future. */
+export function promotionHasStartedMatch(now = new Date()) {
+  return {
+    $or: [
+      { "promotion.startDate": { $exists: false } },
+      { "promotion.startDate": null },
+      { "promotion.startDate": { $lte: now } },
+    ],
+  };
+}
+
 export function buildManualPromotion(type: PromotionType) {
   return {
     type,

@@ -402,6 +402,7 @@ UserSchema.pre("save", async function (next) {
 });
 
 UserSchema.index({ roleId: 1, createdAt: -1 });
+UserSchema.index({ roleId: 1, name: 1 });
 UserSchema.index({ lastLoginAt: -1 });
 
 // ✅ Use ESM export, not CommonJS

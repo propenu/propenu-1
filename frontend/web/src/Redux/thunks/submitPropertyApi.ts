@@ -12,6 +12,36 @@ import {
   updateLocationApi,
 } from "../apis";
 
+const TEXT_FIELD_LIMIT = 900 * 1024;
+
+const formText = (value: unknown): string | null => {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    if (value.startsWith("data:") || value.length > TEXT_FIELD_LIMIT) return null;
+    return value;
+  }
+  if (typeof File !== "undefined" && value instanceof File) return null;
+  if (typeof Blob !== "undefined" && value instanceof Blob) return null;
+  if (Array.isArray(value) || typeof value === "object") {
+    const json = JSON.stringify(value, (_key, nested) => {
+      if (typeof nested !== "string") return nested;
+      if (
+        nested.startsWith("data:") ||
+        nested.startsWith("blob:") ||
+        nested.length > TEXT_FIELD_LIMIT
+      ) {
+        return undefined;
+      }
+      return nested;
+    });
+    if (!json || json === "{}" || json === "[]" || json.length > TEXT_FIELD_LIMIT) {
+      return null;
+    }
+    return json;
+  }
+  return String(value);
+};
+
 const normalizeListingTypeForSubmit = (listingType: any) => {
   const normalized = String(listingType ?? "").trim().toLowerCase();
   if (normalized === "rent" || normalized === "lease") return "rent";
@@ -131,11 +161,26 @@ export const submitDetailsThunk = createAsyncThunk(
     Object.entries(safePayload).forEach(([key, value]: any) => {
       if (value === undefined || value === null) return;
 
-      if (Array.isArray(value) || typeof value === "object") {
-        formData.append(key, JSON.stringify(value));
-      } else {
-        formData.append(key, String(value));
+      if (key === "description" && typeof value === "string") {
+        const description = value.slice(0, 500);
+        if (description) formData.append(key, description);
+        return;
       }
+
+      if (key === "relationshipManagerId" || key === "createdBy") {
+        const id =
+          value && typeof value === "object"
+            ? value._id || value.userId || value.id
+            : value;
+        if (id) formData.append(key, String(id));
+        return;
+      }
+
+      const text =
+        Array.isArray(value) || typeof value === "object"
+          ? formText(value)
+          : formText(String(value));
+      if (text) formData.append(key, text);
     });
 
     const hasFiles = Array.isArray(files) && files.length > 0;

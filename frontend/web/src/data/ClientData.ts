@@ -75,6 +75,63 @@ export async function getFeaturedProjects(params?: {
   return res.json();
 }
 
+export type NewProjectSearchParams = {
+  q?: string;
+  city?: string;
+  state?: string;
+  locality?: string;
+  category?: string;
+  minPrice?: string;
+  maxPrice?: string;
+  bhk?: string;
+  rera?: boolean;
+  possession?: string;
+  builder?: string;
+  propertyType?: string;
+  minSqft?: string;
+  maxSqft?: string;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+  page?: number;
+  limit?: number;
+};
+
+export async function searchNewProjects(params: NewProjectSearchParams = {}) {
+  const query = new URLSearchParams();
+  query.set("view", "card");
+  query.set("status", "active");
+  query.set("page", String(params.page ?? 1));
+  query.set("limit", String(params.limit ?? 12));
+
+  if (params.q) query.set("q", params.q);
+  if (params.city) query.set("city", params.city);
+  if (params.state) query.set("state", params.state);
+  if (params.locality) query.set("locality", params.locality);
+  if (params.category) query.set("category", params.category);
+  if (params.minPrice) query.set("minPrice", params.minPrice);
+  if (params.maxPrice) query.set("maxPrice", params.maxPrice);
+  if (params.bhk) query.set("bhk", params.bhk);
+  if (params.rera) query.set("rera", "1");
+  if (params.possession) query.set("possession", params.possession);
+  if (params.builder) query.set("builder", params.builder);
+  if (params.propertyType) query.set("propertyType", params.propertyType);
+  if (params.minSqft) query.set("minSqft", params.minSqft);
+  if (params.maxSqft) query.set("maxSqft", params.maxSqft);
+  if (params.sortBy) query.set("sortBy", params.sortBy);
+  if (params.sortOrder) query.set("sortOrder", params.sortOrder);
+
+  const res = await fetch(
+    `${url}/api/properties/featured-project?${query.toString()}`,
+    { cache: "no-store" },
+  );
+
+  if (!res.ok) {
+    throw new Error("Failed to search projects");
+  }
+
+  return res.json();
+}
+
 //highlight projects
 export async function getHighlightProjects(params?: {
   state?: string;

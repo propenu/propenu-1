@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import s3 from "../config/s3";
 import FeaturedProject from "../models/featurePropertiesModel";
 // Register models so createdBy / RM / postedBy populate resolves User + Role.
-import "../models/userModel";
+import User from "../models/userModel";
 import "../models/roleModel";
 import {
   CreateFeaturePropertyDTO,
@@ -22,6 +22,7 @@ import {
   restoreCreatedById,
 } from "../utils/agentSubmission";
 import { applyOwnerUserFilter, ownerListLimit } from "../utils/ownerUserFilter";
+import { promotionHasStartedMatch } from "./promotionService";
 
 dotenv.config({ quiet: true });
 
@@ -81,6 +82,10 @@ function applyFeaturedUserPopulates(query: any) {
     .populate({
       path: "updateHistory.userId",
       ...withRoleAndManager,
+    })
+    .populate({
+      path: "promotionHistory.changedBy",
+      select: "name email roleName companyName",
     });
 }
 
@@ -390,6 +395,77 @@ function pickDefined<T extends Record<string, any>>(obj: T) {
   ) as Partial<T>;
 }
 
+/** Same editor, same project: extra saves inside this window do not add another update. */
+const PROJECT_EDIT_COUNT_WINDOW_MS = 30 * 60 * 1000;
+
+function sameAuditUser(left: unknown, right: unknown) {
+  if (left == null || right == null) return false;
+  return String(left) === String(right);
+}
+
+function httpMediaUrl(value: unknown) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : "";
+}
+
+function plainAboutRow(row: any) {
+  const src =
+    row && typeof row.toObject === "function" ? row.toObject() : row || {};
+  return {
+    builderName: src.builderName != null ? String(src.builderName) : "",
+    aboutDescription:
+      src.aboutDescription != null ? String(src.aboutDescription) : "",
+    rightContent: src.rightContent != null ? String(src.rightContent) : "",
+    url: httpMediaUrl(src.url),
+    key: src.key != null ? String(src.key) : "",
+    filename: src.filename != null ? String(src.filename) : "",
+    mimetype: src.mimetype != null ? String(src.mimetype) : "",
+  };
+}
+
+/**
+ * Record who saved the project. The same logged-in user does not add another
+ * history row or increase updateCount until 30 minutes after their last counted edit.
+ */
+function recordProjectEditAudit(existing: any, user: any) {
+  const now = new Date();
+  const history = Array.isArray(existing.updateHistory)
+    ? existing.updateHistory.map((row: any) =>
+        row && typeof row.toObject === "function" ? row.toObject() : { ...row },
+      )
+    : [];
+  const last = history[history.length - 1];
+  const lastAt = last?.updatedAt ? new Date(last.updatedAt).getTime() : NaN;
+  const withinWindow =
+    Boolean(last) &&
+    sameAuditUser(last.userId, user?.id) &&
+    Number.isFinite(lastAt) &&
+    now.getTime() - lastAt < PROJECT_EDIT_COUNT_WINDOW_MS;
+
+  existing.lastUpdatedBy = {
+    userId: user.id,
+    name: user.name,
+    email: user.email,
+    roleName: user.roleName,
+    updatedAt: now,
+  };
+
+  if (withinWindow) return;
+
+  existing.updateCount = Number(existing.updateCount || 0) + 1;
+  existing.updateHistory = [
+    ...history,
+    {
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+      roleName: user.roleName,
+      updatedAt: now,
+    },
+  ];
+}
+
 function normalizeGalleryInput(payload: any) {
   if (!payload || typeof payload !== "object") return;
   if (
@@ -547,6 +623,456 @@ function serializeFeaturedProject<T extends any>(doc: T): T {
 
 function serializeFeaturedProjectList<T extends any[]>(items: T): T {
   return items.map((item) => serializeFeaturedProject(item)) as T;
+}
+
+const PUBLIC_PROJECT_CARD_SELECT = [
+  "title",
+  "slug",
+  "heroImage",
+  "heroTagline",
+  "city",
+  "locality",
+  "state",
+  "address",
+  "priceFrom",
+  "priceTo",
+  "possessionDate",
+  "reraNumber",
+  "categoryType",
+  "propertyType",
+  "projectArea",
+  "sqftRange",
+  "projectSummary.bhk",
+  "projectSummary.label",
+  "bhkSummary.bhk",
+  "bhkSummary.label",
+  "amenities.title",
+  "promotion.type",
+  "promotion.priority",
+  "promotion.startDate",
+  "promotion.boostExpiry",
+  "aboutSummary.builderName",
+  "logo.url",
+  "gallerySummary.url",
+  "brochure.url",
+  "createdAt",
+].join(" ");
+
+function parseBhkFilter(raw?: string) {
+  const exact: number[] = [];
+  let minInclusive: number | null = null;
+
+  String(raw || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .forEach((value) => {
+      if (value.endsWith("+")) {
+        const min = Number(value.slice(0, -1));
+        if (Number.isFinite(min)) {
+          minInclusive = minInclusive == null ? min : Math.min(minInclusive, min);
+        }
+        return;
+      }
+
+      const bhk = Number(value);
+      if (Number.isFinite(bhk)) exact.push(bhk);
+    });
+
+  if (!exact.length && minInclusive == null) return null;
+  return { exact, minInclusive };
+}
+
+function splitFilterValues(raw?: string) {
+  return String(raw || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function exactFieldMatch(field: string, values: string[]) {
+  return {
+    $or: values.map((value) => ({
+      [field]: {
+        $regex: `^\\s*${value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`,
+        $options: "i",
+      },
+    })),
+  };
+}
+
+function buildDiscoveryFilters(options?: {
+  locality?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  bhk?: string;
+  rera?: boolean;
+  possession?: string;
+  builder?: string;
+  propertyType?: string;
+  minSqft?: number;
+  maxSqft?: number;
+}) {
+  const clauses: any[] = [];
+  const localities = splitFilterValues(options?.locality);
+  if (localities.length) {
+    clauses.push(exactFieldMatch("locality", localities));
+  }
+
+  const minPrice = Number(options?.minPrice);
+  const maxPrice = Number(options?.maxPrice);
+  const hasMinPrice = Number.isFinite(minPrice) && minPrice > 0;
+  const hasMaxPrice = Number.isFinite(maxPrice) && maxPrice > 0;
+  if (hasMinPrice || hasMaxPrice) {
+    const priceMatch: any[] = [];
+    if (hasMaxPrice) priceMatch.push({ priceFrom: { $lte: maxPrice } });
+    if (hasMinPrice) {
+      priceMatch.push({
+        $or: [{ priceTo: { $gte: minPrice } }, { priceFrom: { $gte: minPrice } }],
+      });
+    }
+    clauses.push({ $and: priceMatch });
+  }
+
+  const bhkFilter = parseBhkFilter(options?.bhk);
+  if (bhkFilter) {
+    const bhkMatch: any[] = [];
+    const labelPattern = (expression: string) => ({
+      $regex: expression,
+      $options: "i",
+    });
+    if (bhkFilter.exact.length) {
+      bhkMatch.push({ "projectSummary.bhk": { $in: bhkFilter.exact } });
+      bhkMatch.push({ "bhkSummary.bhk": { $in: bhkFilter.exact } });
+      bhkFilter.exact.forEach((value) => {
+        const pattern = labelPattern(`\\b${value}\\s*BHK`);
+        bhkMatch.push({ "projectSummary.label": pattern });
+        bhkMatch.push({ "bhkSummary.label": pattern });
+        bhkMatch.push({ "bhkSummary.bhkLabel": pattern });
+      });
+    }
+    if (bhkFilter.minInclusive != null) {
+      bhkMatch.push({ "projectSummary.bhk": { $gte: bhkFilter.minInclusive } });
+      bhkMatch.push({ "bhkSummary.bhk": { $gte: bhkFilter.minInclusive } });
+      const pattern = labelPattern("\\b([5-9]|[1-9]\\d+)\\s*BHK");
+      bhkMatch.push({ "projectSummary.label": pattern });
+      bhkMatch.push({ "bhkSummary.label": pattern });
+      bhkMatch.push({ "bhkSummary.bhkLabel": pattern });
+    }
+    if (bhkMatch.length) clauses.push({ $or: bhkMatch });
+  }
+
+  if (options?.rera) {
+    clauses.push({ reraNumber: { $regex: "\\S" } });
+  }
+
+  const possession = splitFilterValues(options?.possession);
+  if (possession.length) {
+    const today = new Date().toISOString().slice(0, 10);
+    const launchSince = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const possessionMatch = possession
+      .map((token) => {
+        if (token === "ready") {
+          return {
+            $or: [
+              { possessionDate: { $regex: "ready", $options: "i" } },
+              {
+                possessionDate: {
+                  $regex: "^\\d{4}-\\d{2}-\\d{2}",
+                  $lte: today,
+                },
+              },
+            ],
+          };
+        }
+        if (token === "new-launch") {
+          return { createdAt: { $gte: launchSince } };
+        }
+        if (/^20\d{2}$/.test(token)) {
+          return {
+            possessionDate: { $regex: `(^|[^0-9])${token}([^0-9]|$)` },
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
+    if (possessionMatch.length) clauses.push({ $or: possessionMatch });
+  }
+
+  const builders = splitFilterValues(options?.builder);
+  if (builders.length) {
+    clauses.push({
+      $or: builders.flatMap((name) => {
+        const pattern = {
+          $regex: `^\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`,
+          $options: "i",
+        };
+        return [
+          { "aboutSummary.builderName": pattern },
+          { builderName: pattern },
+        ];
+      }),
+    });
+  }
+
+  const propertyTypes = splitFilterValues(options?.propertyType);
+  if (propertyTypes.length) {
+    clauses.push(exactFieldMatch("propertyType", propertyTypes));
+  }
+
+  const minSqft = Number(options?.minSqft);
+  const maxSqft = Number(options?.maxSqft);
+  const hasMinArea = Number.isFinite(minSqft) && minSqft > 0;
+  const hasMaxArea = Number.isFinite(maxSqft) && maxSqft > 0;
+  if (hasMinArea || hasMaxArea) {
+    const min = hasMinArea ? minSqft : 0;
+    const max = hasMaxArea ? maxSqft : 100000000;
+    const range = { $gte: min, $lte: max };
+    clauses.push({
+      $or: [
+        {
+          "sqftRange.min": { $lte: max },
+          "sqftRange.max": { $gte: min },
+        },
+        { "projectSummary.units.minSqft": range },
+        { "projectSummary.units.maxSqft": range },
+        { "projectSummary.units.area.sqftValue": range },
+        { "bhkSummary.units.minSqft": range },
+        { "bhkSummary.units.maxSqft": range },
+        { "bhkSummary.units.area.sqftValue": range },
+      ],
+    });
+  }
+
+  return clauses;
+}
+
+function summarizePossessionFacets(
+  rows: { _id?: string; count?: number }[],
+  newLaunchCount: number,
+) {
+  const today = new Date().toISOString().slice(0, 10);
+  const years = new Map<string, number>();
+  let ready = 0;
+
+  rows.forEach((row) => {
+    const value = String(row._id || "");
+    const count = Number(row.count || 0);
+    const year = value.match(/(20\d{2})/)?.[1];
+    if (year) years.set(year, (years.get(year) || 0) + count);
+    const iso = value.slice(0, 10);
+    if (
+      /ready/i.test(value) ||
+      (/^\d{4}-\d{2}-\d{2}/.test(value) && iso <= today)
+    ) {
+      ready += count;
+    }
+  });
+
+  return {
+    ready,
+    newLaunch: newLaunchCount,
+    years: Array.from(years.entries())
+      .map(([year, count]) => ({ year, count }))
+      .sort((a, b) => Number(b.year) - Number(a.year)),
+  };
+}
+
+async function collectPublicProjectFacets(match: Record<string, any>) {
+  const launchSince = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const [row] = await FeaturedProject.aggregate([
+    { $match: match },
+    {
+      $project: {
+        locality: 1,
+        propertyType: 1,
+        possessionDate: 1,
+        createdAt: 1,
+        builderName: {
+          $let: {
+            vars: {
+              fromSummary: {
+                $convert: {
+                  input: { $arrayElemAt: ["$aboutSummary.builderName", 0] },
+                  to: "string",
+                  onError: "",
+                  onNull: "",
+                },
+              },
+              fromRoot: {
+                $convert: {
+                  input: "$builderName",
+                  to: "string",
+                  onError: "",
+                  onNull: "",
+                },
+              },
+            },
+            in: {
+              $cond: [
+                { $gt: [{ $strLenCP: "$$fromSummary" }, 0] },
+                "$$fromSummary",
+                "$$fromRoot",
+              ],
+            },
+          },
+        },
+      },
+    },
+    {
+      $facet: {
+        localities: [
+          { $match: { locality: { $type: "string", $nin: ["", null] } } },
+          {
+            $group: {
+              _id: { $toLower: "$locality" },
+              name: { $first: "$locality" },
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { count: -1, name: 1 } },
+          { $limit: 100 },
+        ],
+        builders: [
+          { $match: { builderName: { $type: "string", $nin: ["", null] } } },
+          {
+            $group: {
+              _id: { $toLower: "$builderName" },
+              name: { $first: "$builderName" },
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { count: -1, name: 1 } },
+          { $limit: 60 },
+        ],
+        propertyTypes: [
+          { $match: { propertyType: { $type: "string", $nin: ["", null] } } },
+          {
+            $group: {
+              _id: { $toLower: "$propertyType" },
+              name: { $first: "$propertyType" },
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { count: -1, name: 1 } },
+        ],
+        possessionDates: [
+          { $match: { possessionDate: { $type: "string", $nin: ["", null] } } },
+          { $group: { _id: "$possessionDate", count: { $sum: 1 } } },
+        ],
+        newLaunch: [
+          { $match: { createdAt: { $gte: launchSince } } },
+          { $count: "count" },
+        ],
+      },
+    },
+  ]);
+
+  const pick = (items?: { name?: string; count?: number }[]) => {
+    const grouped = new Map<string, { name: string; count: number }>();
+    (items || []).forEach((item) => {
+      const name = String(item.name || "").replace(/\s+/g, " ").trim();
+      const key = name.toLowerCase();
+      if (!key) return;
+      const current = grouped.get(key);
+      if (!current) {
+        grouped.set(key, { name, count: Number(item.count || 0) });
+        return;
+      }
+      current.count += Number(item.count || 0);
+      if (name !== name.toLowerCase()) current.name = name;
+    });
+    return Array.from(grouped.values()).sort(
+      (left, right) => right.count - left.count || left.name.localeCompare(right.name),
+    );
+  };
+
+  return {
+    localities: pick(row?.localities),
+    builders: pick(row?.builders),
+    propertyTypes: pick(row?.propertyTypes).map((item) => ({
+      ...item,
+      name: item.name.toLowerCase(),
+    })),
+    possession: summarizePossessionFacets(
+      row?.possessionDates || [],
+      Number(row?.newLaunch?.[0]?.count || 0),
+    ),
+  };
+}
+
+function toPublicProjectCard(item: any) {
+  const serialized = hideUnstartedPromotion(serializeFeaturedProject(item));
+  const gallery = Array.isArray(serialized.gallerySummary)
+    ? serialized.gallerySummary.filter((file: any) => file?.url)
+    : [];
+  const summary = Array.isArray(serialized.projectSummary)
+    ? serialized.projectSummary.map((entry: any) => ({
+        bhk: entry?.bhk,
+        label: entry?.label,
+      }))
+    : [];
+  const amenities = Array.isArray(serialized.amenities)
+    ? serialized.amenities
+        .map((entry: any) => String(entry?.title || "").trim())
+        .filter(Boolean)
+        .slice(0, 3)
+    : [];
+  const builderName = Array.isArray(serialized.aboutSummary)
+    ? serialized.aboutSummary
+        .map((entry: any) => String(entry?.builderName || "").trim())
+        .find(Boolean) || ""
+    : "";
+
+  return {
+    _id: serialized._id,
+    title: serialized.title,
+    slug: serialized.slug,
+    heroImage: serialized.heroImage || gallery[0]?.url || "",
+    heroTagline: serialized.heroTagline || "",
+    city: serialized.city,
+    locality: serialized.locality,
+    state: serialized.state,
+    address: serialized.address,
+    priceFrom: serialized.priceFrom,
+    priceTo: serialized.priceTo,
+    possessionDate: serialized.possessionDate || "",
+    reraNumber: serialized.reraNumber || "",
+    categoryType: serialized.categoryType || "",
+    propertyType: serialized.propertyType || "",
+    projectArea: serialized.projectArea,
+    sqftRange: serialized.sqftRange,
+    projectSummary: summary,
+    amenities,
+    photoCount: gallery.length,
+    builderName,
+    logo: serialized.logo?.url ? { url: serialized.logo.url } : undefined,
+    brochureUrl: serialized.brochure?.url || "",
+    promotion: serialized.promotion?.type
+      ? { type: serialized.promotion.type }
+      : undefined,
+    createdAt: serialized.createdAt,
+  };
+}
+
+/** Public responses keep a future promotion off the live type until its start time. */
+function hideUnstartedPromotion<T extends Record<string, any>>(item: T): T {
+  const startRaw = item?.promotion?.startDate;
+  const start = startRaw ? new Date(startRaw) : null;
+  const type = item?.promotion?.type;
+  if (!start || Number.isNaN(start.getTime()) || start.getTime() <= Date.now()) {
+    return item;
+  }
+  if (!type || type === "normal") return item;
+  return {
+    ...item,
+    displayType: "normal",
+    promotion: {
+      ...item.promotion,
+      type: "normal",
+      priority: 0,
+    },
+  };
 }
 
 async function processBhkPlanUpdates(opts: {
@@ -1126,34 +1652,22 @@ export const FeaturePropertyService = {
     const incomingGallerySummary = (safeUpdate as any).gallerySummary;
     delete (safeUpdate as any).gallerySummary;
 
+    // Keep the stored about image. A text-only About save omits url/key, and
+    // Object.assign would replace the whole subdocument and wipe the picture.
+    const preservedAboutMedia = (
+      Array.isArray((existing as any).aboutSummary)
+        ? (existing as any).aboutSummary
+        : []
+    ).map((row: any) => plainAboutRow(row));
+    const incomingAboutSummary = (safeUpdate as any).aboutSummary;
+    delete (safeUpdate as any).aboutSummary;
+
     await reorderFeatureProjectRank(existing, safeUpdate);
 
     // apply other fields (shallow)
     Object.assign(existing, safeUpdate);
 
-    if (user) {
-      existing.lastUpdatedBy = {
-        userId: user.id,
-        name: user.name,
-        email: user.email,
-        roleName: user.roleName,
-        updatedAt: new Date(),
-      };
-
-      existing.updateCount = (existing.updateCount || 0) + 1;
-
-      existing.updateHistory = [
-        ...(existing.updateHistory || []),
-
-        {
-          userId: user.id,
-          name: user.name,
-          email: user.email,
-          roleName: user.roleName,
-          updatedAt: new Date(),
-        },
-      ];
-    }
+    if (user) recordProjectEditAudit(existing, user);
 
     const propId = existing._id!.toString();
 
@@ -1405,73 +1919,81 @@ export const FeaturePropertyService = {
 
     // ---------- ABOUT merge & aboutImage replacement ----------
     {
-      const incomingAboutArr: any[] = Array.isArray(
-        (payload as any).aboutSummary,
-      )
-        ? (payload as any).aboutSummary.slice()
-        : (payload as any).about
-          ? [{ ...(payload as any).about }]
-          : [];
-
-      const existingAboutArr: any[] = Array.isArray(
-        (existing as any).aboutSummary,
-      )
-        ? (existing as any).aboutSummary.slice()
-        : [];
-
-      for (let i = 0; i < incomingAboutArr.length; i++) {
-        if (i < existingAboutArr.length)
-          existingAboutArr[i] = {
-            ...(existingAboutArr[i] || {}),
-            ...incomingAboutArr[i],
-          };
-        else existingAboutArr.push({ ...incomingAboutArr[i] });
-      }
-
-      (existing as any).aboutSummary = existingAboutArr;
+      const incomingAboutArr: any[] = Array.isArray(incomingAboutSummary)
+        ? incomingAboutSummary.slice()
+        : Array.isArray((payload as any).aboutSummary)
+          ? (payload as any).aboutSummary.slice()
+          : (payload as any).about
+            ? [{ ...(payload as any).about }]
+            : [];
 
       const aboutFiles = files?.aboutImage;
-      if (aboutFiles && aboutFiles.length > 0) {
-        const f = aboutFiles[0]!;
-        uploadedPaths.add(f.path);
-        const up = await uploadFile({
-          filePath: f.path,
-          originalName: f.originalname,
-          mimetype: f.mimetype,
-          folder: "about",
-          propertyId: propId,
-        });
+      const hasAboutFile = Boolean(aboutFiles && aboutFiles.length > 0);
 
-        if (
-          !Array.isArray((existing as any).aboutSummary) ||
-          (existing as any).aboutSummary.length === 0
-        ) {
-          (existing as any).aboutSummary = [{ rightContent: "" }];
+      if (incomingAboutArr.length > 0 || hasAboutFile) {
+        const merged =
+          preservedAboutMedia.length > 0
+            ? preservedAboutMedia.map((row) => ({ ...row }))
+            : [plainAboutRow(null)];
+
+        for (let i = 0; i < incomingAboutArr.length; i++) {
+          const incoming = incomingAboutArr[i] || {};
+          const previous = merged[i] || plainAboutRow(null);
+          const nextUrl = httpMediaUrl(incoming.url);
+          const next = {
+            builderName:
+              incoming.builderName !== undefined
+                ? String(incoming.builderName ?? "")
+                : previous.builderName,
+            aboutDescription:
+              incoming.aboutDescription !== undefined
+                ? String(incoming.aboutDescription ?? "")
+                : previous.aboutDescription,
+            rightContent:
+              incoming.rightContent !== undefined
+                ? String(incoming.rightContent ?? "")
+                : previous.rightContent,
+            url: nextUrl || previous.url || "",
+            key: nextUrl
+              ? String(incoming.key || previous.key || "")
+              : previous.key || "",
+            filename: nextUrl
+              ? String(incoming.filename || previous.filename || "")
+              : previous.filename || "",
+            mimetype: nextUrl
+              ? String(incoming.mimetype || previous.mimetype || "")
+              : previous.mimetype || "",
+          };
+          if (i < merged.length) merged[i] = next;
+          else merged.push(next);
         }
 
-        const aboutArr: any[] = Array.isArray((existing as any).aboutSummary)
-          ? (existing as any).aboutSummary
-          : [{ rightContent: "" }];
+        if (hasAboutFile) {
+          const f = aboutFiles![0]!;
+          uploadedPaths.add(f.path);
+          const up = await uploadFile({
+            filePath: f.path,
+            originalName: f.originalname,
+            mimetype: f.mimetype,
+            folder: "about",
+            propertyId: propId,
+          });
 
-        const oldKey = aboutArr[0]?.key;
-        if (oldKey) await deleteS3ObjectIfExists(oldKey);
+          const oldKey = merged[0]?.key;
+          if (oldKey && oldKey !== up.key) {
+            await deleteS3ObjectIfExists(oldKey);
+          }
 
-        aboutArr[0].url = up.url;
-        aboutArr[0].key = up.key;
-        aboutArr[0].filename = f.originalname;
-        aboutArr[0].mimetype = f.mimetype;
+          if (!merged[0]) merged[0] = plainAboutRow({ rightContent: "" });
+          merged[0].url = up.url;
+          merged[0].key = up.key;
+          merged[0].filename = f.originalname;
+          merged[0].mimetype = f.mimetype;
+          if (!merged[0].rightContent) merged[0].rightContent = "";
+        }
 
-        (existing as any).aboutSummary = aboutArr;
-      }
-
-      if (
-        Array.isArray((existing as any).aboutSummary) &&
-        (existing as any).aboutSummary.length > 0
-      ) {
-        (existing as any).about = {
-          ...(existing as any).about,
-          ...((existing as any).aboutSummary[0] as any),
-        };
+        (existing as any).aboutSummary = merged;
+        existing.markModified("aboutSummary");
       }
     }
 
@@ -1527,8 +2049,10 @@ export const FeaturePropertyService = {
       FeaturedProject.findOne({ slug }),
     ).lean();
 
-    return serializeFeaturedProject(
-      await restoreCreatedById(FeaturedProject, doc, original?.createdBy),
+    return hideUnstartedPromotion(
+      serializeFeaturedProject(
+        await restoreCreatedById(FeaturedProject, doc, original?.createdBy),
+      ),
     );
   },
 
@@ -1538,10 +2062,12 @@ export const FeaturePropertyService = {
 
   async getFeaturesByCity({ locality, city, state }: LocationParams) {
     // 🥇 1. Try LOCALITY
+    const featuredNow = new Date();
     const baseFilter = {
       status: "active",
       "promotion.type": { $in: ["featured", "sponsored"] },
-      "promotion.boostExpiry": { $gt: new Date() },
+      "promotion.boostExpiry": { $gt: featuredNow },
+      ...promotionHasStartedMatch(featuredNow),
     };
     if (locality) {
       const items = await findFeatured({
@@ -1604,6 +2130,17 @@ export const FeaturePropertyService = {
     propertyCode?: string;
     from?: string;
     to?: string;
+    minPrice?: number;
+    maxPrice?: number;
+    bhk?: string;
+    rera?: boolean;
+    categoryType?: string;
+    view?: "card";
+    possession?: string;
+    builder?: string;
+    propertyType?: string;
+    minSqft?: number;
+    maxSqft?: number;
   }) {
     const page = Math.max(1, options?.page ?? 1);
     const ownerUserId = (options as any)?.ownerUserId as string | undefined;
@@ -1721,7 +2258,17 @@ export const FeaturePropertyService = {
 
     if (options?.city) filter.city = makeRegex(options.city);
     if (options?.state) filter.state = makeRegex(options.state);
-    if (options?.locality) filter.locality = makeRegex(options.locality);
+
+    const category = String(options?.categoryType || "").trim().toLowerCase();
+    if (
+      category === "residential" ||
+      category === "commercial" ||
+      category === "land" ||
+      category === "agricultural"
+    ) {
+      filter.categoryType = category;
+    }
+
     if (options?.propertyCode) {
       filter.propertyCode = {
         $regex: escapeRegex(options.propertyCode.trim()),
@@ -1749,7 +2296,22 @@ export const FeaturePropertyService = {
       (statusOpt && statusOpt !== "active" ? "all" : "active");
     const now = new Date();
 
-    if (promotionStatus === "expired") {
+    if (promotionStatus !== "all" && options?.type) {
+      const wantsBoost = String(options.type)
+        .split(",")
+        .some((part) => {
+          const key = part.trim();
+          return key && key !== "normal";
+        });
+      if (wantsBoost) andFilters.push(promotionHasStartedMatch(now));
+    }
+
+    if (promotionStatus === "scheduled") {
+      andFilters.push({
+        "promotion.type": { $in: promotedPromotionTypes },
+        "promotion.startDate": { $gt: now },
+      });
+    } else if (promotionStatus === "expired") {
       andFilters.push({
         $or: [
           {
@@ -1781,16 +2343,39 @@ export const FeaturePropertyService = {
     } else if (promotionStatus !== "all") {
       andFilters.push({
         $or: [
-          { "promotion.boostExpiry": { $gt: now } },
+          {
+            $and: [
+              { "promotion.boostExpiry": { $gt: now } },
+              promotionHasStartedMatch(now),
+            ],
+          },
           { "promotion.type": "normal" },
           { "promotion.type": { $exists: false } },
           { "promotion.type": null },
+          {
+            $and: [
+              { "promotion.type": { $in: ["prime", "featured", "sponsored"] } },
+              { "promotion.startDate": { $gt: now } },
+            ],
+          },
         ],
       });
     }
 
     if (andFilters.length > 0) {
       filter.$and = [...(filter.$and || []), ...andFilters];
+    }
+
+    const cardView = options?.view === "card";
+    const facetMatch = cardView
+      ? {
+          ...filter,
+          ...(filter.$and ? { $and: [...filter.$and] } : {}),
+        }
+      : null;
+    const discoveryFilters = buildDiscoveryFilters(options);
+    if (discoveryFilters.length) {
+      filter.$and = [...(filter.$and || []), ...discoveryFilters];
     }
 
     // 🥇 SORT
@@ -1804,22 +2389,32 @@ export const FeaturePropertyService = {
       sort.createdAt = -1;
     }
 
-    const [items, total, promotionCounts] = await Promise.all([
-      applyFeaturedListPopulates(
-        FeaturedProject.find(filter).sort(sort).skip(skip).limit(limit),
-      )
+    const itemsQuery = FeaturedProject.find(filter).sort(sort).skip(skip).limit(limit);
+    if (cardView) itemsQuery.select(PUBLIC_PROJECT_CARD_SELECT);
+
+    const [rawItems, total, facets, promotionCounts] = await Promise.all([
+      (cardView ? itemsQuery : applyFeaturedListPopulates(itemsQuery))
         .lean()
         .exec(),
 
       FeaturedProject.countDocuments(filter),
+
+      facetMatch ? collectPublicProjectFacets(facetMatch) : Promise.resolve(undefined),
 
       (options as any)?.createdBy || (options as any)?.ownerUserId
         ? countPromotionTypes(filter)
         : Promise.resolve(undefined),
     ]);
 
+    const enriched = cardView
+      ? rawItems.map((item) => toPublicProjectCard(item))
+      : await enrichFeaturedListWithUsers(rawItems);
     return {
-      items: await enrichFeaturedListWithUsers(items),
+      items: cardView
+        ? enriched
+        : promotionStatus === "all" || promotionStatus === "scheduled"
+          ? enriched
+          : enriched.map((item) => hideUnstartedPromotion(item)),
       meta: {
         total,
         page,
@@ -1827,6 +2422,7 @@ export const FeaturePropertyService = {
         pages: Math.ceil(total / limit),
         ...(promotionCounts ? { promotionCounts } : {}),
       },
+      ...(facets ? { facets } : {}),
     };
   },
 
@@ -1839,10 +2435,12 @@ export const FeaturePropertyService = {
     city?: string;
     locality?: string;
   }) {
+    const highlightNow = new Date();
     const baseFilter: any = {
       status: "active",
       "promotion.type": { $in: ["featured", "sponsored"] },
-      "promotion.boostExpiry": { $gt: new Date() }, // 🔥 NOT expired
+      "promotion.boostExpiry": { $gt: highlightNow }, // 🔥 NOT expired
+      ...promotionHasStartedMatch(highlightNow),
     };
 
     const makeRegex = (value?: string) =>
@@ -2097,6 +2695,244 @@ export const FeaturePropertyService = {
 
   async getFeaturedLocationOptions(state?: string) {
     return getListingLocationOptions(state);
+  },
+
+  /**
+   * Cascading admin board facets.
+   * State / city / locality follow the selected builder.
+   * Builder follows the selected state / city / locality.
+   * Each list ignores its own selection so the user can switch.
+   */
+  async getProjectBoardFilterOptions(options?: {
+    state?: string;
+    city?: string;
+    locality?: string;
+    createdBy?: string;
+  }) {
+    const escapeRegex = (value: string) =>
+      value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const exactCi = (field: string, raw?: string) => {
+      const value = String(raw || "").trim();
+      if (!value) return null;
+      return {
+        [field]: {
+          $regex: `^\\s*${escapeRegex(value)}\\s*$`,
+          $options: "i",
+        },
+      };
+    };
+    const textField = (field: string) => ({
+      [field]: { $type: "string", $nin: ["", null] },
+    });
+    const trimmedLower = (field: string) => ({
+      $toLower: {
+        $trim: { input: { $ifNull: [`$${field}`, ""] } },
+      },
+    });
+
+    const createdBy = String(options?.createdBy || "").trim();
+    const builderScope =
+      mongoose.Types.ObjectId.isValid(createdBy)
+        ? { createdBy: new mongoose.Types.ObjectId(createdBy) }
+        : {};
+
+    const stateClause = exactCi("state", options?.state);
+    const cityClause = exactCi("city", options?.city);
+    const localityClause = exactCi("locality", options?.locality);
+
+    const cityMatch = {
+      ...builderScope,
+      ...(stateClause || {}),
+      ...textField("city"),
+    };
+    const localityMatch = {
+      ...builderScope,
+      ...(stateClause || {}),
+      ...(cityClause || {}),
+      ...textField("locality"),
+    };
+    const builderMatch: Record<string, unknown> = {
+      createdBy: { $type: "objectId" },
+      ...(stateClause || {}),
+      ...(cityClause || {}),
+      ...(localityClause || {}),
+    };
+
+    const promotionScope = {
+      ...builderScope,
+      ...(stateClause || {}),
+      ...(cityClause || {}),
+      ...(localityClause || {}),
+    };
+
+    const [states, cities, localities, builderRows, promotionRows] =
+      await Promise.all([
+      FeaturedProject.aggregate([
+        { $match: { ...builderScope, ...textField("state") } },
+        {
+          $group: {
+            _id: trimmedLower("state"),
+            name: { $first: "$state" },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { name: 1 } },
+      ]),
+      FeaturedProject.aggregate([
+        { $match: cityMatch },
+        {
+          $group: {
+            _id: {
+              state: trimmedLower("state"),
+              city: trimmedLower("city"),
+            },
+            name: { $first: "$city" },
+            state: { $first: "$state" },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { name: 1 } },
+      ]),
+      options?.city || createdBy
+        ? FeaturedProject.aggregate([
+            { $match: localityMatch },
+            {
+              $group: {
+                _id: {
+                  state: trimmedLower("state"),
+                  city: trimmedLower("city"),
+                  locality: trimmedLower("locality"),
+                },
+                name: { $first: "$locality" },
+                city: { $first: "$city" },
+                state: { $first: "$state" },
+                count: { $sum: 1 },
+              },
+            },
+            { $sort: { name: 1 } },
+          ])
+        : Promise.resolve([]),
+      FeaturedProject.aggregate([
+        { $match: builderMatch },
+        {
+          $group: {
+            _id: "$createdBy",
+            count: { $sum: 1 },
+            fallbackName: {
+              $first: { $arrayElemAt: ["$aboutSummary.builderName", 0] },
+            },
+          },
+        },
+        {
+          $lookup: {
+            from: User.collection.name,
+            localField: "_id",
+            foreignField: "_id",
+            pipeline: [
+              { $project: { name: 1, companyName: 1, email: 1 } },
+            ],
+            as: "user",
+          },
+        },
+        {
+          $project: {
+            count: 1,
+            name: {
+              $ifNull: [
+                { $arrayElemAt: ["$user.name", 0] },
+                {
+                  $ifNull: [
+                    { $arrayElemAt: ["$user.companyName", 0] },
+                    {
+                      $ifNull: [
+                        "$fallbackName",
+                        { $arrayElemAt: ["$user.email", 0] },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        { $match: { name: { $type: "string", $nin: ["", null] } } },
+        { $sort: { name: 1 } },
+      ]),
+      FeaturedProject.aggregate([
+        { $match: promotionScope },
+        {
+          $group: {
+            _id: {
+              $toLower: {
+                $ifNull: ["$promotion.type", "normal"],
+              },
+            },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+    ]);
+
+    const clean = (value: unknown) => String(value || "").replace(/\s+/g, " ").trim();
+
+    return {
+      states: (states || [])
+        .map((row: { name?: string; count?: number }) => ({
+          name: clean(row.name),
+          count: Number(row.count || 0),
+        }))
+        .filter((row: { name: string }) => row.name),
+      cities: (cities || [])
+        .map((row: { name?: string; state?: string; count?: number }) => ({
+          name: clean(row.name),
+          state: clean(row.state),
+          count: Number(row.count || 0),
+        }))
+        .filter((row: { name: string }) => row.name),
+      localities: (localities || [])
+        .map(
+          (row: {
+            name?: string;
+            city?: string;
+            state?: string;
+            count?: number;
+          }) => ({
+            name: clean(row.name),
+            city: clean(row.city),
+            state: clean(row.state),
+            count: Number(row.count || 0),
+          }),
+        )
+        .filter((row: { name: string }) => row.name),
+      builders: (builderRows || [])
+        .map((row: { _id?: unknown; name?: string; count?: number }) => ({
+          id: String(row._id || ""),
+          name: clean(row.name),
+          count: Number(row.count || 0),
+        }))
+        .filter((row: { id: string; name: string }) => row.id && row.name),
+      promotions: (promotionRows || []).reduce(
+        (
+          totals: {
+            normal: number;
+            featured: number;
+            prime: number;
+            sponsored: number;
+          },
+          row: { _id?: string; count?: number },
+        ) => {
+          const key = String(row._id || "normal");
+          const count = Number(row.count || 0);
+          if (key === "featured" || key === "prime" || key === "sponsored") {
+            totals[key] += count;
+          } else {
+            totals.normal += count;
+          }
+          return totals;
+        },
+        { normal: 0, featured: 0, prime: 0, sponsored: 0 },
+      ),
+    };
   },
 };
 

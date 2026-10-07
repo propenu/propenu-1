@@ -378,17 +378,18 @@ export const projectAnalytics = async (
 
     const matchFilter: any = {};
 
-    if (state) {
-      matchFilter.state = state;
-    }
-
-    if (city) {
-      matchFilter.city = city;
-    }
-
-    if (locality) {
-      matchFilter.locality = locality;
-    }
+    const exactLocation = (value?: string) => {
+      const trimmed = String(value || "").trim();
+      if (!trimmed) return null;
+      const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return { $regex: `^\\s*${escaped}\\s*$`, $options: "i" };
+    };
+    const stateMatch = exactLocation(state);
+    const cityMatch = exactLocation(city);
+    const localityMatch = exactLocation(locality);
+    if (stateMatch) matchFilter.state = stateMatch;
+    if (cityMatch) matchFilter.city = cityMatch;
+    if (localityMatch) matchFilter.locality = localityMatch;
     applyCreatedAtRange(matchFilter, req.query as Record<string, any>);
     if (creatorIds.length) matchFilter.createdBy = { $in: creatorIds.map((id) => new mongoose.Types.ObjectId(id)) };
 

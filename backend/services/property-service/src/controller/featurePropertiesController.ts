@@ -207,6 +207,18 @@ export const getAllFeatureProperties = async (req: Request, res: Response) => {
       to,
       createdFrom,
       createdTo,
+      minPrice,
+      maxPrice,
+      bhk,
+      rera,
+      category,
+      categoryType,
+      view,
+      possession,
+      builder,
+      propertyType,
+      minSqft,
+      maxSqft,
     } = req.query;
     const options: any = {};
     if (typeof page === "string") options.page = Number(page);
@@ -257,6 +269,35 @@ export const getAllFeatureProperties = async (req: Request, res: Response) => {
         return res.status(400).json({ error: "Invalid postedBy" });
       }
       options.postedBy = postedByRaw;
+    }
+    if (typeof minPrice === "string" && minPrice.trim()) {
+      options.minPrice = Number(minPrice);
+    }
+    if (typeof maxPrice === "string" && maxPrice.trim()) {
+      options.maxPrice = Number(maxPrice);
+    }
+    if (typeof bhk === "string" && bhk.trim()) options.bhk = bhk.trim();
+    if (rera === "1" || rera === "true") options.rera = true;
+    const categoryValue =
+      (typeof categoryType === "string" && categoryType.trim()) ||
+      (typeof category === "string" && category.trim()) ||
+      "";
+    if (categoryValue) options.categoryType = categoryValue;
+    if (view === "card") options.view = "card";
+    if (typeof possession === "string" && possession.trim()) {
+      options.possession = possession.trim();
+    }
+    if (typeof builder === "string" && builder.trim()) {
+      options.builder = builder.trim();
+    }
+    if (typeof propertyType === "string" && propertyType.trim()) {
+      options.propertyType = propertyType.trim();
+    }
+    if (typeof minSqft === "string" && minSqft.trim()) {
+      options.minSqft = Number(minSqft);
+    }
+    if (typeof maxSqft === "string" && maxSqft.trim()) {
+      options.maxSqft = Number(maxSqft);
     }
 
     const result = await FeaturePropertyService.getAllFeatures(options);
@@ -584,6 +625,38 @@ export const incrementFeatureClicks = async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error("incrementFeatureClicks error:", err);
     return res.status(500).json({ error: err.message || "Internal server error" });
+  }
+};
+
+/** State, city, locality, and builder lists for the projects board filters. */
+export const getProjectBoardFilterOptions = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const state =
+      typeof req.query.state === "string" ? req.query.state : undefined;
+    const city =
+      typeof req.query.city === "string" ? req.query.city : undefined;
+    const locality =
+      typeof req.query.locality === "string" ? req.query.locality : undefined;
+    const createdBy =
+      typeof req.query.createdBy === "string" ? req.query.createdBy : undefined;
+    if (createdBy && !mongoose.Types.ObjectId.isValid(createdBy)) {
+      return res.status(400).json({ error: "Invalid createdBy" });
+    }
+    const data = await FeaturePropertyService.getProjectBoardFilterOptions({
+      state,
+      city,
+      locality,
+      createdBy,
+    });
+    return res.json({ success: true, data });
+  } catch (err: any) {
+    console.error("getProjectBoardFilterOptions:", err);
+    return res
+      .status(500)
+      .json({ error: err.message || "Failed to load project filters" });
   }
 };
 

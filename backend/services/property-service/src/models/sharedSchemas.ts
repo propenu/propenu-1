@@ -275,6 +275,8 @@ export const PromotionHistorySchema = new Schema(
       ref: "User",
     },
     changedByRole: { type: String },
+    changedByName: { type: String },
+    changedByEmail: { type: String },
     reason: { type: String },
     startedAt: { type: Date },
     endedAt: { type: Date, default: null },

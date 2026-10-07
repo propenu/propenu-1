@@ -3,6 +3,7 @@ import Commercial from "../../models/commercialModel";
 import FeaturedProject from "../../models/featurePropertiesModel";
 import LandPlot from "../../models/landModel";
 import Residential from "../../models/residentialModel";
+import { promotionHasStartedMatch } from "../../services/promotionService";
 
 function attachType(data: any[], type: string) {
   return data.map((item) => withSponsoredDisplayFields(item, type));
@@ -173,18 +174,24 @@ function shuffleItems<T>(items: T[]) {
 }
 
 function buildBaseSponsoredFilter(filters: any) {
+  const now = new Date();
   const filter: any = {
     status: "active",
     "promotion.type": "sponsored",
-    $or: [
-      { "promotion.boostExpiry": { $gt: new Date() } },
-      { "promotion.boostExpiry": { $exists: false } },
+    $and: [
+      {
+        $or: [
+          { "promotion.boostExpiry": { $gt: now } },
+          { "promotion.boostExpiry": { $exists: false } },
+        ],
+      },
+      promotionHasStartedMatch(now),
     ],
   };
 
   const sponsoredAdTargetFilter = buildSponsoredAdTargetFilter(filters);
   if (sponsoredAdTargetFilter) {
-    filter.$and = [sponsoredAdTargetFilter];
+    filter.$and.push(sponsoredAdTargetFilter);
   }
 
   return filter;

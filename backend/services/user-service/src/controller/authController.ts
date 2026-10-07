@@ -1784,6 +1784,173 @@ export const claimSeClient = async (req: AuthRequest, res: Response) => {
   }
 };
 
+const emptyUserSearchPayload = (page: number, limit: number) => ({
+  results: [] as any[],
+  data: [] as any[],
+  count: 0,
+  meta: {
+    total: 0,
+    page,
+    limit,
+    pages: 1,
+    hasMore: false,
+    hasNextPage: false,
+    hasPreviousPage: page > 1,
+    rangeStart: 0,
+    rangeEnd: 0,
+  },
+  facets: {
+    states: [] as string[],
+    cities: [] as string[],
+    localities: [] as string[],
+    statusCounts: {} as Record<string, number>,
+  },
+});
+
+/**
+ * Picker / typeahead search. Matches roleId first (indexed), then pages with
+ * find + count. Skips role/agent lookups and location facets.
+ */
+const respondLeanUserSearch = async (
+  req: AuthRequest,
+  res: Response,
+  ctx: {
+    queryRaw: string;
+    query: string;
+    roleFilters: string[];
+    page: number;
+    limit: number;
+    skip: number;
+  },
+) => {
+  const { queryRaw, query, roleFilters, page, limit, skip } = ctx;
+  const roleDocs = roleFilters.length
+    ? await Role.find({ name: { $in: roleFilters } }).select("_id name").lean()
+    : [];
+  if (roleFilters.length && !roleDocs.length) {
+    return res.json(emptyUserSearchPayload(page, limit));
+  }
+
+  const actorRole = String(req.user?.roleName || "")
+    .trim()
+    .toLowerCase();
+  const searchingAssignableRoles =
+    roleFilters.length > 0 &&
+    roleFilters.every((role) =>
+      new Set<string>([
+        ...PLATFORM_END_USER_ROLE_SET,
+        "relationship_manager",
+        "relationship_managers",
+      ]).has(role),
+    );
+  const actorIsPlatformEndUser = PLATFORM_END_USER_ROLE_SET.has(actorRole);
+
+  let visibleRoleIds: any[] | null = null;
+  if (
+    actorRole &&
+    actorRole !== "super_admin" &&
+    actorRole !== "admin" &&
+    !(searchingAssignableRoles && !actorIsPlatformEndUser)
+  ) {
+    const operator = await User.findById(req.user?.sub).select("roleId").lean();
+    visibleRoleIds = await resolveVisibleRoleIdsForActor({
+      actorRoleId: operator?.roleId ?? null,
+      actorRoleName: actorRole,
+      permissions: req.user?.permissions || [],
+    });
+  }
+
+  const allowedIds = visibleRoleIds
+    ? new Set(visibleRoleIds.map((id) => String(id)))
+    : null;
+  const roleIds = roleDocs
+    .map((role) => role._id)
+    .filter((id) => !allowedIds || allowedIds.has(String(id)));
+  if (roleFilters.length && !roleIds.length) {
+    return res.json(emptyUserSearchPayload(page, limit));
+  }
+
+  const filter: Record<string, any> = {};
+  if (roleIds.length) {
+    filter.roleId = { $in: roleIds };
+  } else if (allowedIds && visibleRoleIds) {
+    filter.roleId = { $in: visibleRoleIds };
+  }
+
+  const createdAtFilter = buildCreatedAtQueryFilter(
+    req.query as Record<string, any>,
+  );
+  if (createdAtFilter) filter.createdAt = createdAtFilter;
+
+  if (queryRaw) {
+    const rx = { $regex: query, $options: "i" };
+    filter.$or = [
+      { name: rx },
+      { companyName: rx },
+      { email: rx },
+      { phone: rx },
+      { userCode: rx },
+    ];
+  }
+
+  const roleNameById = new Map(
+    roleDocs.map((role) => [String(role._id), role.name]),
+  );
+  const [total, rows] = await Promise.all([
+    User.countDocuments(filter),
+    User.find(filter)
+      .select(
+        "name companyName email phone userCode locality city state pincode isActive createdAt roleId managerId",
+      )
+      .sort(queryRaw ? { name: 1, createdAt: -1 } : { createdAt: -1, name: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+  ]);
+
+  const users = rows.map((user: any) => ({
+    _id: user._id,
+    userId: user._id,
+    name: user.name,
+    companyName: user.companyName,
+    email: user.email,
+    phone: user.phone,
+    userCode: user.userCode,
+    locality: user.locality,
+    city: user.city,
+    state: user.state,
+    pincode: user.pincode,
+    isActive: user.isActive,
+    createdAt: user.createdAt,
+    managerId: user.managerId || null,
+    role: roleNameById.get(String(user.roleId)) || "",
+  }));
+  const pages = Math.max(1, Math.ceil(total / limit) || 1);
+
+  return res.json({
+    results: users,
+    data: users,
+    count: users.length,
+    meta: {
+      total,
+      page,
+      limit,
+      pages,
+      hasMore: page < pages,
+      hasNextPage: page < pages,
+      hasPreviousPage: page > 1,
+      rangeStart: total === 0 ? 0 : skip + 1,
+      rangeEnd: Math.min(skip + users.length, total),
+    },
+    facets: {
+      states: [],
+      cities: [],
+      localities: [],
+      statusCounts: {},
+    },
+  });
+};
+
 export const searchUsers = async (req: AuthRequest, res: Response) => {
   try {
     const queryRaw = req.query.q?.toString().trim() || "";
@@ -1839,6 +2006,20 @@ export const searchUsers = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    const leanSearch =
+      String(req.query.lean || "").trim() === "1" ||
+      String(req.query.view || "").trim().toLowerCase() === "picker";
+    if (leanSearch) {
+      return respondLeanUserSearch(req, res, {
+        queryRaw,
+        query,
+        roleFilters,
+        page,
+        limit,
+        skip,
+      });
+    }
+
     const match: any = {};
 
     if (queryRaw) {
@@ -1857,10 +2038,25 @@ export const searchUsers = async (req: AuthRequest, res: Response) => {
 
     const pipeline: any[] = [];
 
+    // Match role on the user document before lookups so search does not scan every user.
+    const matchedRoles = roleFilters.length
+      ? await Role.find({ name: { $in: roleFilters } }).select("_id").lean()
+      : [];
+    if (roleFilters.length && !matchedRoles.length) {
+      return res.json(emptyUserSearchPayload(page, limit));
+    }
+    if (matchedRoles.length) {
+      pipeline.push({
+        $match: { roleId: { $in: matchedRoles.map((role) => role._id) } },
+      });
+    }
+
     const createdAtFilter = buildCreatedAtQueryFilter(req.query as Record<string, any>);
     if (createdAtFilter) {
       pipeline.push({ $match: { createdAt: createdAtFilter } });
     }
+
+    const needsAgentJoin = !roleFilters.length || roleFilters.includes("agent");
 
     pipeline.push(
       {
@@ -1872,21 +2068,25 @@ export const searchUsers = async (req: AuthRequest, res: Response) => {
         },
       },
       { $unwind: "$role" },
-      {
-        $lookup: {
-          from: "agents",
-          localField: "_id",
-          foreignField: "user",
-          as: "agent",
-        },
-      },
-      {
-        $unwind: {
-          path: "$agent",
-          preserveNullAndEmptyArrays: true,
-        },
-      },
     );
+    if (needsAgentJoin) {
+      pipeline.push(
+        {
+          $lookup: {
+            from: "agents",
+            localField: "_id",
+            foreignField: "user",
+            as: "agent",
+          },
+        },
+        {
+          $unwind: {
+            path: "$agent",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+      );
+    }
 
     const actorRole = String(req.user?.roleName || "")
       .trim()

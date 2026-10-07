@@ -147,6 +147,9 @@ const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const VIDEO_MAX_BYTES = 20 * 1024 * 1024;
 const BROCHURE_MAX_BYTES = 20 * 1024 * 1024;
 const MAX_TOTAL_SIZE = 80 * 1024 * 1024;
+// Busboy's default text-field cap is 1MB. Details saves stringify gallery
+// metadata and other objects into single parts, which crosses that cap.
+const FIELD_MAX_BYTES = 8 * 1024 * 1024;
 
 /* =========================
    STORAGE
@@ -186,6 +189,7 @@ const upload = multer({
   limits: {
     files: 120,
     fileSize: VIDEO_MAX_BYTES,
+    fieldSize: FIELD_MAX_BYTES,
   },
 });
 
@@ -231,9 +235,10 @@ export const uploadMedia = (
   handler(req, res, (err: any) => {
     if (err instanceof multer.MulterError) {
       console.error("Multer upload error:", err);
+      const field = err.field ? `: ${err.field}` : "";
       return res.status(400).json({
         success: false,
-        message: err.message,
+        message: `${err.message}${field}`,
       });
     }
 

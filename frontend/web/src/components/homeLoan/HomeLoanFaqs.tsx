@@ -12,32 +12,32 @@ const homeLoanFaqs: FaqItem[] = [
   {
     question: "How much home loan can I be eligible for?",
     answer:
-      "Your home loan eligibility depends on multiple factors including your monthly net income, age, credit score (CIBIL), existing financial liabilities (EMIs), loan tenure, and property valuation. Lenders typically allow your total monthly EMIs (including the new loan) to be up to 50%–60% of your net monthly income.",
+      "Your home loan eligibility depends on factors such as your monthly income, age, credit score, existing EMIs, loan tenure and property value. Lenders also consider your repayment capacity before deciding the eligible loan amount. The exact amount may vary from one lender to another.",
   },
   {
     question: "What documents are required to apply for a home loan?",
     answer:
-      "Common documents include proof of identity (Aadhaar, PAN card, Passport), proof of address, income documents (last 3-6 months' salary slips, Form 16, last 6 months' bank statements; or audited balance sheets/ITR for self-employed individuals), and property documents (sale agreement, title deeds, approved building plan, and NOC from the builder/society).",
+      "Common documents include identity proof, address proof, PAN, income proof, recent bank statements and property-related documents such as the sale agreement, title documents and approved building plans. Salaried and self-employed applicants may need different income documents. Additional documents may be required depending on the lender and property.",
   },
   {
     question: "What is the difference between fixed and floating interest rates?",
     answer:
-      "A fixed interest rate remains unchanged throughout the loan tenure (or a specified lock-in period), ensuring constant monthly EMIs regardless of market fluctuations. A floating interest rate is tied to an external benchmark (such as the RBI repo rate) and fluctuates according to market changes, which can increase or decrease your EMI over time.",
+      "A fixed interest rate remains unchanged for the period specified in the loan agreement, giving you greater certainty over repayments. A floating interest rate can change based on the lender’s applicable benchmark and market conditions. When the rate changes, your EMI, loan tenure or both may also change.",
   },
   {
     question: "Can I prepay or foreclose my home loan without penalty?",
     answer:
-      "As per Reserve Bank of India (RBI) guidelines, banks and housing finance companies cannot charge prepayment penalties or foreclosure charges on floating-rate home loans sanctioned to individual borrowers. Fixed-rate home loans may attract a nominal charge depending on the lender's policy.",
+      "For floating-rate loans given to individual borrowers for non-business purposes, applicable RBI rules generally do not allow lenders to charge foreclosure or prepayment penalties. For fixed-rate loans and other cases, charges, if any, may depend on the lender’s policy and loan terms.",
   },
   {
     question: "What tax benefits can I claim on a home loan?",
     answer:
-      "Borrowers can claim tax deductions under Section 80C for principal repayment up to ₹1.5 Lakh per financial year, and under Section 24(b) for interest payment up to ₹2 Lakh for self-occupied properties. Additional benefits may apply for first-time homebuyers under applicable sections.",
+      "Home loan tax benefits depend on the tax regime you choose and the applicable tax rules. Under the old tax regime, eligible borrowers may claim principal repayment within the overall Section 80C limit of ₹1.5 lakh and interest on an eligible self-occupied property under Section 24(b) up to ₹2 lakh, subject to applicable conditions. These benefits are not available in the same manner under the new tax regime.",
   },
   {
     question: "How long does it take for a home loan to get approved and disbursed?",
     answer:
-      "Initial in-principle approval or sanction letter is usually issued within 2 to 5 business days after document verification. Complete legal and technical verification of the property typically takes 7 to 15 business days, after which disbursement takes place once agreements are executed.",
+      "The timeline depends on the lender, applicant profile, document verification and property checks. An initial assessment may be completed relatively quickly, while final approval and disbursement can take longer if legal or technical verification is required. Disbursement takes place after all lender requirements and documentation are completed.",
   },
 ];
 
@@ -49,37 +49,49 @@ export default function HomeLoanFaqs() {
   };
 
   return (
-    <section className="w-full bg-[#F9FBFD] py-12 sm:py-16 border-t border-gray-100">
-      <div className="container mx-auto">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-8 sm:mb-12">
-            <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight text-gray-950">
+    <section className="w-full border-t border-gray-100 bg-white py-12 sm:py-16">
+      <div className="container mx-auto px-4">
+        <div className="mx-auto max-w-4xl">
+          <div className="mb-8 text-center sm:mb-10">
+            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#27AE60]">
+              Home Loan Guide
+            </p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-gray-950 sm:text-3xl">
               Frequently Asked Questions
             </h2>
-            <p className="mt-2 text-sm sm:text-base text-gray-500">
-              Clear answers to the most common questions about home loan eligibility, documentation, and processes.
+            <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
+              Clear answers to common questions about eligibility, documents, interest rates, prepayment, tax benefits, and approval timelines.
             </p>
           </div>
 
-          <div className="space-y-3 sm:space-y-4">
+          <div className="divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white shadow-sm">
             {homeLoanFaqs.map((faq, index) => {
               const isOpen = openIndex === index;
               return (
                 <div
                   key={faq.question}
-                  className="rounded-xl border border-gray-200/80 bg-white transition-all duration-200 shadow-xs hover:border-emerald-200 overflow-hidden"
+                  className="overflow-hidden"
                 >
                   <button
                     type="button"
                     onClick={() => toggleFaq(index)}
                     aria-expanded={isOpen}
-                    className="flex w-full items-center justify-between gap-4 p-5 text-left transition cursor-pointer"
+                    className="flex w-full items-center gap-4 px-4 py-4 text-left transition hover:bg-gray-50 cursor-pointer sm:px-6 sm:py-5"
                   >
-                    <span className="text-base sm:text-lg font-semibold text-gray-900">
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold ${
+                        isOpen
+                          ? "bg-[#27AE60] text-white"
+                          : "bg-emerald-50 text-[#27AE60]"
+                      }`}
+                    >
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span className="min-w-0 flex-1 text-sm font-semibold leading-6 text-gray-950 sm:text-base">
                       {faq.question}
                     </span>
                     <span
-                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-[#27AE60] transition-transform duration-200 ${
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-transform duration-200 ${
                         isOpen ? "rotate-180" : ""
                       }`}
                     >
@@ -88,8 +100,10 @@ export default function HomeLoanFaqs() {
                   </button>
 
                   {isOpen && (
-                    <div className="px-5 pb-5 pt-1 text-sm sm:text-base text-gray-600 leading-relaxed border-t border-gray-50">
-                      {faq.answer}
+                    <div className="px-4 pb-5 sm:px-6">
+                      <p className="pl-12 text-sm leading-7 text-gray-600">
+                        {faq.answer}
+                      </p>
                     </div>
                   )}
                 </div>

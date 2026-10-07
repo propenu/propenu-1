@@ -7,6 +7,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next"
 import UserJourneyTracker from "@/components/tracking/UserJourneyTracker";
 import { absoluteSiteUrl, DEFAULT_OG_IMAGE, SITE_URL } from "@/utilies/siteUrl";
 
+const ENABLE_GTM = process.env.NODE_ENV === "production";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -78,43 +79,15 @@ export default function RootLayout({
           content="f80dc643708108d5908cbac2e3da68d4"
         />
 
-        <Script id="google-tag-manager" strategy="beforeInteractive">
-          {`(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+        {ENABLE_GTM && (
+          <Script id="google-tag-manager" strategy="beforeInteractive">
+            {`(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
 new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
 j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
 })(window,document,'script','dataLayer','GTM-TJMKXQR5');`}
-        </Script>
-        <Script id="strip-extension-hydration-attrs" strategy="beforeInteractive">
-          {`(() => {
-  const attr = "bis_skin_checked";
-  const strip = (root = document) => {
-    root.querySelectorAll?.("[" + attr + "]").forEach((node) => node.removeAttribute(attr));
-  };
-  strip();
-  const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      if (mutation.type === "attributes" && mutation.attributeName === attr) {
-        mutation.target.removeAttribute(attr);
-      }
-      mutation.addedNodes.forEach((node) => {
-        if (node.nodeType === 1) {
-          node.removeAttribute?.(attr);
-          strip(node);
-        }
-      });
-    }
-  });
-  observer.observe(document.documentElement, {
-    subtree: true,
-    childList: true,
-    attributes: true,
-    attributeFilter: [attr],
-  });
-  window.addEventListener("load", () => observer.disconnect(), { once: true });
-})();`}
-        </Script>
-
+          </Script>
+        )}
         <Script
           src="https://checkout.razorpay.com/v1/checkout.js"
           strategy="afterInteractive"
@@ -126,14 +99,16 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         suppressHydrationWarning
         className="antialiased"
       >
-        <noscript>
-          <iframe
-            src="https://www.googletagmanager.com/ns.html?id=GTM-TJMKXQR5"
-            height="0"
-            width="0"
-            style={{ display: "none", visibility: "hidden" }}
-          />
-        </noscript>
+        {ENABLE_GTM && (
+          <noscript>
+            <iframe
+              src="https://www.googletagmanager.com/ns.html?id=GTM-TJMKXQR5"
+              height="0"
+              width="0"
+              style={{ display: "none", visibility: "hidden" }}
+            />
+          </noscript>
+        )}
         <ClientProviders><UserJourneyTracker />{children}</ClientProviders>
           <SpeedInsights />
       </body>

@@ -67,7 +67,13 @@ const sendShortlistPush = async ({
         propertyId,
         propertyType,
       });
-      return;
+      return {
+        status: "skipped_no_owner_tokens",
+        ownerId: String(ownerId),
+        tokenCount: 0,
+        successCount: 0,
+        failureCount: 0,
+      };
     }
 
     const buyerName = buyer?.name || "A user";
@@ -110,8 +116,26 @@ const sendShortlistPush = async ({
       successCount: result.successCount,
       failureCount: result.failureCount,
     });
+
+    return {
+      status: result.successCount > 0 ? "sent" : "failed",
+      ownerId: String(ownerId),
+      audience,
+      tokenCount: ownerTokens.length,
+      successCount: result.successCount,
+      failureCount: result.failureCount,
+      failedTokens: result.failedTokens.length,
+    };
   } catch (error) {
     console.error("Error sending shortlist push:", error);
+    return {
+      status: "error",
+      ownerId: String(ownerId),
+      tokenCount: 0,
+      successCount: 0,
+      failureCount: 0,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 };
 
@@ -169,6 +193,14 @@ export const addToShortlistService = async (
     { upsert: true, new: true },
   );
 
+  let notification = {
+    status: existing ? "skipped_already_shortlisted" : "skipped_missing_owner",
+    ownerId: (property as any).createdBy ? String((property as any).createdBy) : "",
+    tokenCount: 0,
+    successCount: 0,
+    failureCount: 0,
+  };
+
   if (!existing && (property as any).createdBy) {
     const propertyTitle =
       (property as any).title ||
@@ -176,13 +208,13 @@ export const addToShortlistService = async (
       (property as any).buildingName ||
       "your property";
 
-    sendShortlistPush({
+    notification = await sendShortlistPush({
       ownerId: (property as any).createdBy,
       actorUserId: userId,
       propertyId,
       propertyTitle,
       propertyType,
-    });
+    }) as typeof notification;
 
     Promise.all([
       User.findById(userId).select("name").lean(),
@@ -209,7 +241,10 @@ export const addToShortlistService = async (
       .catch((err) => console.error("Error triggering shortlist email:", err));
   }
 
-  return result;
+  return {
+    shortlist: result,
+    notification,
+  };
 };
 
 export const removeFromShortlistService = async (

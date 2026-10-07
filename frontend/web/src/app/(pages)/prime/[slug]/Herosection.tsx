@@ -640,13 +640,15 @@ export default function HeroSection({ hero }: Props) {
             }`}>
               {showSubmittedStep ? (
                 <div className="overflow-hidden rounded-lg shadow-[0_14px_38px_rgba(15,23,42,0.16)]">
-                  <div className="relative overflow-hidden px-4 py-4 text-center">
+                  <div className="relative overflow-hidden border border-white/20 bg-white/95 px-4 py-5 text-center">
                     <div className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: accentColor }} />
-                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full text-white shadow-[0_10px_24px_rgba(39,174,96,0.28)]" style={{ backgroundColor: accentColor }}>
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full text-white shadow-[0_10px_24px_rgba(39,174,96,0.28)]" style={{ backgroundColor: accentColor }}>
                       <span className="h-4 w-2 rotate-45 border-b-2 border-r-2 border-white" />
                     </div>
-                    <p className="mt-3 text-sm font-semibold" style={{ color: accentColor }}>Thank You!</p>
-                    
+                    <p className="mt-3 text-base font-bold text-slate-950">Thank You!</p>
+                    <p className="mt-1 text-xs font-medium text-slate-600">
+                      Your enquiry has been submitted.
+                    </p>
                   </div>
 
                   <div className="border-t border-slate-500 px-3 py-3">

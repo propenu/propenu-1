@@ -319,13 +319,13 @@ export default function FeaturedProjectsClient() {
             Stand out for the lifestyle they offer in {selectedCity?.city ?? "Hyderabad"}
           </p>
         </div>
-        <Link
+        {/* <Link
           href="/prime"
           aria-label="View all prime projects"
           className="flex shrink-0 items-center gap-1 whitespace-nowrap text-sm font-medium text-green-600 hover:text-green-700 sm:text-base"
         >
           View All <RiArrowRightSLine size={18} />
-        </Link>
+        </Link> */}
       </div>
 
       {/* Slider area — own relative wrapper so arrow top-1/2 is scoped here */}

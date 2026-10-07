@@ -1,13 +1,43 @@
 export const BANNER_SLOTS = {
-  desktop: { width: 1920, height: 600, label: "Desktop" },
-  laptop: { width: 1440, height: 500, label: "Laptop" },
-  tablet: { width: 1536, height: 768, label: "Tablet" },
-  mobile: { width: 1080, height: 900, label: "Mobile" },
+  desktop: { width: 1920, height: 330, label: "Desktop" },
+  laptop: { width: 1440, height: 275, label: "Laptop" },
+  tablet: { width: 1536, height: 422, label: "Tablet" },
+  mobile: { width: 1080, height: 495, label: "Mobile" },
 } as const;
 
 export type BannerSlot = keyof typeof BANNER_SLOTS;
 
 export const BANNER_SLOT_KEYS = Object.keys(BANNER_SLOTS) as BannerSlot[];
+
+export const BANNER_LEGACY_SLOT_SIZES: Record<
+  BannerSlot,
+  Array<{ width: number; height: number }>
+> = {
+  desktop: [
+    { width: 1920, height: 360 },
+    { width: 1920, height: 300 },
+    { width: 1920, height: 420 },
+    { width: 1920, height: 600 },
+  ],
+  laptop: [
+    { width: 1440, height: 300 },
+    { width: 1440, height: 250 },
+    { width: 1440, height: 350 },
+    { width: 1440, height: 500 },
+  ],
+  tablet: [
+    { width: 1536, height: 461 },
+    { width: 1536, height: 384 },
+    { width: 1536, height: 538 },
+    { width: 1536, height: 768 },
+  ],
+  mobile: [
+    { width: 1080, height: 540 },
+    { width: 1080, height: 450 },
+    { width: 1080, height: 630 },
+    { width: 1080, height: 900 },
+  ],
+};
 
 export const BANNER_MAX_BYTES = 1 * 1024 * 1024; // 1 MB
 export const LOGO_MAX_BYTES = 4 * 1024 * 1024; // 4 MB

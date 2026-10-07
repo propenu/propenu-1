@@ -522,7 +522,7 @@ const NotificationFeed = ({
 
   const pushButtonLabel =
     pushPermission === "granted"
-      ? "Push On"
+      ? "Sync Push"
       : pushPermission === "denied"
         ? "Push Blocked"
         : "Enable Push";
@@ -581,7 +581,6 @@ const NotificationFeed = ({
               onClick={enablePushNotifications}
               disabled={
                 isPushEnabling ||
-                pushPermission === "granted" ||
                 pushPermission === "unsupported"
               }
               className="inline-flex w-fit items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-medium text-[#21884B] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-70 sm:px-4 sm:py-2 sm:text-sm"
@@ -619,7 +618,6 @@ const NotificationFeed = ({
               onClick={enablePushNotifications}
               disabled={
                 isPushEnabling ||
-                pushPermission === "granted" ||
                 pushPermission === "unsupported"
               }
               className="inline-flex w-fit items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-medium text-[#21884B] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-70 sm:px-4 sm:py-2 sm:text-sm"

@@ -75,8 +75,17 @@ const canManageRoleLifecycle = (
 const normalizePermissions = (permissions: unknown[]) =>
   [...new Set(permissions.map((permission) => String(permission).trim().toLowerCase()))];
 
+/** Older dashboard ticks. Kept so a save does not fail; they are not shown. */
+const RETIRED_PERMISSIONS = new Set([
+  "dashboard:view_analytics",
+  "dashboard:view_reports",
+  "dashboard:export",
+]);
+
 const getInvalidPermissions = (permissions: string[]) =>
-  permissions.filter((permission) => !PERMISSION_SET.has(permission));
+  permissions.filter(
+    (permission) => !PERMISSION_SET.has(permission) && !RETIRED_PERMISSIONS.has(permission),
+  );
 
 export const getPermissionCatalog = async (_req: AuthRequest, res: Response) =>
   res.json({

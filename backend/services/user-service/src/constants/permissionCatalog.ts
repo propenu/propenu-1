@@ -22,7 +22,7 @@ const definePermissionModule = (
 });
 
 export const PERMISSION_CATALOG: PermissionModule[] = [
-  definePermissionModule("dashboard", "Dashboard", "Platform overview, analytics and reporting.", [["view", "View"], ["view_analytics", "View analytics"], ["view_reports", "View reports"], ["export", "Export"]]),
+  definePermissionModule("dashboard", "Dashboard", "Opens this role's own dashboard.", [["view", "View"]]),
   definePermissionModule("user", "Users", "Manage Propenu customer accounts.", ["create", "view", "update", "delete", "activate", "deactivate", ["assign_role", "Assign role"], ["assign_manager", "Assign manager"]]),
   definePermissionModule("role", "Roles & permissions", "Create roles and control access.", ["create", "view", "update", "delete", ["update_permissions", "Update permissions"], "activate", "deactivate"]),
   definePermissionModule("builder", "Builders", "Manage builder organisations and profiles.", ["create", "view", "update", "delete", "verify", "activate", "deactivate", ["view_profile", "View profile"], ["update_profile", "Update profile"]]),

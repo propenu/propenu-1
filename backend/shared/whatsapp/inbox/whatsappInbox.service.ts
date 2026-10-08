@@ -188,8 +188,8 @@ export async function processWhatsAppWebhookPayload(body: any) {
         if (created) {
           saved += 1;
           inboundSaved += 1;
-          // Fire-and-forget welcome (Bizrow-style conversation flow)
-          void maybeSendWelcomeAutoReply(fromWaId);
+          const inboundText = extractInboundText(message).body;
+          void replyToInboundMessage(fromWaId, inboundText);
         }
       }
 
@@ -396,6 +396,96 @@ async function persistCloudMessage(params: {
   });
 
   return created;
+}
+
+const REGISTRATION_GREETING =
+  /^(hi+|hello+|hey+|hai|helo|namaste|namaskar|good morning|good evening|good afternoon)(\s+\S+){0,3}$/;
+
+/** "hi" / "hello" from a new chat. Longer questions are left to the normal inbox. */
+export function isWhatsAppGreeting(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized || normalized.length > 40) return false;
+  return REGISTRATION_GREETING.test(normalized);
+}
+
+export function buildRegistrationPrompt(frontendBase?: string) {
+  const base = String(frontendBase || process.env.FRONTEND_URL || "https://propenu.com")
+    .trim()
+    .replace(/\/$/, "");
+  const link = `${base}/?auth=register&redirect=%2F`;
+  return `Your Propenu registration is incomplete. Please finish your account here:\n${link}`;
+}
+
+function phoneLookupValues(waId: string) {
+  const digits = String(waId || "").replace(/\D/g, "");
+  const last10 = digits.slice(-10);
+  if (!/^\d{10}$/.test(last10)) return [];
+  return [...new Set([last10, `91${last10}`, `+91${last10}`, digits, `+${digits}`])];
+}
+
+async function findUserByWhatsAppPhone(waId: string) {
+  const phones = phoneLookupValues(waId);
+  if (!phones.length) return null;
+  const last10 = phones[0];
+  return mongoose.connection.collection("users").findOne(
+    {
+      $or: [
+        { phone: { $in: phones } },
+        { phone: { $regex: `${last10}$` } },
+      ],
+    },
+    { projection: { phoneVerified: 1 } },
+  );
+}
+
+async function replyToInboundMessage(waId: string, text: string) {
+  try {
+    const sentRegistration = await maybeSendIncompleteRegistrationReply(waId, text);
+    if (!sentRegistration) {
+      await maybeSendWelcomeAutoReply(waId);
+    }
+  } catch (err) {
+    console.error("WhatsApp inbound auto-reply failed:", err);
+  }
+}
+
+/**
+ * New or unfinished account says hi: session text with the register link.
+ * A phoneVerified account is left alone. Not a Meta template.
+ */
+async function maybeSendIncompleteRegistrationReply(waId: string, text: string) {
+  if (!waId || !isWhatsAppGreeting(text)) return false;
+  if (mongoose.connection.readyState !== 1) {
+    console.error("WhatsApp registration prompt skipped: database is not connected");
+    return false;
+  }
+
+  const user = await findUserByWhatsAppPhone(waId);
+  if (user?.phoneVerified === true) return false;
+
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const alreadySent = await WhatsAppMessage.exists({
+    waId,
+    direction: "outbound",
+    "raw.source": "registration_prompt",
+    createdAt: { $gte: dayAgo },
+  });
+  if (alreadySent) return true;
+
+  const body = buildRegistrationPrompt();
+  await sendInboxTextMessage(waId, body, {
+    source: "registration_prompt",
+    sessionTextOnly: true,
+  });
+  console.log(
+    `WhatsApp registration prompt sent to ******${String(waId).slice(-4)}`,
+  );
+  return true;
 }
 
 /** Optional first-reply bot (Bizrow-style welcome) using Cloud API token. */
@@ -785,7 +875,7 @@ export async function markConversationRead(waIdRaw: string) {
 export async function sendInboxTextMessage(
   waIdRaw: string,
   textRaw: string,
-  opts?: { source?: string },
+  opts?: { source?: string; sessionTextOnly?: boolean },
 ) {
   const waId = normalizeWaId(waIdRaw);
   const text = String(textRaw || "").trim();
@@ -942,7 +1032,7 @@ export async function sendInboxTextMessage(
         response = await sendFreeText();
       } catch (firstErr: any) {
         // Session can expire even if we thought we were inside the window.
-        if (isSessionWindowError(firstErr)) {
+        if (isSessionWindowError(firstErr) && !opts?.sessionTextOnly) {
           sendMode = "template";
           const out = await tryTemplates();
           response = out.response;
@@ -951,6 +1041,10 @@ export async function sendInboxTextMessage(
           throw firstErr;
         }
       }
+    } else if (opts?.sessionTextOnly) {
+      throw new Error(
+        "Registration reply is session text only and the 24-hour window is closed",
+      );
     } else {
       // Outside 24h / no inbound → must use template (re-engagement).
       sendMode = "template";
@@ -989,9 +1083,10 @@ export async function sendInboxTextMessage(
       err?.message ||
       "Failed to send WhatsApp message";
     const code = err?.response?.data?.error?.code;
-    const sessionHint = isSessionWindowError(err)
-      ? ` Free-form text is blocked outside the 24h window (Re-engagement). Tried template(s): ${templateCandidates.join(", ")}. Approve template "inbox_agent_reply" in Meta or set WHATSAPP_INBOX_REPLY_TEMPLATE.`
-      : "";
+    const sessionHint =
+      isSessionWindowError(err) && !opts?.sessionTextOnly
+        ? ` Free-form text is blocked outside the 24h window (Re-engagement). Tried template(s): ${templateCandidates.join(", ")}. Approve template "inbox_agent_reply" in Meta or set WHATSAPP_INBOX_REPLY_TEMPLATE.`
+        : "";
 
     pending.status = "failed";
     pending.error = `${apiError}${sessionHint}`;

@@ -5,6 +5,12 @@ import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { createHomeLoanApplication } from "@/data/ClientData";
+import {
+  getIndianPhoneDigits,
+  INDIA_COUNTRY_CODE,
+  INDIAN_PHONE_DIGIT_LENGTH,
+  isValidIndianPhoneNumber,
+} from "@/utilies/indianPhone";
 
 interface HomeLoanApplyDialogProps {
   isOpen: boolean;
@@ -39,7 +45,7 @@ export default function HomeLoanApplyDialog({
     if (!isOpen || !user) return;
 
     setFullName(user.name || "");
-    setMobileNumber(String(user.phone || "").replace(/\D/g, "").slice(-10));
+    setMobileNumber(getIndianPhoneDigits(user.phone));
     setFormErrors({ fullName: "", mobileNumber: "" });
   }, [isOpen, user]);
 
@@ -96,7 +102,7 @@ export default function HomeLoanApplyDialog({
 
     if (!normalizedMobile) {
       nextErrors.mobileNumber = "Please enter your mobile number.";
-    } else if (!/^[6-9]\d{9}$/.test(normalizedMobile)) {
+    } else if (!isValidIndianPhoneNumber(normalizedMobile)) {
       nextErrors.mobileNumber = "Enter a valid 10-digit mobile number.";
     }
 
@@ -218,22 +224,29 @@ export default function HomeLoanApplyDialog({
 
             <label className="mt-5 block text-xs font-medium text-gray-700">
               Mobile Number<span className="text-red-500">*</span>
-              <input
-                type="tel"
-                inputMode="numeric"
-                maxLength={10}
-                value={mobileNumber}
-                onChange={(event) => {
-                  setMobileNumber(event.target.value.replace(/\D/g, ""));
-                  setFormErrors((current) => ({ ...current, mobileNumber: "" }));
-                }}
-                placeholder="Enter your mobile number"
-                className={`mt-2 h-11 w-full rounded-md border bg-[#F2FFF8] px-3 text-sm font-medium text-gray-800 outline-none transition focus:ring-2 ${
+              <div
+                className={`mt-2 flex h-11 overflow-hidden rounded-md border bg-[#F2FFF8] transition focus-within:ring-2 ${
                   formErrors.mobileNumber
-                    ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-                    : "border-transparent focus:border-[#9FE5BF] focus:ring-[#27AE60]/25"
+                    ? "border-red-300 focus-within:border-red-400 focus-within:ring-red-100"
+                    : "border-transparent focus-within:border-[#9FE5BF] focus-within:ring-[#27AE60]/25"
                 }`}
-              />
+              >
+                <span className="flex items-center border-r border-emerald-100 px-3 text-sm font-semibold text-gray-700">
+                  {INDIA_COUNTRY_CODE}
+                </span>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={INDIAN_PHONE_DIGIT_LENGTH}
+                  value={mobileNumber}
+                  onChange={(event) => {
+                    setMobileNumber(getIndianPhoneDigits(event.target.value));
+                    setFormErrors((current) => ({ ...current, mobileNumber: "" }));
+                  }}
+                  placeholder="Enter your mobile number"
+                  className="min-w-0 flex-1 bg-transparent px-3 text-sm font-medium text-gray-800 outline-none"
+                />
+              </div>
               {formErrors.mobileNumber ? (
                 <span className="mt-1.5 block text-xs font-medium text-red-500">
                   {formErrors.mobileNumber}

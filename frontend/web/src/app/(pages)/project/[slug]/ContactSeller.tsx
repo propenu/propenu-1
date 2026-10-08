@@ -19,6 +19,13 @@ import Cookies from "js-cookie";
 import OtpFourDigitInput from "@/components/builder/OtpFourDigitInput";
 import { HiXMark } from "react-icons/hi2";
 import { z } from "zod";
+import {
+  formatIndianPhoneNumber,
+  getIndianPhoneDigits,
+  INDIA_COUNTRY_CODE,
+  INDIAN_PHONE_DIGIT_LENGTH,
+  isValidIndianPhoneNumber,
+} from "@/utilies/indianPhone";
 
 function toTitleCase(str?: string) {
   if (!str) return "";
@@ -157,17 +164,11 @@ function getLeadErrorMessage(error: unknown) {
 }
 
 function isValidPhoneNumber(value: string) {
-  const normalized = value.replace(/[^\d+]/g, "");
-  return /^\+?[1-9]\d{9,14}$/.test(normalized);
+  return isValidIndianPhoneNumber(value);
 }
 
 function sanitizePhoneInput(value: string) {
-  const cleaned = value.replace(/[^\d+]/g, "");
-  if (!cleaned.startsWith("+")) {
-    return cleaned.replace(/\+/g, "");
-  }
-
-  return `+${cleaned.slice(1).replace(/\+/g, "")}`;
+  return formatIndianPhoneNumber(value);
 }
 
 function sanitizeNameInput(value: string) {
@@ -221,7 +222,7 @@ const contactFormSchema = z.object({
     .string()
     .trim()
     .min(1, { message: "Please enter your mobile number" })
-    .refine(isValidPhoneNumber, { message: "Please enter a valid phone number" }),
+    .refine(isValidPhoneNumber, { message: "Please enter a valid 10-digit mobile number" }),
   email: z
     .string()
     .trim()
@@ -1082,18 +1083,24 @@ const ContactSeller = ({ project, isModal = false, onClose }: ContactSellerProps
 
             <label className="block">
               <span className="text-sm text-slate-600">Mobile Number</span>
-              <input
-                name="phone"
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel"
-                value={form.phone}
-                onChange={handleChange}
-                placeholder="Enter Mobile Number"
-                required
-                aria-invalid={Boolean(formErrors.phone)}
-                className="mt-1.5 h-10 w-full rounded-md border-0 bg-emerald-50 px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500"
-              />
+              <div className="mt-1.5 flex h-10 overflow-hidden rounded-md bg-emerald-50 focus-within:ring-2 focus-within:ring-emerald-500">
+                <span className="flex items-center border-r border-emerald-100 px-3 text-sm font-semibold text-slate-700">
+                  {INDIA_COUNTRY_CODE}
+                </span>
+                <input
+                  name="phone"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  maxLength={INDIAN_PHONE_DIGIT_LENGTH}
+                  value={getIndianPhoneDigits(form.phone)}
+                  onChange={handleChange}
+                  placeholder="Enter Mobile Number"
+                  required
+                  aria-invalid={Boolean(formErrors.phone)}
+                  className="min-w-0 flex-1 border-0 bg-transparent px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400"
+                />
+              </div>
               {formErrors.phone ? (
                 <p className="mt-1 text-xs text-red-600">{formErrors.phone}</p>
               ) : null}
@@ -1373,18 +1380,24 @@ const ContactSeller = ({ project, isModal = false, onClose }: ContactSellerProps
 
               <label className="block">
                 <span className="text-sm text-slate-600">Mobile</span>
-                <input
-                  name="phone"
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  value={form.phone}
-                  onChange={handleChange}
-                  placeholder="Enter Mobile Number"
-                  required
-                  aria-invalid={Boolean(formErrors.phone)}
-                  className="mt-2 h-10 w-full rounded-md border-0 bg-emerald-50 px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500"
-                />
+                <div className="mt-2 flex h-10 overflow-hidden rounded-md bg-emerald-50 focus-within:ring-2 focus-within:ring-emerald-500">
+                  <span className="flex items-center border-r border-emerald-100 px-3 text-sm font-semibold text-slate-700">
+                    {INDIA_COUNTRY_CODE}
+                  </span>
+                  <input
+                    name="phone"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    maxLength={INDIAN_PHONE_DIGIT_LENGTH}
+                    value={getIndianPhoneDigits(form.phone)}
+                    onChange={handleChange}
+                    placeholder="Enter Mobile Number"
+                    required
+                    aria-invalid={Boolean(formErrors.phone)}
+                    className="min-w-0 flex-1 border-0 bg-transparent px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400"
+                  />
+                </div>
                 {formErrors.phone ? (
                   <p className="mt-1 text-xs text-red-600">{formErrors.phone}</p>
                 ) : null}

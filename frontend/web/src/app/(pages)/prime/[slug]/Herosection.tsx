@@ -17,6 +17,13 @@ import React, { useEffect, useState } from "react";
 import { FiHeart } from "react-icons/fi";
 import { IoIosShareAlt } from "react-icons/io";
 import { toast } from "sonner";
+import {
+  formatIndianPhoneNumber,
+  getIndianPhoneDigits,
+  INDIA_COUNTRY_CODE,
+  INDIAN_PHONE_DIGIT_LENGTH,
+  isValidIndianPhoneNumber,
+} from "@/utilies/indianPhone";
 
 type Props = {
   hero?: Hero;
@@ -90,17 +97,11 @@ export interface ProjectLeadPayload {
 }
 
 function isValidPhoneNumber(value: string) {
-  const normalized = value.replace(/[^\d+]/g, "");
-  return /^\+?[1-9]\d{9,14}$/.test(normalized);
+  return isValidIndianPhoneNumber(value);
 }
 
 function sanitizePhoneInput(value: string) {
-  const cleaned = value.replace(/[^\d+]/g, "");
-  if (!cleaned.startsWith("+")) {
-    return cleaned.replace(/\+/g, "");
-  }
-
-  return `+${cleaned.slice(1).replace(/\+/g, "")}`;
+  return formatIndianPhoneNumber(value);
 }
 
 function sanitizeNameInput(value: string) {
@@ -178,7 +179,7 @@ function getFieldValidationMessage(
 
   if (validity.patternMismatch) {
     if (name === "name") return "Name should contain letters only";
-    if (name === "phone") return "Please enter a valid phone number";
+    if (name === "phone") return "Please enter a valid 10-digit mobile number";
     if (name === "email") return "Please enter a valid email address";
   }
 
@@ -413,7 +414,7 @@ export default function HeroSection({ hero }: Props) {
     }
 
     if (!isValidPhoneNumber(form.phone)) {
-      toast.error("Please enter a valid phone number");
+      toast.error("Please enter a valid 10-digit mobile number");
       return;
     }
 
@@ -789,21 +790,27 @@ export default function HeroSection({ hero }: Props) {
                           className="w-full rounded-md border border-white/20 bg-white/10 px-2.5 py-1.5 text-xs text-white outline-none placeholder-white/70 focus:ring-2 focus:ring-yellow-400 sm:px-3 sm:py-2 sm:text-sm"
                         />
 
-                        <input
-                          name="phone"
-                          type="tel"
-                          inputMode="tel"
-                          autoComplete="tel"
-                          pattern="^\+?[1-9]\d{9,14}$"
-                          value={form.phone}
-                          onChange={handleChange}
-                          onInvalid={handleInvalid}
-                          onInput={handleFieldInput}
-                          title="Please enter a valid phone number"
-                          placeholder="Your Mobile Number"
-                          required
-                          className="w-full rounded-md border border-white/20 bg-white/10 px-2.5 py-1.5 text-xs text-white outline-none placeholder-white/70 focus:ring-2 focus:ring-yellow-400 sm:px-3 sm:py-2 sm:text-sm"
-                        />
+                        <div className="flex overflow-hidden rounded-md border border-white/20 bg-white/10 focus-within:ring-2 focus-within:ring-yellow-400">
+                          <span className="flex items-center border-r border-white/20 px-2.5 text-xs font-semibold text-white sm:px-3 sm:text-sm">
+                            {INDIA_COUNTRY_CODE}
+                          </span>
+                          <input
+                            name="phone"
+                            type="tel"
+                            inputMode="numeric"
+                            autoComplete="tel"
+                            pattern="[6-9]\d{9}"
+                            maxLength={INDIAN_PHONE_DIGIT_LENGTH}
+                            value={getIndianPhoneDigits(form.phone)}
+                            onChange={handleChange}
+                            onInvalid={handleInvalid}
+                            onInput={handleFieldInput}
+                            title="Please enter a valid 10-digit mobile number"
+                            placeholder="Your Mobile Number"
+                            required
+                            className="min-w-0 flex-1 bg-transparent px-2.5 py-1.5 text-xs text-white outline-none placeholder-white/70 sm:px-3 sm:py-2 sm:text-sm"
+                          />
+                        </div>
 
                         <input
                           name="email"

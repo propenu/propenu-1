@@ -590,6 +590,7 @@ const RegisterDialog = ({
                   <PhoneInput
                     international
                     defaultCountry="IN"
+                    countries={["IN"]}
                     limitMaxLength
                     countryCallingCodeEditable={false}
                     onCountryChange={(country) => {

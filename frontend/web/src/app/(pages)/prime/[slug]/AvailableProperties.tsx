@@ -135,7 +135,6 @@ export default function AvailableProperties({ bhk }: Props) {
   const possessionDate = formatPossessionDate(bhk?.possessionDate);
   const category = `${bhk?.categoryType ?? bhk?.propertyType ?? ""}`.toLowerCase();
   const isLand = category === "land";
-  const showFlatLabel = !isLand;
 
   // default to first BHK group
   const [activeBhkIndex, setActiveBhkIndex] = useState<number>(0);
@@ -278,11 +277,6 @@ export default function AvailableProperties({ bhk }: Props) {
                 <span className="whitespace-nowrap">
                   {b.label ?? b.bhkLabel ?? `${b.bhk} BHK`}
                 </span>
-                {showFlatLabel && (
-                  <span className="text-xs hidden sm:inline">
-                    FLAT
-                  </span>
-                )}
               </button>
             ))
           )}

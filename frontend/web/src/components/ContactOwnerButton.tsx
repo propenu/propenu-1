@@ -22,6 +22,13 @@ import { z } from "zod";
 import OtpFourDigitInput from "@/components/builder/OtpFourDigitInput";
 import Cookies from "js-cookie";
 import { VerifyPublicPropertyLeadOtpResponse } from "@/types/property";
+import {
+  formatIndianPhoneNumber,
+  getIndianPhoneDigits,
+  INDIA_COUNTRY_CODE,
+  INDIAN_PHONE_DIGIT_LENGTH,
+  isValidIndianPhoneNumber,
+} from "@/utilies/indianPhone";
 
 interface ContactOwnerButtonProps {
   listingType?: string;
@@ -61,31 +68,16 @@ const INITIAL_CONTACT_FORM = {
   phone: "",
   email: "",
 };
-const INDIA_COUNTRY_CODE = "+91";
-
 function normalizeComparableValue(value?: string | null) {
   return value?.trim().toLowerCase() || "";
 }
 
 function sanitizePhoneInput(value?: string | null) {
-  const cleaned = String(value || "").replace(/[^\d+]/g, "");
-  if (!cleaned.startsWith("+")) {
-    return cleaned.replace(/\+/g, "");
-  }
-
-  return `+${cleaned.slice(1).replace(/\+/g, "")}`;
+  return formatIndianPhoneNumber(value);
 }
 
 function normalizeIndianPhone(value?: string | null) {
-  const sanitized = sanitizePhoneInput(value);
-  const digitsOnly = sanitized.replace(/\D/g, "");
-  const nationalNumber = digitsOnly.startsWith("91")
-    ? digitsOnly.slice(2)
-    : digitsOnly;
-
-  if (!nationalNumber) return INDIA_COUNTRY_CODE;
-
-  return `${INDIA_COUNTRY_CODE}${nationalNumber.slice(0, 10)}`;
+  return formatIndianPhoneNumber(value);
 }
 
 function getEntityId(value: unknown) {
@@ -107,8 +99,7 @@ function isValidName(value: string) {
 }
 
 function isValidPhoneNumber(value: string) {
-  const normalized = value.replace(/[^\d+]/g, "");
-  return /^\+?[1-9]\d{9,14}$/.test(normalized);
+  return isValidIndianPhoneNumber(value);
 }
 
 function isValidEmail(value: string) {
@@ -164,7 +155,7 @@ const contactOwnerFormSchema = z.object({
     .string()
     .trim()
     .min(1, { message: "Please enter your mobile number" })
-    .refine(isValidPhoneNumber, { message: "Please enter a valid phone number" }),
+    .refine(isValidPhoneNumber, { message: "Please enter a valid 10-digit mobile number" }),
   email: z
     .string()
     .trim()
@@ -905,27 +896,33 @@ export default function ContactOwnerButton({
 
                         <label className="block">
                           <span className="text-sm text-slate-600">Mobile</span>
-                          <input
-                            name="phone"
-                            type="tel"
-                            inputMode="tel"
-                            autoComplete="tel"
-                            value={form.phone}
-                            onChange={(event) => {
-                              setFormErrors((current) => ({
-                                ...current,
-                                phone: undefined,
-                              }));
-                              setForm((current) => ({
-                                ...current,
-                                phone: sanitizePhoneInput(event.target.value),
-                              }));
-                            }}
-                            placeholder="Enter Mobile Number"
-                            required
-                            aria-invalid={Boolean(formErrors.phone)}
-                            className="mt-2 h-10 w-full rounded-md border-0 bg-emerald-50 px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500"
-                          />
+                          <div className="mt-2 flex h-10 overflow-hidden rounded-md bg-emerald-50 focus-within:ring-2 focus-within:ring-emerald-500">
+                            <span className="flex items-center border-r border-emerald-100 px-3 text-sm font-semibold text-slate-700">
+                              {INDIA_COUNTRY_CODE}
+                            </span>
+                            <input
+                              name="phone"
+                              type="tel"
+                              inputMode="numeric"
+                              autoComplete="tel"
+                              maxLength={INDIAN_PHONE_DIGIT_LENGTH}
+                              value={getIndianPhoneDigits(form.phone)}
+                              onChange={(event) => {
+                                setFormErrors((current) => ({
+                                  ...current,
+                                  phone: undefined,
+                                }));
+                                setForm((current) => ({
+                                  ...current,
+                                  phone: sanitizePhoneInput(event.target.value),
+                                }));
+                              }}
+                              placeholder="Enter Mobile Number"
+                              required
+                              aria-invalid={Boolean(formErrors.phone)}
+                              className="min-w-0 flex-1 border-0 bg-transparent px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400"
+                            />
+                          </div>
                           {formErrors.phone ? (
                             <p className="mt-1 text-xs text-red-600">{formErrors.phone}</p>
                           ) : null}

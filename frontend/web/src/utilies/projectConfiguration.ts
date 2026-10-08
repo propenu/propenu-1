@@ -1,8 +1,17 @@
-import { FeaturedProject } from "@/types";
+type ProjectSummaryItem = {
+  bhk?: number;
+  label?: string;
+  bhkLabel?: string;
+};
 
-type ProjectSummaryItem = NonNullable<
-  FeaturedProject["projectSummary"] | FeaturedProject["bhkSummary"]
->[number];
+type ProjectConfigurationLike = {
+  categoryType?: string;
+  propertyType?: string;
+  projectArea?: number;
+  projectSummary?: ProjectSummaryItem[];
+  bhkSummary?: ProjectSummaryItem[];
+  sqftRange?: { min?: number; max?: number };
+};
 
 function extractBhkValue(item: ProjectSummaryItem) {
   const labelMatch = (item?.label ?? item?.bhkLabel)?.match(/\d+(\.\d+)?/);
@@ -14,7 +23,7 @@ function extractBhkValue(item: ProjectSummaryItem) {
   return typeof item?.bhk === "number" ? item.bhk : null;
 }
 
-function getProjectBhkValues(project: FeaturedProject) {
+function getProjectBhkValues(project: ProjectConfigurationLike) {
   const summary = project.projectSummary ?? project.bhkSummary ?? [];
 
   return Array.from(
@@ -26,12 +35,12 @@ function getProjectBhkValues(project: FeaturedProject) {
   ).sort((a, b) => a - b);
 }
 
-function isLandProject(project: FeaturedProject) {
+function isLandProject(project: ProjectConfigurationLike) {
   const category = `${project.categoryType ?? project.propertyType ?? ""}`.toLowerCase();
   return category.includes("land") || category.includes("plot");
 }
 
-function formatLandConfiguration(project: FeaturedProject) {
+function formatLandConfiguration(project: ProjectConfigurationLike) {
   if (
     typeof project.projectArea === "number" &&
     Number.isFinite(project.projectArea) &&
@@ -63,7 +72,7 @@ function formatLandConfiguration(project: FeaturedProject) {
 }
 
 export function getProjectConfigurationLabel(
-  project: FeaturedProject,
+  project: ProjectConfigurationLike,
   unitLabel = "Apartments",
 ) {
   if (isLandProject(project)) {
@@ -79,7 +88,7 @@ export function getProjectConfigurationLabel(
   return `${bhkValues.join(", ")} BHK ${unitLabel}`;
 }
 
-export function getProjectConfigurationValue(project: FeaturedProject) {
+export function getProjectConfigurationValue(project: ProjectConfigurationLike) {
   if (isLandProject(project)) {
     return formatLandConfiguration(project);
   }

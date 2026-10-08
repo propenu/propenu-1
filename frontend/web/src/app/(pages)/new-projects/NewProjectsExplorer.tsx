@@ -3,7 +3,6 @@
 import { searchNewProjects } from "@/data/ClientData";
 import { useCity } from "@/hooks/useCity";
 import { useShortlist } from "@/hooks/useShortlist";
-import { FeaturedProject } from "@/types";
 import formatINR from "@/utilies/PriceFormat";
 import { getProjectConfigurationLabel } from "@/utilies/projectConfiguration";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
@@ -283,7 +282,7 @@ function configurationLabel(project: ProjectCardData) {
           ? "Land"
           : "Apartments";
 
-  return getProjectConfigurationLabel(project as FeaturedProject, unit);
+  return getProjectConfigurationLabel(project, unit);
 }
 
 function ProjectResultCard({ project }: { project: ProjectCardData }) {

@@ -1933,7 +1933,7 @@ export const FeaturePropertyService = {
       if (incomingAboutArr.length > 0 || hasAboutFile) {
         const merged =
           preservedAboutMedia.length > 0
-            ? preservedAboutMedia.map((row) => ({ ...row }))
+            ? preservedAboutMedia.map((row: any) => ({ ...row }))
             : [plainAboutRow(null)];
 
         for (let i = 0; i < incomingAboutArr.length; i++) {
@@ -2122,7 +2122,7 @@ export const FeaturePropertyService = {
     status?: string;
     sortBy?: string;
     sortOrder?: "asc" | "desc";
-    promotionStatus?: "active" | "expired" | "all";
+    promotionStatus?: "active" | "expired" | "scheduled" | "all";
     type?: string; // 🔥 NEW
     city?: string; // 🔥 NEW
     state?: string; // 🔥 NEW
@@ -2407,14 +2407,14 @@ export const FeaturePropertyService = {
     ]);
 
     const enriched = cardView
-      ? rawItems.map((item) => toPublicProjectCard(item))
+      ? rawItems.map((item: any) => toPublicProjectCard(item))
       : await enrichFeaturedListWithUsers(rawItems);
     return {
       items: cardView
         ? enriched
         : promotionStatus === "all" || promotionStatus === "scheduled"
           ? enriched
-          : enriched.map((item) => hideUnstartedPromotion(item)),
+          : enriched.map((item: any) => hideUnstartedPromotion(item)),
       meta: {
         total,
         page,
@@ -2704,10 +2704,10 @@ export const FeaturePropertyService = {
    * Each list ignores its own selection so the user can switch.
    */
   async getProjectBoardFilterOptions(options?: {
-    state?: string;
-    city?: string;
-    locality?: string;
-    createdBy?: string;
+    state?: string | undefined;
+    city?: string | undefined;
+    locality?: string | undefined;
+    createdBy?: string | undefined;
   }) {
     const escapeRegex = (value: string) =>
       value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

@@ -329,15 +329,13 @@ export const expirePromotion = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const promotion = {
+    const promotion: IPromotion = {
       type: "normal",
       priority: 0,
       source: "manual",
       startDate: new Date(),
-      boostExpiry: null,
-      sponsoredAd: {},
       visibleLeadLimit: 0,
-    } as IPromotion;
+    };
 
     appendPromotionHistory(
       property,
@@ -350,16 +348,14 @@ export const expirePromotion = async (req: AuthRequest, res: Response) => {
 
     await property.save();
 
-    if (previousPromotionType !== "normal") {
-      void notifyLifecycleEvent({
-        type: "promotion_expired",
-        listing: property,
-        kind: "project",
-        category: property.categoryType,
-        promotionType: previousPromotionType,
-        dedupeKey: `promotion_expired:${String(property._id)}:${previousPromotionType}`,
-      });
-    }
+    void notifyLifecycleEvent({
+      type: "promotion_expired",
+      listing: property,
+      kind: "project",
+      category: property.categoryType,
+      promotionType: previousPromotionType,
+      dedupeKey: `promotion_expired:${String(property._id)}:${previousPromotionType}`,
+    });
 
     return res.json({
       success: true,

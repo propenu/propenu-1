@@ -93,17 +93,17 @@ export default function HomeLoanHero({ bannerSlot }: HomeLoanHeroProps) {
             <div className="mt-5 flex flex-wrap items-center gap-3 sm:mt-8 sm:gap-4">
               <button
                 type="button"
-                onClick={() => scrollToCalculator("eligibility")}
+                onClick={() => scrollToCalculator("emi")}
                 className="rounded-lg bg-[#16A34A] px-5 py-3 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-[#15803D] hover:shadow-md active:scale-[0.98] sm:px-7 sm:text-base cursor-pointer"
               >
-                Check Loan Eligibility
+                Calculate your EMI
               </button>
               <button
                 type="button"
-                onClick={() => scrollToCalculator("emi")}
+                onClick={() => scrollToCalculator("eligibility")}
                 className="rounded-lg border-2 border-[#16A34A] bg-transparent px-5 py-3 text-sm font-medium text-[#16A34A] transition-all duration-200 hover:bg-[#16A34A]/8 active:scale-[0.98] sm:px-7 sm:text-base cursor-pointer"
               >
-                Calculate your EMI
+                Check Loan Eligibility
               </button>
             </div>
           </div>

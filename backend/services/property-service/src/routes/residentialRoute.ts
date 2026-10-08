@@ -11,6 +11,7 @@ import { authMiddleware, AuthRequest } from "../middlewares/authMiddleware";
 import { uploadMedia } from "../middlewares/multer";
 import { requirePermission } from "../middlewares/requirePermission";
 import { createListingPromotionHandlers } from "../controller/listingPromotionController";
+import { blockBuilderPropertyPosting } from "../middlewares/blockRoles";
 
 const router = express.Router();
 const listingPromo = createListingPromotionHandlers("residential");
@@ -37,12 +38,12 @@ const jsonKeys = [
 
 
 router.get("/draft/all", getAllResidentialDraftsForAdmin);
-router.post("/draft", authMiddleware, createResidentialDraft);
+router.post("/draft", authMiddleware, blockBuilderPropertyPosting, createResidentialDraft);
 router.get("/draft/me", authMiddleware, getMyResidentialDraft);
-router.patch("/:id/basic", authMiddleware, uploadMedia, parseJsonFields(jsonKeys), updateBasicStep);
-router.patch("/:id/location", authMiddleware, parseJsonFields(jsonKeys), updateLocationStep);
-router.patch("/:id/details", authMiddleware, uploadMedia, parseJsonFields(jsonKeys), updateDetailsStep);
-router.patch("/:id/verification", authMiddleware, uploadMedia, parseJsonFields(jsonKeys), finalizeResidential);
+router.patch("/:id/basic", authMiddleware, blockBuilderPropertyPosting, uploadMedia, parseJsonFields(jsonKeys), updateBasicStep);
+router.patch("/:id/location", authMiddleware, blockBuilderPropertyPosting, parseJsonFields(jsonKeys), updateLocationStep);
+router.patch("/:id/details", authMiddleware, blockBuilderPropertyPosting, uploadMedia, parseJsonFields(jsonKeys), updateDetailsStep);
+router.patch("/:id/verification", authMiddleware, blockBuilderPropertyPosting, uploadMedia, parseJsonFields(jsonKeys), finalizeResidential);
 router.patch("/:id/verify-document", authMiddleware, requirePermission("residential:verify_document"), verifyResidentialDocument);
 
 router.patch("/:id/promote", authMiddleware, listingPromo.promote);
@@ -56,7 +57,7 @@ router.delete("/:id/gallery/:imageIndex", authMiddleware, deleteGalleryImage);
 
 
 
-router.post("/", authMiddleware, uploadMedia,parseJsonFields(jsonKeys), fallbackCoerceDefault,  validateBody(ResidentialCreateSchema), createResidential, requireActiveSubscription);
+router.post("/", authMiddleware, blockBuilderPropertyPosting, uploadMedia,parseJsonFields(jsonKeys), fallbackCoerceDefault,  validateBody(ResidentialCreateSchema), createResidential, requireActiveSubscription);
 router.patch("/:id", authMiddleware, uploadMedia, parseJsonFields(jsonKeys), fallbackCoerceDefault, validateBody(ResidentialUpdateSchema), editResidential );
 router.get("/", getAllResidential);
 router.get("/slug/:slug", getResidentialBySlug);

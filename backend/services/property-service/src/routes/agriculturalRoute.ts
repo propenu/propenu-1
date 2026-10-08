@@ -11,6 +11,7 @@ import { authMiddleware, AuthRequest } from "../middlewares/authMiddleware";
 import { uploadMedia } from "../middlewares/multer";
 import { requirePermission } from "../middlewares/requirePermission";
 import { createListingPromotionHandlers } from "../controller/listingPromotionController";
+import { blockBuilderPropertyPosting } from "../middlewares/blockRoles";
 const router = express.Router();
 const listingPromo = createListingPromotionHandlers("agricultural");
 
@@ -33,6 +34,7 @@ const jsonKeys = [
 router.post(
   "/",
   authMiddleware,
+  blockBuilderPropertyPosting,
   uploadMedia,
   parseJsonFields(jsonKeys),
   fallbackCoerceDefault,
@@ -65,17 +67,18 @@ router.get("/slug/:slug", getAgriculturalBySlug);
 router.get("/:id", getAgriculturalDetail);
 router.delete("/:id", deleteAgricultural);
 
-router.post("/draft", authMiddleware, createAgriculturalDraft);
+router.post("/draft", authMiddleware, blockBuilderPropertyPosting, createAgriculturalDraft);
 router.patch(
   "/:id/basic",
   authMiddleware,
+  blockBuilderPropertyPosting,
   uploadMedia,
   parseJsonFields(jsonKeys),
   updateAgriculturalBasicStep,
 );
-router.patch("/:id/location",authMiddleware,parseJsonFields(jsonKeys),updateAgriculturalLocationStep,);
-router.patch("/:id/details", authMiddleware, uploadMedia, parseJsonFields(jsonKeys),updateAgriculturalDetailsStep);
-router.patch("/:id/verification", authMiddleware, uploadMedia,parseJsonFields(jsonKeys),   finalizeAgricultural);
+router.patch("/:id/location",authMiddleware, blockBuilderPropertyPosting,parseJsonFields(jsonKeys),updateAgriculturalLocationStep,);
+router.patch("/:id/details", authMiddleware, blockBuilderPropertyPosting, uploadMedia, parseJsonFields(jsonKeys),updateAgriculturalDetailsStep);
+router.patch("/:id/verification", authMiddleware, blockBuilderPropertyPosting, uploadMedia,parseJsonFields(jsonKeys),   finalizeAgricultural);
 
 
 router.patch("/:id/verify-document", authMiddleware, requirePermission("agricultural:verify_document"), verifyAgricultiralDocument);

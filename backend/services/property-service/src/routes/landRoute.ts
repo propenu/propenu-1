@@ -28,6 +28,7 @@ import { authMiddleware, AuthRequest } from "../middlewares/authMiddleware";
 import { uploadMedia } from "../middlewares/multer";
 import { requirePermission } from "../middlewares/requirePermission";
 import { createListingPromotionHandlers } from "../controller/listingPromotionController";
+import { blockBuilderPropertyPosting } from "../middlewares/blockRoles";
 
 const router = express.Router();
 const listingPromo = createListingPromotionHandlers("land");
@@ -50,6 +51,7 @@ const jsonKeys = [
 router.post(
   "/",
   authMiddleware,
+  blockBuilderPropertyPosting,
   uploadMedia,
   parseJsonFields(jsonKeys),
 
@@ -93,14 +95,15 @@ router.post("/:id/deactive", authMiddleware, deactivateLandProperty);
 router.delete("/:id/gallery/:imageIndex", authMiddleware, deleteLandGalleryImage);
 
 
-router.post("/draft", authMiddleware, createLandDraft);
-router.patch("/:id/basic",authMiddleware, uploadMedia,parseJsonFields(jsonKeys),updateLandBasicStep);
-router.patch("/:id/location", authMiddleware, parseJsonFields(jsonKeys), updateLandLocationStep);
-router.patch("/:id/details", authMiddleware, uploadMedia, parseJsonFields(jsonKeys), updateLandDetailsStep);
+router.post("/draft", authMiddleware, blockBuilderPropertyPosting, createLandDraft);
+router.patch("/:id/basic",authMiddleware, blockBuilderPropertyPosting, uploadMedia,parseJsonFields(jsonKeys),updateLandBasicStep);
+router.patch("/:id/location", authMiddleware, blockBuilderPropertyPosting, parseJsonFields(jsonKeys), updateLandLocationStep);
+router.patch("/:id/details", authMiddleware, blockBuilderPropertyPosting, uploadMedia, parseJsonFields(jsonKeys), updateLandDetailsStep);
 router.patch(
   "/:id/verification",
   authMiddleware,
-  uploadMedia, // 🔥 REQUIRED
+  blockBuilderPropertyPosting,
+  uploadMedia,
   parseJsonFields(jsonKeys),
   finalizeLand
 );

@@ -212,16 +212,6 @@ const isWithinDateRange = (value: string | null | undefined, filter: DateRangeFi
   return true;
 };
 
-const getRoleLabel = (role?: string) => {
-  const normalized = role?.toLowerCase().trim();
-
-  if (normalized === "sales_agent" || normalized === "agent") return "Agent";
-  if (normalized === "builder" || normalized === "builder_staff") return "Builder";
-  if (normalized === "user") return "User";
-
-  return role || "User";
-};
-
 const getVisibleContactValue = (value?: string, hiddenPlaceholders: string[] = []) => {
   const trimmed = String(value || "").trim();
   if (!trimmed) return "";
@@ -772,7 +762,6 @@ const NotificationFeed = ({
                       {item.project?.title || "Untitled Project"}
                     </span>
                     <span>{item.user?.name || "You"}</span>
-                    <span>{getRoleLabel(item.user?.role)}</span>
                     {showContactDetails && userEmail ? (
                       <span className="min-w-0 truncate">
                         {userEmail}

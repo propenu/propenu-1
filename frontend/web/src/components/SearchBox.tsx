@@ -29,6 +29,14 @@ import { trackInteraction } from "@/services/trackingService";
 const url = process.env.NEXT_PUBLIC_API_URL;
 const RECENT_SEARCHES_KEY = "propenu_recent_searches";
 
+const normalizeSearchValue = (value?: string | null) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
+
+const cityContextKey = (city?: string | null, state?: string | null) =>
+  `${normalizeSearchValue(city)}|${normalizeSearchValue(state)}`;
+
 const listingOptions = [
   { label: "Buy", value: "sale" },
   { label: "Rent", value: "rent" },
@@ -462,12 +470,61 @@ const SearchBox = ({
     dispatch(setAgriculturalFilter({ key: "locality", value: localities }));
   };
 
+  useEffect(() => {
+    if (!cityData?.city || !activeSearchCity?.city) return;
+
+    const selectedCityKey = cityContextKey(cityData.city, cityData.state);
+    const activeCityKey = cityContextKey(
+      activeSearchCity.city,
+      activeSearchCity.state,
+    );
+
+    if (selectedCityKey !== activeCityKey) {
+      setActiveSearchCity(null);
+      setIsCityChipDismissed(false);
+    }
+  }, [
+    activeSearchCity?.city,
+    activeSearchCity?.state,
+    cityData?.city,
+    cityData?.state,
+  ]);
+
+  useEffect(() => {
+    if (!selectedLocalities.length || !visibleSearchCity) return;
+
+    const allowedLocalities = new Set(
+      effectiveSearchContext.localities.map(normalizeSearchValue),
+    );
+
+    if (allowedLocalities.size === 0) return;
+
+    const nextLocalities = selectedLocalities.filter((locality) =>
+      allowedLocalities.has(normalizeSearchValue(locality)),
+    );
+
+    if (nextLocalities.length !== selectedLocalities.length) {
+      updateLocalityFilter(nextLocalities);
+    }
+  }, [
+    effectiveSearchContext.localities,
+    selectedLocalities,
+    visibleSearchCity,
+  ]);
+
   const handleLocalitySelect = (
     name: string,
     city?: string | null,
     state?: string | null,
   ) => {
-    const nextLocalities = toggleArrayValue(selectedLocalities, name);
+    const isDifferentCity =
+      city &&
+      cityContextKey(city, state) !==
+        cityContextKey(effectiveSearchContext.city, effectiveSearchContext.state);
+    const nextLocalities = toggleArrayValue(
+      isDifferentCity ? [] : selectedLocalities,
+      name,
+    );
 
     updateLocalityFilter(nextLocalities);
     setSelectedProject(null);

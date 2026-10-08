@@ -27,11 +27,12 @@ import { authMiddleware, AuthRequest } from "../middlewares/authMiddleware";
 import { uploadMedia } from "../middlewares/multer";
 import { requirePermission } from "../middlewares/requirePermission";
 import { createListingPromotionHandlers } from "../controller/listingPromotionController";
+import { blockBuilderPropertyPosting } from "../middlewares/blockRoles";
 
 /** POST */
 const listingPromo = createListingPromotionHandlers("commercial");
 
-router.post("/", authMiddleware, uploadMedia,  parseJsonFields(jsonKeys), fallbackCoerceDefault, createCommercial,  requireActiveSubscription);
+router.post("/", authMiddleware, blockBuilderPropertyPosting, uploadMedia,  parseJsonFields(jsonKeys), fallbackCoerceDefault, createCommercial,  requireActiveSubscription);
 router.patch("/:id/promote", authMiddleware, listingPromo.promote);
 router.patch("/:id/renew", authMiddleware, listingPromo.renew);
 router.patch("/:id/expire", authMiddleware, listingPromo.expire);
@@ -54,11 +55,11 @@ router.post("/:id/deactive", authMiddleware, deactivateCommercialProperty);
 router.delete("/:id/gallery/:imageIndex", authMiddleware, deleteCommercialGalleryImage);
 
 
-router.post("/draft", authMiddleware, createCommercialDraft);
-router.patch("/:id/basic", authMiddleware, uploadMedia, parseJsonFields(jsonKeys), updateCommercialBasicStep);
-router.patch("/:id/location", authMiddleware, parseJsonFields(jsonKeys), updateCommercialLocationStep);
-router.patch("/:id/details", authMiddleware,  uploadMedia, parseJsonFields(jsonKeys), updateCommercialDetailsStep);
-router.patch("/:id/verification", authMiddleware, uploadMedia, parseJsonFields(jsonKeys),  finalizeCommercial);
+router.post("/draft", authMiddleware, blockBuilderPropertyPosting, createCommercialDraft);
+router.patch("/:id/basic", authMiddleware, blockBuilderPropertyPosting, uploadMedia, parseJsonFields(jsonKeys), updateCommercialBasicStep);
+router.patch("/:id/location", authMiddleware, blockBuilderPropertyPosting, parseJsonFields(jsonKeys), updateCommercialLocationStep);
+router.patch("/:id/details", authMiddleware, blockBuilderPropertyPosting, uploadMedia, parseJsonFields(jsonKeys), updateCommercialDetailsStep);
+router.patch("/:id/verification", authMiddleware, blockBuilderPropertyPosting, uploadMedia, parseJsonFields(jsonKeys),  finalizeCommercial);
 
 
 export default router;

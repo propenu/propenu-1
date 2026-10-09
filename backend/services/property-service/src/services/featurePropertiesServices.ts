@@ -22,6 +22,7 @@ import {
   restoreCreatedById,
 } from "../utils/agentSubmission";
 import { applyOwnerUserFilter, ownerListLimit } from "../utils/ownerUserFilter";
+import { getPrimeDisplayMode } from "../siteBranding/siteBranding.service";
 import { promotionHasStartedMatch } from "./promotionService";
 
 dotenv.config({ quiet: true });
@@ -1297,6 +1298,44 @@ async function mapAndUploadGallery({
    Service
    --------------------*/
 
+function isPublicPrimeHomepageQuery(options?: {
+  type?: string;
+  page?: number;
+  limit?: number;
+  status?: string;
+  sortBy?: string;
+  q?: string;
+  view?: string;
+  createdBy?: string;
+  ownerUserId?: string;
+  postedBy?: string;
+}) {
+  if (String(options?.type || "").trim().toLowerCase() !== "prime") return false;
+  if (options?.page != null || options?.limit != null) return false;
+  if (options?.status || options?.sortBy || options?.q || options?.view) return false;
+  if (options?.createdBy || options?.ownerUserId || options?.postedBy) return false;
+  return true;
+}
+
+function sortListByRank<T extends { rank?: number }>(items: T[]) {
+  return [...items].sort((a, b) => {
+    const rankA = typeof a.rank === "number" ? a.rank : Number.MAX_SAFE_INTEGER;
+    const rankB = typeof b.rank === "number" ? b.rank : Number.MAX_SAFE_INTEGER;
+    return rankA - rankB;
+  });
+}
+
+function shuffleList<T>(items: T[]) {
+  const shuffled = [...items];
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const current = shuffled[i] as T;
+    shuffled[i] = shuffled[j] as T;
+    shuffled[j] = current;
+  }
+  return shuffled;
+}
+
 export const FeaturePropertyService = {
   async createFeatureProperty(
     payload: CreateFeaturePropertyDTO,
@@ -2409,12 +2448,23 @@ export const FeaturePropertyService = {
     const enriched = cardView
       ? rawItems.map((item: any) => toPublicProjectCard(item))
       : await enrichFeaturedListWithUsers(rawItems);
-    return {
-      items: cardView
+    let items = cardView
+      ? enriched
+      : promotionStatus === "all" || promotionStatus === "scheduled"
         ? enriched
-        : promotionStatus === "all" || promotionStatus === "scheduled"
-          ? enriched
-          : enriched.map((item: any) => hideUnstartedPromotion(item)),
+        : enriched.map((item: any) => hideUnstartedPromotion(item));
+
+    // Homepage prime list only. Admin lists pass page, limit, or status and stay in rank order.
+    let displayMode: "ranked" | "shuffle" | undefined;
+    if (isPublicPrimeHomepageQuery(options)) {
+      displayMode = await getPrimeDisplayMode();
+      items =
+        displayMode === "shuffle" ? shuffleList(items) : sortListByRank(items);
+    }
+
+    return {
+      items,
+      ...(displayMode ? { displayMode } : {}),
       meta: {
         total,
         page,

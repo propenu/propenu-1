@@ -1,17 +1,13 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { FeaturedProject } from "@/types";
 import { ArrowDropdownIcon } from "@/icons/icons";
 import { useCity } from "@/hooks/useCity";
 import Image from "next/image";
 import Link from "next/link";
 import formatINR from "@/utilies/PriceFormat";
-import {
-  getFeaturedProjects,
-  getPrimeDisplaySettings,
-  PrimeDisplayMode,
-} from "@/data/ClientData";
+import { getFeaturedProjects, PrimeDisplayMode } from "@/data/ClientData";
 import { minDelay } from "@/utilies/minDelay";
 import { getProjectConfigurationLabel } from "@/utilies/projectConfiguration";
 import {
@@ -34,17 +30,9 @@ const sortProjectsByRank = (projects: FeaturedProject[]) =>
     return rankA - rankB;
   });
 
-const shuffleProjects = (projects: FeaturedProject[]) => {
-  const shuffled = [...projects];
-
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const current = shuffled[i];
-    shuffled[i] = shuffled[j];
-    shuffled[j] = current;
-  }
-
-  return shuffled;
+type PrimeSectionCache = {
+  items: FeaturedProject[];
+  displayMode: PrimeDisplayMode;
 };
 
 function getPriceLabel(price?: number) {
@@ -210,23 +198,19 @@ function PrimeProjectCard({
 
 export default function FeaturedProjectsClient() {
   const sliderRef = useRef<HTMLDivElement | null>(null);
-  const shuffleCacheRef = useRef<{
-    signature: string;
-    items: FeaturedProject[];
-  } | null>(null);
   const { selectedCity } = useCity();
   const cacheKey = getHomeSectionCacheKey("featured-projects", {
     state: selectedCity?.state,
     city: selectedCity?.city,
   });
+  const cachedSection = getHomeSectionCache<PrimeSectionCache>(cacheKey);
   const [items, setItems] = useState<FeaturedProject[]>(
-    () =>
-      sortProjectsByRank(
-        getHomeSectionCache<FeaturedProject[]>(cacheKey) ?? [],
-      ),
+    () => cachedSection?.items ?? [],
   );
-  const [loading, setLoading] = useState(() => !getHomeSectionCache(cacheKey));
-  const [displayMode, setDisplayMode] = useState<PrimeDisplayMode>("ranked");
+  const [loading, setLoading] = useState(() => !cachedSection);
+  const [displayMode, setDisplayMode] = useState<PrimeDisplayMode>(
+    () => cachedSection?.displayMode ?? "ranked",
+  );
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
@@ -238,31 +222,12 @@ export default function FeaturedProjectsClient() {
   }, []);
 
   useEffect(() => {
-    let isActive = true;
-
-    getPrimeDisplaySettings()
-      .then((settings) => {
-        if (isActive) {
-          setDisplayMode(settings.displayMode);
-        }
-      })
-      .catch((err) => {
-        if (!isActive) return;
-        console.error("❌ Prime display settings fetch failed:", err);
-        setDisplayMode("ranked");
-      });
-
-    return () => {
-      isActive = false;
-    };
-  }, [retryKey]);
-
-  useEffect(() => {
     if (!selectedCity) return;
 
-    const cachedItems = getHomeSectionCache<FeaturedProject[]>(cacheKey);
-    if (cachedItems) {
-      setItems(sortProjectsByRank(cachedItems));
+    const cachedItems = getHomeSectionCache<PrimeSectionCache>(cacheKey);
+    if (cachedItems?.items) {
+      setItems(cachedItems.items);
+      setDisplayMode(cachedItems.displayMode === "shuffle" ? "shuffle" : "ranked");
       setLoading(false);
       return;
     }
@@ -282,8 +247,14 @@ export default function FeaturedProjectsClient() {
       .then(([res]) => {
         if (!isActive) return;
 
-        const nextItems = sortProjectsByRank(res.items || []);
-        setHomeSectionCache(cacheKey, nextItems);
+        const nextMode: PrimeDisplayMode =
+          res.displayMode === "shuffle" ? "shuffle" : "ranked";
+        const nextItems =
+          nextMode === "shuffle"
+            ? res.items || []
+            : sortProjectsByRank(res.items || []);
+        setHomeSectionCache(cacheKey, { items: nextItems, displayMode: nextMode });
+        setDisplayMode(nextMode);
         setItems(nextItems);
       })
       .catch((err) => {
@@ -301,23 +272,7 @@ export default function FeaturedProjectsClient() {
     };
   }, [cacheKey, selectedCity, retryKey]);
 
-  const itemIdSignature = items.map((item) => item._id).join("|");
-  const displayItems = useMemo(() => {
-    if (displayMode === "shuffle") {
-      if (shuffleCacheRef.current?.signature === itemIdSignature) {
-        return shuffleCacheRef.current.items;
-      }
-
-      const shuffledItems = shuffleProjects(items);
-      shuffleCacheRef.current = {
-        signature: itemIdSignature,
-        items: shuffledItems,
-      };
-      return shuffledItems;
-    }
-
-    return items;
-  }, [displayMode, itemIdSignature, items]);
+  const displayItems = items;
 
   // Gate: arrows only make sense when there are more than 2 cards.
   const hasMoreThanTwo = displayItems.length > 2;

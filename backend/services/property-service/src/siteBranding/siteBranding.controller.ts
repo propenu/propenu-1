@@ -10,6 +10,37 @@ function clientError(message = "") {
   return /required|only|below|expected|must|when|invalid|too long|allowed formats/i.test(message);
 }
 
+export async function getPrimeDisplay(_req: Request, res: Response) {
+  try {
+    const displayMode = await service.getPrimeDisplayMode();
+    return res.json({ success: true, data: { displayMode } });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to load prime display mode",
+    });
+  }
+}
+
+export async function updatePrimeDisplay(req: AuthRequest, res: Response) {
+  try {
+    const data = await service.setPrimeDisplayMode(
+      String(req.body?.displayMode || ""),
+      userIdOf(req),
+    );
+    return res.json({
+      success: true,
+      data: { displayMode: data.displayMode },
+      message: "Prime display mode saved",
+    });
+  } catch (error: any) {
+    return res.status(clientError(error.message) ? 400 : 500).json({
+      success: false,
+      message: error.message || "Failed to save prime display mode",
+    });
+  }
+}
+
 export async function getLogo(_req: Request, res: Response) {
   try {
     const logo = await service.getSiteLogo();

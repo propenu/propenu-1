@@ -11,11 +11,13 @@ import {
   deleteBanner,
   getBanner,
   getLogo,
+  getPrimeDisplay,
   listBanners,
   resolveBanners,
   updateBanner,
   upsertDevice,
   upsertLogo,
+  updatePrimeDisplay,
 } from "./siteBranding.controller";
 import { BANNER_MAX_BYTES, LOGO_MAX_BYTES } from "./siteBranding.constants";
 import { isAllowedLogoFile } from "./siteBranding.validation";
@@ -69,6 +71,15 @@ const canWriteLogo = requireAnyPermission([
   "site_banner:update",
   "site_banner:create",
 ]);
+
+// Prime homepage order — GET is public (no token)
+router.get("/prime-display", getPrimeDisplay);
+router.patch(
+  "/prime-display",
+  authMiddleware,
+  requirePermission("site_banner:update"),
+  updatePrimeDisplay,
+);
 
 // Logo — GET is public (no token)
 router.get("/logo", getLogo);

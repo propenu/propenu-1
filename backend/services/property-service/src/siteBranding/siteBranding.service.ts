@@ -9,6 +9,11 @@ import {
 } from "./siteBanner.model";
 import { SiteLogo } from "./siteLogo.model";
 import {
+  PrimeDisplayMode,
+  PrimeDisplaySettings,
+  PRIME_DISPLAY_MODES,
+} from "./primeDisplay.model";
+import {
   BANNER_SLOT_KEYS,
   BANNER_SLOTS,
   BannerSlot,
@@ -156,6 +161,35 @@ export function normalizeBannerDoc(raw: any) {
     createdBy: obj.createdBy,
     updatedBy: obj.updatedBy,
   };
+}
+
+export async function getPrimeDisplayMode(): Promise<PrimeDisplayMode> {
+  const doc = await PrimeDisplaySettings.findOne().sort({ updatedAt: -1 }).lean();
+  const mode = doc?.displayMode;
+  return mode === "shuffle" ? "shuffle" : "ranked";
+}
+
+export async function setPrimeDisplayMode(mode: string, userId?: string) {
+  if (!PRIME_DISPLAY_MODES.includes(mode as PrimeDisplayMode)) {
+    throw new Error("displayMode must be ranked or shuffle");
+  }
+  const displayMode = mode as PrimeDisplayMode;
+  const existing = await PrimeDisplaySettings.findOne().sort({ updatedAt: -1 });
+  if (!existing) {
+    const created = await PrimeDisplaySettings.create({
+      displayMode,
+      ...(userId && Types.ObjectId.isValid(userId)
+        ? { updatedBy: new Types.ObjectId(userId) }
+        : {}),
+    });
+    return created.toObject();
+  }
+  existing.displayMode = displayMode;
+  if (userId && Types.ObjectId.isValid(userId)) {
+    existing.updatedBy = new Types.ObjectId(userId);
+  }
+  await existing.save();
+  return existing.toObject();
 }
 
 export async function getSiteLogo() {

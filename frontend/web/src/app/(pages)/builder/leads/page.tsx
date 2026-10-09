@@ -182,7 +182,7 @@ const getPropertyPriceLabel = (property: any) => {
 
 const formatPromotionTypeLabel = (promotionType?: string) => {
   const value = String(promotionType ?? "normal").trim();
-  if (!value) return "Normal";
+  if (!value || value.toLowerCase() === "normal") return "Project";
 
   if (value.toLowerCase() === "featured") {
     return "Top Selling";

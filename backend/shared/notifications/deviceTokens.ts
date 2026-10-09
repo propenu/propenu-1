@@ -19,6 +19,27 @@ export type ActiveDeviceTokenRow = {
   platform: DevicePlatform;
 };
 
+const DEFAULT_DEVICE_TOKEN_ACTIVE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+const getDeviceTokenActiveSince = () => {
+  const configuredMs = Number(process.env.DEVICE_TOKEN_ACTIVE_WINDOW_MS);
+  const activeWindowMs =
+    Number.isFinite(configuredMs) && configuredMs > 0
+      ? configuredMs
+      : DEFAULT_DEVICE_TOKEN_ACTIVE_WINDOW_MS;
+
+  return new Date(Date.now() - activeWindowMs);
+};
+
+const getActiveDeviceTokenQuery = () => {
+  const activeSince = getDeviceTokenActiveSince();
+
+  return {
+    token: { $nin: [null, ""] },
+    ...(activeSince ? { lastSeenAt: { $gte: activeSince } } : {}),
+  };
+};
+
 export const DeviceTokenSchema = new Schema<IDeviceToken>(
   {
     userId: {
@@ -61,6 +82,8 @@ export const DeviceTokenSchema = new Schema<IDeviceToken>(
 );
 
 DeviceTokenSchema.index({ userId: 1, isActive: 1 });
+DeviceTokenSchema.index({ userId: 1, isActive: 1, lastSeenAt: 1 });
+DeviceTokenSchema.index({ userId: 1, lastSeenAt: 1 });
 DeviceTokenSchema.index({ userId: 1, deviceId: 1 });
 
 export const DeviceToken =
@@ -89,12 +112,12 @@ export const getActiveDeviceTokensForUsers = async (
   const db = mongoose.connection.db;
   if (!db) return [];
 
+  const activeDeviceTokenQuery = getActiveDeviceTokenQuery();
   const deviceRows = await db
     .collection("devicetokens")
     .find({
       userId: { $in: objectIds },
-      token: { $nin: [null, ""] },
-      isActive: { $ne: false },
+      ...activeDeviceTokenQuery,
     })
     .project({ token: 1 })
     .toArray();
@@ -113,12 +136,12 @@ export const getActiveDeviceTokenRowsForUsers = async (
   const db = mongoose.connection.db;
   if (!db) return [];
 
+  const activeDeviceTokenQuery = getActiveDeviceTokenQuery();
   const deviceRows = await db
     .collection("devicetokens")
     .find({
       userId: { $in: objectIds },
-      token: { $nin: [null, ""] },
-      isActive: { $ne: false },
+      ...activeDeviceTokenQuery,
     })
     .project({ userId: 1, token: 1, platform: 1 })
     .toArray();
@@ -156,11 +179,14 @@ export const getActiveDeviceTokenRowsByTokens = async (
     }));
   }
 
+  const activeDeviceTokenQuery = getActiveDeviceTokenQuery();
   const deviceRows = await db
     .collection("devicetokens")
     .find({
       token: { $in: validTokens },
-      isActive: { $ne: false },
+      ...(activeDeviceTokenQuery.lastSeenAt
+        ? { lastSeenAt: activeDeviceTokenQuery.lastSeenAt }
+        : {}),
     })
     .project({ userId: 1, token: 1, platform: 1 })
     .toArray();
@@ -224,22 +250,6 @@ export const upsertDeviceToken = async ({
   const now = new Date();
   const collection = db.collection("devicetokens");
 
-  if (normalizedDeviceId) {
-    await collection.updateMany(
-      {
-        userId: userObjectId,
-        deviceId: normalizedDeviceId,
-        token: { $ne: trimmedToken },
-      },
-      {
-        $set: {
-          isActive: false,
-          updatedAt: now,
-        },
-      },
-    );
-  }
-
   await collection.updateOne(
     { token: trimmedToken },
     {
@@ -279,6 +289,7 @@ export const deactivateDeviceTokens = async (tokens: string[]) => {
     {
       $set: {
         isActive: false,
+        lastSeenAt: new Date(0),
         updatedAt: new Date(),
       },
     },

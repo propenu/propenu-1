@@ -11,6 +11,8 @@ import RegisterDialog from "@/app/(auth)/Register";
 import { FiArrowLeft } from "react-icons/fi";
 import { trackInteraction } from "@/services/trackingService";
 
+const OPEN_AUTH_LOGIN_EVENT = "propenu:open-auth-login";
+
 export type NavLink = {
   title: string;
   href: string;
@@ -96,6 +98,19 @@ export default function MicroSiteNavbar({
     observer.observe(body, { attributes: true, attributeFilter: ["class"] });
 
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const openAuthLogin = () => {
+      setShowRegisterDialog(false);
+      setShowLoginDialog(true);
+    };
+
+    window.addEventListener(OPEN_AUTH_LOGIN_EVENT, openAuthLogin);
+
+    return () => {
+      window.removeEventListener(OPEN_AUTH_LOGIN_EVENT, openAuthLogin);
+    };
   }, []);
 
   // support both string URL or object with src

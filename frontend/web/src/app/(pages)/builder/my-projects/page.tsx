@@ -18,7 +18,7 @@ type HighlightProjectsBuilderResponse = {
 
 const PROJECT_TABS = [
   "All",
-  "Normal",
+  "Project",
   "Prime Project",
   "Top Selling Project",
   "Sponsored Project",
@@ -219,7 +219,7 @@ const page = () => {
 
   const filteredProjects = useMemo(() => {
     switch (activeTab) {
-      case "Normal":
+      case "Project":
         return projects.filter(
           (project) =>
             !project.promotion?.type || project.promotion.type === "normal",

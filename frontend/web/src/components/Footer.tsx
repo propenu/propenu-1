@@ -52,11 +52,11 @@ export default function Footer() {
               Company
             </h3>
             <ul className="space-y-4 text-sm text-gray-700 font-medium">
-              <li>
+              {/* <li>
                 <Link href="/new-projects" className="hover:text-primary">
                   New Projects
                 </Link>
-              </li>
+              </li> */}
               <li>
                 <Link href="/about" className="hover:text-primary">
                   About Us
@@ -228,7 +228,7 @@ export default function Footer() {
                     <img
                       src="/email/teamworks.png"
                       alt="Teamworks"
-                      className="max-h-full w-full max-w-[132px] object-contain sm:max-w-[160px] lg:object-left"
+                      className="max-h-full w-full max-w-[132px] object-contain sm:max-w-40 lg:object-left"
                     />
                   </a>
                   <a
@@ -240,7 +240,7 @@ export default function Footer() {
                     <img
                       src="/email/aslijobs.png"
                       alt="AsliJobs"
-                      className="max-h-full w-full max-w-[132px] object-contain sm:max-w-[160px] lg:object-left"
+                      className="max-h-full w-full max-w-[132px] object-contain sm:max-w-40 lg:object-left"
                     />
                   </a>
                 </div>

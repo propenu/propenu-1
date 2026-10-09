@@ -43,7 +43,7 @@ const getPromotionBadge = (project: FeaturedProject) => {
     case "sponsored":
       return "Sponsored";
     default:
-      return "Normal";
+      return "Project";
   }
 };
 

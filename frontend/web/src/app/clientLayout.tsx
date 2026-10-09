@@ -130,6 +130,61 @@ const showForegroundBrowserNotification = ({
   }
 };
 
+const isBrowserTabInactive = () => {
+  if (typeof document === "undefined") return false;
+
+  return document.visibilityState !== "visible" || !document.hasFocus();
+};
+
+let notificationAudioContext: AudioContext | null = null;
+
+const playForegroundNotificationSound = () => {
+  if (typeof window === "undefined") return;
+
+  try {
+    const AudioContextCtor =
+      window.AudioContext ||
+      (window as Window & { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!AudioContextCtor) return;
+
+    notificationAudioContext ||= new AudioContextCtor();
+    const audioContext = notificationAudioContext;
+    const play = () => {
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      const startAt = audioContext.currentTime;
+
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(740, startAt);
+      oscillator.frequency.exponentialRampToValueAtTime(520, startAt + 0.16);
+
+      gain.gain.setValueAtTime(0.0001, startAt);
+      gain.gain.exponentialRampToValueAtTime(0.035, startAt + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.22);
+
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start(startAt);
+      oscillator.stop(startAt + 0.24);
+
+      oscillator.onended = () => {
+        oscillator.disconnect();
+        gain.disconnect();
+      };
+    };
+
+    if (audioContext.state === "suspended") {
+      void audioContext.resume().then(play).catch(() => undefined);
+      return;
+    }
+
+    play();
+  } catch (error) {
+    console.error("Foreground notification sound failed:", error);
+  }
+};
+
 export default function ClientProviders({
   children,
 }: {
@@ -239,6 +294,19 @@ function ClientProvidersContent({
           const href = getForegroundNotificationHref(payload);
 
           invalidateNotificationQueries();
+
+          if (isBrowserTabInactive()) {
+            showForegroundBrowserNotification({
+              title,
+              body,
+              href,
+              payload,
+              onClick: openHref,
+            });
+            return;
+          }
+
+          playForegroundNotificationSound();
 
           showForegroundBrowserNotification({
             title,

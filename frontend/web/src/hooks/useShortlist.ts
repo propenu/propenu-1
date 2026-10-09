@@ -10,9 +10,7 @@ import {
   removeShortlistProperty,
 } from "@/data/ClientData";
 import {
-  addLocalShortlist,
   isLocalShortlisted,
-  removeLocalShortlist,
 } from "@/utilies/shortlistLocal";
 
 type ShortlistPropertyType =
@@ -27,6 +25,8 @@ type ShortlistEntry = {
     _id?: string;
   };
 };
+
+const OPEN_AUTH_LOGIN_EVENT = "propenu:open-auth-login";
 
 function getEntityId(value: unknown) {
   if (!value) return "";
@@ -60,6 +60,19 @@ export function useShortlist(
     Boolean(loggedInUserId) &&
     Boolean(createdById) &&
     loggedInUserId === createdById;
+
+  useEffect(() => {
+    const refreshShortlist = () => {
+      queryClient.invalidateQueries({ queryKey: ["user"] });
+      queryClient.invalidateQueries({ queryKey: ["user-shortlist"] });
+    };
+
+    window.addEventListener("auth-changed", refreshShortlist);
+
+    return () => {
+      window.removeEventListener("auth-changed", refreshShortlist);
+    };
+  }, [queryClient]);
 
   const { data: shortlistData } = useQuery({
     queryKey: ["user-shortlist"],
@@ -178,16 +191,8 @@ export function useShortlist(
       return;
     }
 
-    if (isShortlisted) {
-      removeLocalShortlist(propertyId);
-      setIsShortlisted(false);
-      toast.success("Removed from shortlist");
-      return;
-    }
-
-    addLocalShortlist(propertyId, propertyType);
-    setIsShortlisted(true);
-    toast.success("Added to shortlist");
+    toast.info("Please login or create an account to shortlist.");
+    window.dispatchEvent(new Event(OPEN_AUTH_LOGIN_EVENT));
   };
 
   return {

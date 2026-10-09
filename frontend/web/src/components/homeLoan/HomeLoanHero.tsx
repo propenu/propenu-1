@@ -77,16 +77,14 @@ export default function HomeLoanHero({ bannerSlot }: HomeLoanHeroProps) {
 
             {/* Main Headline */}
             <h1 className="text-[28px] font-extrabold leading-[1.16] tracking-tight text-[#16A34A] min-[390px]:text-3xl sm:text-4xl md:text-5xl lg:text-[46px] lg:leading-[1.18]">
-              Found a Home you Like?
+              Found the Right Home?
               <br />
-              Let's work out the Numbers.
+              Now Plan the Right Loan.
             </h1>
 
             {/* Description */}
             <p className="mt-3 max-w-xl text-sm leading-relaxed text-gray-500 sm:mt-5 sm:text-base sm:text-gray-600">
-              Explore the right home-loan options, check your eligibility,
-              calculate your EMI, and get expert guidance through every
-              step—from application to approval.
+              Understand your eligibility, explore suitable home loan options and calculate your EMI before taking the next step towards your home.
             </p>
 
             {/* CTA Buttons */}
@@ -96,7 +94,7 @@ export default function HomeLoanHero({ bannerSlot }: HomeLoanHeroProps) {
                 onClick={() => scrollToCalculator("emi")}
                 className="rounded-lg bg-[#16A34A] px-5 py-3 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-[#15803D] hover:shadow-md active:scale-[0.98] sm:px-7 sm:text-base cursor-pointer"
               >
-                Calculate your EMI
+                Calculate EMI
               </button>
               <button
                 type="button"

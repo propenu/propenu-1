@@ -90,10 +90,10 @@ export async function authMiddleware(
   next: NextFunction,
 ) {
   const authHeader = req.headers.authorization;
-
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ message: "No token provided" });
   }
+
 
   const parts = authHeader.split(" ");
   const token = parts[1];

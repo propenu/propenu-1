@@ -79,6 +79,8 @@ export const saveFcmToken = async (req: Request, res: Response) => {
     const userId = authUser?.sub || authUser?.id || authUser?._id;
     const { token, platform, deviceId } = req.body;
 
+    console.log({authUser, userId, token, platform, deviceId})
+
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }

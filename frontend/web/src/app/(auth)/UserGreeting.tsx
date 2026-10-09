@@ -47,7 +47,7 @@ export const BuilderOptions = [
   { label: "Leads", link: "/builder/leads" },
   { label: "My Projects", link: "/builder/my-projects" },
   { label: "Roles & Team", link: "/builder/roles" },
-  { label: "Relationship Manager", link: "/builder/relationship-manager" },
+  // { label: "Relationship Manager", link: "/builder/relationship-manager" },
   { label: "Notifications", link: "/builder/notifications" },
   { label: "Account & Settings", link: "/builder/account-settings" },
   { label: "Support", link: "/builder/support" },

@@ -4,6 +4,7 @@ import {
   createRequestOtp,
   createVerifyOtp,
   me,
+  syncShortlist,
 } from "@/data/ClientData";
 import axios from "axios";
 import Link from "next/link";
@@ -31,6 +32,8 @@ import {
   phoneSchema,
 } from "./AuthZod";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import { formatIndianPhoneNumber } from "@/utilies/indianPhone";
+import { getLocalShortlist } from "@/utilies/shortlistLocal";
 
 interface RegisterDialogProps {
   open: boolean;
@@ -214,6 +217,15 @@ const RegisterDialog = ({
     window.dispatchEvent(new Event("auth-changed"));
   }
 
+  async function syncLocalShortlistIfNeeded() {
+    const localShortlist = getLocalShortlist();
+
+    if (localShortlist.length === 0) return;
+
+    await syncShortlist(localShortlist);
+    localStorage.removeItem("shortlist");
+  }
+
   async function handlePersonalStepNext() {
     const accountValidation = accountSchema.safeParse(formData);
     const nameError = validateFullName(formData.name, formData.role);
@@ -291,6 +303,7 @@ const RegisterDialog = ({
       const res = await createVerifyOtp(payload);
 
       saveAuthToken(res?.token);
+      await syncLocalShortlistIfNeeded();
       verifiedPhoneRef.current = phoneValidation.data.phone;
       setIsOtpVerified(true);
       toast.success("Account created successfully");
@@ -401,9 +414,13 @@ const RegisterDialog = ({
 
         if (!user) return;
 
-        setPhoneNumber(user.phone || "");
+        const normalizedUserPhone = formatIndianPhoneNumber(user.phone);
+
+        setPhoneNumber(normalizedUserPhone);
         verifiedPhoneRef.current =
-          user.phoneVerified && user.phone ? normalizePhone(user.phone) : "";
+          user.phoneVerified && normalizedUserPhone
+            ? normalizePhone(normalizedUserPhone)
+            : "";
 
         setFormData((prev) => ({
           ...prev,

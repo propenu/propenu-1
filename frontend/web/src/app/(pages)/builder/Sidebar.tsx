@@ -32,11 +32,11 @@ const menuItems = [
     link: "/builder/roles",
     icon: FiUsers,
   },
-  {
-    label: "Relationship Manager",
-    link: "/builder/relationship-manager",
-    icon: FiBriefcase,
-  },
+  // {
+  //   label: "Relationship Manager",
+  //   link: "/builder/relationship-manager",
+  //   icon: FiBriefcase,
+  // },
   {
     label: "Notifications",
     link: "/builder/notifications",

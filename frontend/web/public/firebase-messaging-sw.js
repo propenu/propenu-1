@@ -12,6 +12,25 @@ const messaging = firebase.messaging();
 
 const SITE_ORIGIN = self.location.origin;
 
+function parseJsonObject(value) {
+  if (!value || typeof value !== "string") return null;
+
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function getNativeNotificationObject(payload = {}) {
+  const data = payload.data || {};
+  const parsedNotification = parseJsonObject(data.notification);
+  const fcmNotification = data.FCM_MSG?.notification;
+
+  return payload.notification || parsedNotification || fcmNotification || {};
+}
+
 function normalizePath(path) {
   if (!path || typeof path !== "string") return "";
   if (/^propenu:\/\//i.test(path)) {
@@ -35,11 +54,11 @@ function normalizePath(path) {
 
 function getPayloadData(notification) {
   const data = notification?.data || {};
-  return data.FCM_MSG?.data || data;
+  return data.FCM_MSG?.data || data.payloadData || data;
 }
 
 function buildTargetUrl(data = {}) {
-  const fallbackUrl = data.webUrl || data.fallbackUrl || data.url;
+  const fallbackUrl = data.href || data.webUrl || data.fallbackUrl || data.url;
   if (fallbackUrl) {
     try {
       const parsed = new URL(fallbackUrl, SITE_ORIGIN);
@@ -85,7 +104,7 @@ function buildTargetUrl(data = {}) {
 }
 
 messaging.onBackgroundMessage((payload) => {
-  const notification = payload.notification || {};
+  const notification = getNativeNotificationObject(payload);
   const data = payload.data || {};
   const title =
     notification.title ||
@@ -104,7 +123,10 @@ messaging.onBackgroundMessage((payload) => {
     badge: "/icons/icon-192x192.png",
     image: notification.image,
     tag: data.type || data.category || "propenu-notification",
-    data,
+    data: {
+      href: buildTargetUrl(data),
+      payloadData: data,
+    },
   });
 });
 

@@ -104,6 +104,168 @@ const getGuestContactOwnerLimit = async (listingType: string) => {
   return typeof limit === "number" ? limit : 2;
 };
 
+const getListingTitle = (listing: any) =>
+  listing?.title ||
+  listing?.projectName ||
+  listing?.buildingName ||
+  "your property";
+
+const notifyProjectLead = async ({
+  lead,
+  project,
+  projectId,
+  ownerPhone,
+  ownerEmail,
+}: {
+  lead: any;
+  project: any;
+  projectId: string;
+  ownerPhone: string;
+  ownerEmail: string;
+}) => {
+  const projectTitle = getListingTitle(project);
+
+  if (!project.createdBy) return;
+
+  if (ownerPhone && (lead.source || "site") !== "imported") {
+    sendLeadWhatsApp(ownerPhone, {
+      leadType: "Project",
+      name: lead.name,
+      leadPhone: lead.phone,
+      email: lead.email || "",
+      interestedIn: projectTitle,
+    }).catch((err) =>
+      console.error("Error sending project lead WhatsApp:", err),
+    );
+  }
+
+  await notifyOwnerAndAdmins({
+    type: "contact_requested",
+    title: "New Project Lead",
+    body: `${lead.name} submitted a lead for ${projectTitle}.`,
+    ownerId: project.createdBy,
+    projectId,
+    propertyType: "featuredprojects",
+    metadata: {
+      leadId: String(lead._id),
+      projectTitle,
+      userName: lead.name,
+      userPhone: lead.phone,
+      userEmail: lead.email || "",
+      source: lead.source || "site",
+    },
+  });
+
+  if (ownerEmail) {
+    const ownerName = project?.createdBy?.name || "Owner";
+    const location = project?.location?.city || project?.city || "your area";
+    const targetLink = `${process.env.FRONTEND_URL || "https://propenu.com"}/my-properties`;
+    const isCallback =
+      lead.contactPreference === "callback" ||
+      lead.type === "callback" ||
+      lead.source === "callback";
+
+    if (isCallback) {
+      sendCallbackRequestEmail(ownerEmail, ownerName, lead.name, projectTitle, location, targetLink)
+        .catch((err) => console.error("Error sending project callback email:", err));
+    } else {
+      sendUserContactingEmail(ownerEmail, ownerName, lead.name, projectTitle, location, targetLink)
+        .catch((err) => console.error("Error sending project contact email:", err));
+    }
+  }
+};
+
+const notifyPropertyLead = async ({
+  lead,
+  property,
+  projectId,
+  propertyType,
+  listingType,
+  ownerId,
+  ownerPhone,
+  ownerEmail,
+}: {
+  lead: any;
+  property: any;
+  projectId: string;
+  propertyType: string;
+  listingType: string;
+  ownerId: string;
+  ownerPhone: string;
+  ownerEmail: string;
+}) => {
+  if (!ownerId) return;
+
+  const propertyTitle = getListingTitle(property);
+
+  if (ownerPhone && (lead.source || "site") !== "imported") {
+    sendLeadWhatsApp(ownerPhone, {
+      leadType: listingType === "rent" || listingType === "lease" ? "Rental" : "Sale",
+      name: lead.name,
+      leadPhone: lead.phone,
+      email: lead.email || "",
+      interestedIn: propertyTitle,
+    }).catch((err) =>
+      console.error("Error sending property lead WhatsApp:", err),
+    );
+  }
+
+  await notifyOwnerAndAdmins({
+    type: "contact_requested",
+    title: "New Contact Request",
+    body: `${lead.name} requested contact for ${propertyTitle}.`,
+    ownerId,
+    projectId,
+    propertyType,
+    metadata: {
+      leadId: String(lead._id),
+      propertyTitle,
+      userName: lead.name,
+      userPhone: lead.phone,
+      userEmail: lead.email || "",
+      source: lead.source || "site",
+    },
+  });
+
+  if (ownerEmail) {
+    const ownerName = property?.createdBy?.name || "Owner";
+    const location =
+      property?.location?.city ||
+      property?.city ||
+      property?.location?.address ||
+      "your area";
+    const targetLink = `${process.env.FRONTEND_URL || "https://propenu.com"}/my-properties`;
+    const isCallback =
+      lead.contactPreference === "callback" ||
+      lead.type === "callback" ||
+      lead.source === "callback";
+
+    if (isCallback) {
+      sendCallbackRequestEmail(
+        ownerEmail,
+        ownerName,
+        lead.name,
+        propertyTitle,
+        location,
+        targetLink,
+      ).catch((err) =>
+        console.error("Error sending property callback email:", err),
+      );
+    } else {
+      sendUserContactingEmail(
+        ownerEmail,
+        ownerName,
+        lead.name,
+        propertyTitle,
+        location,
+        targetLink,
+      ).catch((err) =>
+        console.error("Error sending property contact email:", err),
+      );
+    }
+  }
+};
+
 export const createPublicLead = async (
   data: any,
   options?: { actorUserId?: string | null },
@@ -148,7 +310,7 @@ export const createPublicLead = async (
   });
 
   if (exists) {
-    throw new Error("You already contacted this project");
+    return exists;
   }
 
   // 4️⃣ Save lead
@@ -158,55 +320,13 @@ export const createPublicLead = async (
     propertyModel: (project as any).constructor?.modelName || FeaturedProject.modelName,
     propertySnapshot: buildLeadPropertySnapshot(project, "featuredprojects"),
   });
-  const projectTitle =
-    project.title || (project as any).projectName || "your project";
-
-  if (!project.createdBy) {
-    return lead;
-  }
-
-  if (ownerPhone && (lead.source || "site") !== "imported") {
-    sendLeadWhatsApp(ownerPhone, {
-      leadType: "Project",
-      name: lead.name,
-      leadPhone: lead.phone,
-      email: lead.email || "",
-      interestedIn: projectTitle,
-    }).catch((err) =>
-      console.error("Error sending project lead WhatsApp:", err),
-    );
-  }
-
-  await notifyOwnerAndAdmins({
-    type: "contact_requested",
-    title: "New Project Lead",
-    body: `${lead.name} submitted a lead for ${projectTitle}.`,
-    ownerId: project.createdBy,
+  await notifyProjectLead({
+    lead,
+    project,
     projectId,
-    propertyType: "featuredprojects",
-    metadata: {
-      leadId: String(lead._id),
-      projectTitle,
-      userName: lead.name,
-      userPhone: lead.phone,
-      userEmail: lead.email || "",
-      source: lead.source || "site",
-    },
+    ownerPhone,
+    ownerEmail,
   });
-
-  if (ownerEmail) {
-    const ownerName = (project as any)?.createdBy?.name || "Owner";
-    const location = (project as any)?.location?.city || (project as any)?.city || "your area";
-    const targetLink = `${process.env.FRONTEND_URL || "https://propenu.com"}/my-properties`;
-    const isCallback = data.contactPreference === "callback" || data.type === "callback" || data.source === "callback";
-    if (isCallback) {
-      sendCallbackRequestEmail(ownerEmail, ownerName, lead.name, projectTitle, location, targetLink)
-        .catch((err) => console.error("Error sending project callback email:", err));
-    } else {
-      sendUserContactingEmail(ownerEmail, ownerName, lead.name, projectTitle, location, targetLink)
-        .catch((err) => console.error("Error sending project contact email:", err));
-    }
-  }
 
   return lead;
 };
@@ -258,7 +378,7 @@ export const createPublicPropertyLead = async (
   });
 
   if (exists) {
-    throw new Error("You already contacted this property");
+    return exists;
   }
 
   const listingType =

@@ -160,7 +160,8 @@ export default function MicroSiteNavbar({
     if (projectId) {
       try {
         await trackProjectBrochureDownload(projectId);
-      } catch {
+      } catch (error) {
+        console.error("Brochure download tracking failed:", error);
         // Do not block the actual download if tracking fails.
       }
     }

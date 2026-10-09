@@ -112,7 +112,11 @@ function normalizeAmenitiesInput(amenities?: any[]) {
 function normalizeCreatedByRoleFilterToken(token: string) {
   const normalized = token.trim().toLowerCase().replace(/[-\s]+/g, "_");
 
-  if (["owner", "owners", "user"].includes(normalized)) return "user";
+  if (
+    ["owner", "owners", "user", "property_owner", "property_owners", "seller", "sellers"].includes(
+      normalized,
+    )
+  ) return "user";
   if (["agent", "agents", "sales_agent", "sales_manager"].includes(normalized)) {
     return "agent";
   }
@@ -831,12 +835,17 @@ export const CommercialService = {
           createdByRole: { $arrayElemAt: ["$createdByRole", 0] },
           createdByRoleRaw: {
             $ifNull: [
-              "$createdByUser.roleName",
+              "$listingSource",
               {
                 $ifNull: [
-                  "$createdByUser.role",
+                  "$createdByUser.roleName",
                   {
-                    $ifNull: ["$createdByRole.name", "$createdByRole.label"],
+                    $ifNull: [
+                      "$createdByUser.role",
+                      {
+                        $ifNull: ["$createdByRole.name", "$createdByRole.label"],
+                      },
+                    ],
                   },
                 ],
               },
@@ -870,7 +879,19 @@ export const CommercialService = {
                   case: {
                     $in: [
                       "$createdByRoleName",
-                      ["owner", "owners", "user"],
+                      [
+                        "owner",
+                        "owners",
+                        "user",
+                        "property owner",
+                        "property_owner",
+                        "property-owner",
+                        "property owners",
+                        "property_owners",
+                        "property-owners",
+                        "seller",
+                        "sellers",
+                      ],
                     ],
                   },
                   then: "user",

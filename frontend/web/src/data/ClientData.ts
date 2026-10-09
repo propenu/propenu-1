@@ -75,6 +75,24 @@ export async function getFeaturedProjects(params?: {
   return res.json();
 }
 
+export type PrimeDisplayMode = "ranked" | "shuffle";
+
+export async function getPrimeDisplaySettings(): Promise<{
+  displayMode: PrimeDisplayMode;
+}> {
+  const res = await fetch(`${url}/api/properties/site-branding/prime-display`, {
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch prime display settings");
+  }
+
+  const json = await res.json();
+  const displayMode = json?.data?.displayMode === "shuffle" ? "shuffle" : "ranked";
+  return { displayMode };
+}
+
 export type NewProjectSearchParams = {
   q?: string;
   city?: string;

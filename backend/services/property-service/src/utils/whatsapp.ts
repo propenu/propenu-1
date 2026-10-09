@@ -3,10 +3,12 @@ import axios from "axios";
 const sendWhatsAppTemplate = async ({
   phone,
   templateName,
+  language,
   parameters,
 }: {
   phone: string;
   templateName: string;
+  language?: string;
   parameters: string[];
 }) => {
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -31,7 +33,7 @@ const sendWhatsAppTemplate = async ({
     type: "template",
     template: {
       name: templateName,
-      language: { code: "en" },
+      language: { code: language || process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en" },
       components: [
         {
           type: "body",
@@ -63,16 +65,34 @@ export async function sendLeadWhatsApp(phone: string, params: {
   interestedIn?: string;
 }) {
   try {
+    const templateName = process.env.WHATSAPP_LEAD_TEMPLATE_NAME || "leads_template";
+    const language = process.env.WHATSAPP_LEAD_TEMPLATE_LANGUAGE ||
+      process.env.WHATSAPP_TEMPLATE_LANGUAGE ||
+      "en";
+    const parameters = [
+      params.leadType || "Lead",
+      params.name || "-",
+      params.interestedIn || "-",
+      params.leadPhone || "-",
+      params.email || "Not provided",
+    ];
+
+    console.log("[WhatsApp Lead] Sending lead details", {
+      to: phone.replace(/\d(?=\d{4})/g, "*"),
+      templateName,
+      language,
+      leadType: parameters[0],
+      name: parameters[1],
+      interestedIn: parameters[2],
+      leadPhone: parameters[3],
+      email: parameters[4],
+    });
+
     return await sendWhatsAppTemplate({
       phone,
-      templateName: "leads_template",
-      parameters: [
-        params.leadType || "Lead",
-        params.name || "-",
-        params.interestedIn || "-",
-        params.leadPhone || "-",
-        params.email || "Not provided",
-      ],
+      templateName,
+      language,
+      parameters,
     });
   } catch (err: any) {
     console.error(

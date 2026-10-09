@@ -96,7 +96,11 @@ function normalizePayload(obj: any) {
 function normalizeCreatedByRoleFilterToken(token: string) {
   const normalized = token.trim().toLowerCase().replace(/[-\s]+/g, "_");
 
-  if (["owner", "owners", "user"].includes(normalized)) return "user";
+  if (
+    ["owner", "owners", "user", "property_owner", "property_owners", "seller", "sellers"].includes(
+      normalized,
+    )
+  ) return "user";
   if (["agent", "agents", "sales_agent", "sales_manager"].includes(normalized)) {
     return "agent";
   }
@@ -722,12 +726,17 @@ export const ResidentialPropertyService = {
           createdByRoleDoc: { $arrayElemAt: ["$createdByRoleDoc", 0] },
           createdByRoleRaw: {
             $ifNull: [
-              "$createdByUser.roleName",
+              "$listingSource",
               {
                 $ifNull: [
-                  "$createdByUser.role",
+                  "$createdByUser.roleName",
                   {
-                    $ifNull: ["$createdByRoleDoc.name", "$createdByRoleDoc.label"],
+                    $ifNull: [
+                      "$createdByUser.role",
+                      {
+                        $ifNull: ["$createdByRoleDoc.name", "$createdByRoleDoc.label"],
+                      },
+                    ],
                   },
                 ],
               },
@@ -761,7 +770,19 @@ export const ResidentialPropertyService = {
                   case: {
                     $in: [
                       "$createdByRoleName",
-                      ["owner", "owners", "user"],
+                      [
+                        "owner",
+                        "owners",
+                        "user",
+                        "property owner",
+                        "property_owner",
+                        "property-owner",
+                        "property owners",
+                        "property_owners",
+                        "property-owners",
+                        "seller",
+                        "sellers",
+                      ],
                     ],
                   },
                   then: "user",

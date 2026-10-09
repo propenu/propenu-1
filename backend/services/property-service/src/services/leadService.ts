@@ -169,17 +169,17 @@ export const createLead = async (
     throw new Error(`Invalid propertyType: ${propertyType}`);
   }
 
+  const property = await PropertyModel.findById(projectId);
+  if (!property) {
+    throw new Error("Property not found");
+  }
+
   const existingLead = await Lead.findOne({
     projectId,
     createdBy: userId,
   });
   if (existingLead) {
     return getExistingLeadWithDialogDetails(existingLead);
-  }
-
-  const property = await PropertyModel.findById(projectId);
-  if (!property) {
-    throw new Error("Property not found");
   }
 
   const ownerId = (property as any).createdBy;

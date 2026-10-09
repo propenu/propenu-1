@@ -3,10 +3,37 @@ import { getFirebaseMessaging } from "@/lib/firebase";
 
 const firebaseVapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
 
+const getPushSetupAbortMessage = (error: unknown) => {
+  if (!(error instanceof DOMException)) return "";
+  if (error.name !== "AbortError") return "";
+
+  return (
+    "Push setup: browser push registration failed. This usually happens on " +
+    "unsupported origins/devices or when the browser push service is unavailable."
+  );
+};
+
 export const getFcmToken = async () => {
   try {
     if (typeof window === "undefined" || !("Notification" in window)) {
       console.info("Push setup: Notification API is unavailable");
+      return null;
+    }
+
+    if (!window.isSecureContext) {
+      console.info("Push setup: secure context is required for web push", {
+        origin: window.location.origin,
+      });
+      return null;
+    }
+
+    if (!("serviceWorker" in navigator)) {
+      console.info("Push setup: Service Worker API is unavailable");
+      return null;
+    }
+
+    if (!("PushManager" in window)) {
+      console.info("Push setup: Push API is unavailable");
       return null;
     }
 
@@ -33,10 +60,10 @@ export const getFcmToken = async () => {
       return null;
     }
 
-    const serviceWorkerRegistration =
-      "serviceWorker" in navigator
-        ? await navigator.serviceWorker.register("/firebase-messaging-sw.js")
-        : undefined;
+    const serviceWorkerRegistration = await navigator.serviceWorker.register(
+      "/firebase-messaging-sw.js",
+    );
+    await navigator.serviceWorker.ready;
 
     console.info("Push setup: service worker ready", Boolean(serviceWorkerRegistration));
     const token = await getToken(resolvedMessaging, {
@@ -47,6 +74,15 @@ export const getFcmToken = async () => {
     console.info("Push setup: getToken result", Boolean(token));
     return token;
   } catch (error) {
+    const abortMessage = getPushSetupAbortMessage(error);
+    if (abortMessage) {
+      console.info(abortMessage, {
+        origin: window.location.origin,
+        isSecureContext: window.isSecureContext,
+      });
+      return null;
+    }
+
     console.error("Error getting token:", error);
     return null;
   }

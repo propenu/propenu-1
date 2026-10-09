@@ -1,13 +1,17 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { FeaturedProject } from "@/types";
 import { ArrowDropdownIcon } from "@/icons/icons";
 import { useCity } from "@/hooks/useCity";
 import Image from "next/image";
 import Link from "next/link";
 import formatINR from "@/utilies/PriceFormat";
-import { getFeaturedProjects } from "@/data/ClientData";
+import {
+  getFeaturedProjects,
+  getPrimeDisplaySettings,
+  PrimeDisplayMode,
+} from "@/data/ClientData";
 import { minDelay } from "@/utilies/minDelay";
 import { getProjectConfigurationLabel } from "@/utilies/projectConfiguration";
 import {
@@ -30,6 +34,19 @@ const sortProjectsByRank = (projects: FeaturedProject[]) =>
     return rankA - rankB;
   });
 
+const shuffleProjects = (projects: FeaturedProject[]) => {
+  const shuffled = [...projects];
+
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const current = shuffled[i];
+    shuffled[i] = shuffled[j];
+    shuffled[j] = current;
+  }
+
+  return shuffled;
+};
+
 function getPriceLabel(price?: number) {
   if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) {
     return "Price on Request";
@@ -38,7 +55,13 @@ function getPriceLabel(price?: number) {
   return `${formatINR(price)} onwards`;
 }
 
-function PrimeProjectCard({ project }: { project: FeaturedProject }) {
+function PrimeProjectCard({
+  project,
+  showRankBadge,
+}: {
+  project: FeaturedProject;
+  showRankBadge: boolean;
+}) {
   const { isShortlisted, isShortlistLoading, toggleShortlist } = useShortlist(
     project._id,
     "FeaturedProject",
@@ -108,6 +131,12 @@ function PrimeProjectCard({ project }: { project: FeaturedProject }) {
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
           className="object-cover transition-transform duration-300 group-hover:scale-105"
         />
+
+        {showRankBadge && typeof project.rank === "number" && (
+          <span className="absolute left-3 top-3 z-10 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-gray-800 shadow">
+            #{project.rank}
+          </span>
+        )}
 
         <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
           <button
@@ -181,6 +210,10 @@ function PrimeProjectCard({ project }: { project: FeaturedProject }) {
 
 export default function FeaturedProjectsClient() {
   const sliderRef = useRef<HTMLDivElement | null>(null);
+  const shuffleCacheRef = useRef<{
+    signature: string;
+    items: FeaturedProject[];
+  } | null>(null);
   const { selectedCity } = useCity();
   const cacheKey = getHomeSectionCacheKey("featured-projects", {
     state: selectedCity?.state,
@@ -193,6 +226,7 @@ export default function FeaturedProjectsClient() {
       ),
   );
   const [loading, setLoading] = useState(() => !getHomeSectionCache(cacheKey));
+  const [displayMode, setDisplayMode] = useState<PrimeDisplayMode>("ranked");
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
@@ -202,6 +236,26 @@ export default function FeaturedProjectsClient() {
     window.addEventListener(RATE_LIMIT_RECOVERED_EVENT, retryAfterRateLimit);
     return () => window.removeEventListener(RATE_LIMIT_RECOVERED_EVENT, retryAfterRateLimit);
   }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    getPrimeDisplaySettings()
+      .then((settings) => {
+        if (isActive) {
+          setDisplayMode(settings.displayMode);
+        }
+      })
+      .catch((err) => {
+        if (!isActive) return;
+        console.error("❌ Prime display settings fetch failed:", err);
+        setDisplayMode("ranked");
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [retryKey]);
 
   useEffect(() => {
     if (!selectedCity) return;
@@ -247,8 +301,26 @@ export default function FeaturedProjectsClient() {
     };
   }, [cacheKey, selectedCity, retryKey]);
 
+  const itemIdSignature = items.map((item) => item._id).join("|");
+  const displayItems = useMemo(() => {
+    if (displayMode === "shuffle") {
+      if (shuffleCacheRef.current?.signature === itemIdSignature) {
+        return shuffleCacheRef.current.items;
+      }
+
+      const shuffledItems = shuffleProjects(items);
+      shuffleCacheRef.current = {
+        signature: itemIdSignature,
+        items: shuffledItems,
+      };
+      return shuffledItems;
+    }
+
+    return items;
+  }, [displayMode, itemIdSignature, items]);
+
   // Gate: arrows only make sense when there are more than 2 cards.
-  const hasMoreThanTwo = items.length > 2;
+  const hasMoreThanTwo = displayItems.length > 2;
 
   useEffect(() => {
     const slider = sliderRef.current;
@@ -284,7 +356,7 @@ export default function FeaturedProjectsClient() {
       slider.removeEventListener("scroll", updateScrollButtons);
       window.removeEventListener("resize", updateScrollButtons);
     };
-  }, [items, loading, hasMoreThanTwo]);
+  }, [displayItems, loading, hasMoreThanTwo]);
 
   const scrollBy = (dir: "left" | "right") => {
     const el = sliderRef.current;
@@ -300,7 +372,7 @@ export default function FeaturedProjectsClient() {
     }, 350);
   };
 
-  const hasItems = items.length > 0;
+  const hasItems = displayItems.length > 0;
 
   if (!hasItems) {
     return null;
@@ -360,8 +432,12 @@ export default function FeaturedProjectsClient() {
             ref={sliderRef}
             className="flex gap-4 overflow-x-auto scroll-smooth no-scrollbar px-1 py-2 snap-x snap-mandatory"
           >
-            {items.map((project) => (
-              <PrimeProjectCard key={project._id} project={project} />
+            {displayItems.map((project) => (
+              <PrimeProjectCard
+                key={project._id}
+                project={project}
+                showRankBadge={displayMode === "ranked"}
+              />
             ))}
           </div>
         ) : null}

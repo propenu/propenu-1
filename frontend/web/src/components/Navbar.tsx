@@ -844,8 +844,8 @@ const Navbar = () => {
                     {getInitial(user?.user?.name)}
                   </div>
 
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-sm font-semibold text-gray-900 truncate">
+                  <div className="min-w-0 max-w-[calc(100%-3.75rem)] flex-1">
+                    <span className="block truncate whitespace-nowrap text-sm font-semibold text-gray-900">
                       Hi, {user?.user?.name?.split(" ")?.[0] ?? "User"}
                     </span>
                   </div>

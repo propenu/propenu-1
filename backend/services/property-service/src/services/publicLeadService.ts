@@ -149,6 +149,10 @@ const notifyProjectLead = async ({
     metadata: {
       leadId: String(lead._id),
       projectTitle,
+      slug: project?.slug || "",
+      listingKind: "project",
+      category: "featuredproject",
+      promotionType: project?.promotion?.type || "",
       userName: lead.name,
       userPhone: lead.phone,
       userEmail: lead.email || "",
@@ -220,6 +224,10 @@ const notifyPropertyLead = async ({
     metadata: {
       leadId: String(lead._id),
       propertyTitle,
+      slug: property?.slug || "",
+      listingKind: propertyType === "featuredprojects" ? "project" : "property",
+      category: propertyType,
+      promotionType: property?.promotion?.type || "",
       userName: lead.name,
       userPhone: lead.phone,
       userEmail: lead.email || "",
@@ -446,6 +454,10 @@ export const createPublicPropertyLead = async (
       metadata: {
         leadId: String(lead._id),
         propertyTitle,
+        slug: (property as any)?.slug || "",
+        listingKind: propertyType === "featuredprojects" ? "project" : "property",
+        category: propertyType,
+        promotionType: (property as any)?.promotion?.type || "",
         userName: lead.name,
         userPhone: lead.phone,
         userEmail: lead.email || "",

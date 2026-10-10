@@ -95,28 +95,28 @@ const UserGreeting = ({ user, onClose }: UserGreetingProps) => {
         backdropClassName="fixed inset-0 bg-black/45 z-40 transition-all duration-100"
         triggerLabel={
           <div
-            className="flex items-center gap-3 cursor-pointer px-4 py-1"
+            className="flex min-w-0 items-center gap-3 cursor-pointer px-4 py-1"
             onClick={() => setIsOpen(!isOpen)}
           >
             {/* Avatar */}
             <div
-              className={`h-9 w-9 rounded-full border border-[#27AE60] text-[#26ad5f] flex items-center justify-center font-semibold text-sm shadow`}
+              className={`h-9 w-9 shrink-0 rounded-full border border-[#27AE60] text-[#26ad5f] flex items-center justify-center font-semibold text-sm shadow`}
             >
               {getInitial(user?.user?.name)}
             </div>
 
             {/* Name & Role */}
-            <div className="flex flex-col items-start">
-              <span className="text-sm  text-gray-800 capitalize">
+            <div className="flex min-w-0 flex-1 flex-col items-start">
+              <span className="block max-w-full truncate whitespace-nowrap text-sm text-gray-800 capitalize">
                 Hi, {user?.user?.name || "User"}
               </span>
               {showRole && (
-                <span className="text-xs text-gray-500 capitalize">{role}</span>
+                <span className="block max-w-full truncate whitespace-nowrap text-xs text-gray-500 capitalize">{role}</span>
               )}
             </div>
 
             {/* Dropdown Icon */}
-            <div className={`text-gray-400 transition-transform duration-300 ${isOpen ? 'rotate-180' : 'rotate-0'}`}>
+            <div className={`shrink-0 text-gray-400 transition-transform duration-300 ${isOpen ? 'rotate-180' : 'rotate-0'}`}>
               <HiChevronDown className="w-4 h-4" />
             </div>
           </div>

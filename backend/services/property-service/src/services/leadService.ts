@@ -106,6 +106,10 @@ const notifyLeadCreated = async ({
     metadata: {
       leadId: String(lead._id),
       propertyTitle,
+      slug: property?.slug || "",
+      listingKind: lead.propertyType === "featuredprojects" ? "project" : "property",
+      category: lead.propertyType,
+      promotionType: property?.promotion?.type || "",
       userName,
       userPhone: user?.phone || lead?.phone || "",
       userEmail: user?.email || lead?.email || "",

@@ -6,6 +6,24 @@ dotenv.config();
 
 const DEFAULT_SERVICE_ACCOUNT_PATH = "backend/firebase-service-account.json";
 
+const findExistingServiceAccountPath = (startDir: string) => {
+  let currentDir = path.resolve(startDir);
+
+  while (true) {
+    const candidates = [
+      path.join(currentDir, DEFAULT_SERVICE_ACCOUNT_PATH),
+      path.join(currentDir, "firebase-service-account.json"),
+    ];
+
+    const found = candidates.find((candidate) => fs.existsSync(candidate));
+    if (found) return found;
+
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) return null;
+    currentDir = parentDir;
+  }
+};
+
 const getServiceAccountPath = () => {
   const configuredPath = process.env.FIREBASE_KEY_PATH;
   const targetPath = configuredPath || DEFAULT_SERVICE_ACCOUNT_PATH;
@@ -19,11 +37,12 @@ const getServiceAccountPath = () => {
     return cwdPath;
   }
 
-  if (!configuredPath) {
-    const backendPath = path.resolve(__dirname, "../..", "firebase-service-account.json");
-    if (fs.existsSync(backendPath)) {
-      return backendPath;
-    }
+  const discoveredPath =
+    findExistingServiceAccountPath(process.cwd()) ||
+    findExistingServiceAccountPath(__dirname);
+
+  if (discoveredPath) {
+    return discoveredPath;
   }
 
   return cwdPath;

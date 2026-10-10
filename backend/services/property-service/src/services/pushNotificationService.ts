@@ -18,6 +18,7 @@ export type NotifyInput = {
 };
 
 const ADMIN_ROLE_NAMES = ["admin", "super_admin"];
+const DEBUG_DELIVERY_TYPES = new Set(["brochure_downloaded", "contact_requested"]);
 export const HIGH_TIME_SPENT_COOLDOWN_HOURS =
   Number(process.env.HIGH_TIME_SPENT_COOLDOWN_HOURS) || 6;
 
@@ -35,9 +36,11 @@ const sendToTokens = async (
   data: Record<string, unknown>,
 ) => {
   const uniqueTokens = Array.from(new Set(tokens.filter(Boolean)));
-  if (!uniqueTokens.length) return;
+  if (!uniqueTokens.length) {
+    return { successCount: 0, failureCount: 0, failedTokens: [] };
+  }
 
-  await sendBulkPush({
+  return sendBulkPush({
     tokens: uniqueTokens,
     title,
     body,
@@ -59,6 +62,38 @@ const getAdminUsers = async () => {
   })
     .select("_id")
     .lean();
+};
+
+const getOwnerAudience = async (ownerId?: string | Types.ObjectId | null) => {
+  if (!ownerId || !Types.ObjectId.isValid(String(ownerId))) {
+    return "user";
+  }
+
+  const owner = await User.findById(ownerId)
+    .select("roleId")
+    .populate("roleId", "name")
+    .lean();
+  const roleName = String((owner?.roleId as any)?.name || "").toLowerCase();
+
+  if (roleName === "builder" || roleName === "builder_staff") return "builder";
+  if (roleName === "agent" || roleName === "sales_agent") return "agent";
+  return "user";
+};
+
+const getProjectNotificationData = (metadata?: Record<string, unknown>) => {
+  const projectSlug = String(metadata?.projectSlug || metadata?.slug || "").trim();
+  const promotionType = String(metadata?.promotionType || "").trim();
+
+  return {
+    ...(projectSlug
+      ? {
+          slug: projectSlug,
+          listingKind: "project",
+          category: "featuredproject",
+          promotionType,
+        }
+      : {}),
+  };
 };
 
 export const shouldSendHighTimeSpentPush = async ({
@@ -204,13 +239,27 @@ export const notifyOwnerAndAdmins = async ({
       ownerId && Types.ObjectId.isValid(String(ownerId))
         ? await getActiveDeviceTokensForUsers([ownerId])
         : [];
+    const ownerAudience = await getOwnerAudience(ownerId);
+    const projectNotificationData = getProjectNotificationData(metadata);
+    const shouldLogDelivery = DEBUG_DELIVERY_TYPES.has(type);
 
-    await Promise.all([
+    if (shouldLogDelivery) {
+      console.log("Property notification delivery check:", {
+        type,
+        ownerId: ownerId ? String(ownerId) : "",
+        ownerAudience,
+        ownerTokenCount: ownerTokens.length,
+        projectId: projectId ? String(projectId) : "",
+      });
+    }
+
+    const [ownerPushResult] = await Promise.all([
       ownerTokens.length
         ? sendToTokens(ownerTokens, title, body, {
             type,
-            audience: "owner",
+            audience: ownerAudience,
             projectId: projectId ? String(projectId) : "",
+            ...projectNotificationData,
           })
         : Promise.resolve(),
       createPlatformNotification({
@@ -224,6 +273,14 @@ export const notifyOwnerAndAdmins = async ({
         metadata,
       }),
     ]);
+
+    if (shouldLogDelivery) {
+      console.log("Property notification owner push result:", ownerPushResult || {
+        successCount: 0,
+        failureCount: 0,
+        failedTokens: [],
+      });
+    }
   } catch (error) {
     console.error("Notification delivery failed:", error);
   }
@@ -238,7 +295,7 @@ export const notifyProjectBrochureDownload = async ({
 }) => {
   const [project, user] = await Promise.all([
     FeaturedProject.findById(projectId)
-      .select("title projectName createdBy")
+      .select("title projectName createdBy slug promotion.type")
       .lean(),
     User.findById(userId).select("name phone email").lean(),
   ]);
@@ -261,6 +318,8 @@ export const notifyProjectBrochureDownload = async ({
     propertyType: "featuredprojects",
     metadata: {
       projectTitle,
+      projectSlug: (project as any).slug || "",
+      promotionType: (project as any).promotion?.type || "",
       userName,
       userPhone: user?.phone || "",
       userEmail: user?.email || "",

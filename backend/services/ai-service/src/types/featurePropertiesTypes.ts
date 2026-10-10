@@ -156,6 +156,7 @@ export interface IFeaturedProject {
 
   // timeline & counts
   possessionDate?: string;
+  launchDate?: string;
   totalTowers?: number;
   totalFloors?: string;
   projectArea?: number;

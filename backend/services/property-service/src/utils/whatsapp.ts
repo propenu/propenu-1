@@ -1,5 +1,19 @@
 import axios from "axios";
 
+export const LEAD_WHATSAPP_TEMPLATE_BODY = `You have received a new lead for {{2}}.
+Name: {{1}}
+Phone: {{3}}
+Email: {{4}}
+
+Please connect with the lead to understand their property requirements and take the conversation forward.`;
+
+export const LEAD_WHATSAPP_PARAMETER_ORDER = [
+  "{{1}} name",
+  "{{2}} interestedIn",
+  "{{3}} leadPhone",
+  "{{4}} email",
+] as const;
+
 const sendWhatsAppTemplate = async ({
   phone,
   templateName,
@@ -57,6 +71,19 @@ const sendWhatsAppTemplate = async ({
   return res.data;
 };
 
+const buildLeadWhatsAppParameters = (params: {
+  leadType?: string;
+  name?: string;
+  leadPhone?: string;
+  email?: string;
+  interestedIn?: string;
+}) => [
+  params.name || "-",
+  params.interestedIn || "-",
+  params.leadPhone || "-",
+  params.email || "Not provided",
+];
+
 export async function sendLeadWhatsApp(phone: string, params: {
   leadType?: string;
   name?: string;
@@ -69,23 +96,17 @@ export async function sendLeadWhatsApp(phone: string, params: {
     const language = process.env.WHATSAPP_LEAD_TEMPLATE_LANGUAGE ||
       process.env.WHATSAPP_TEMPLATE_LANGUAGE ||
       "en";
-    const parameters = [
-      params.leadType || "Lead",
-      params.name || "-",
-      params.interestedIn || "-",
-      params.leadPhone || "-",
-      params.email || "Not provided",
-    ];
+    const parameters = buildLeadWhatsAppParameters(params);
 
     console.log("[WhatsApp Lead] Sending lead details", {
       to: phone.replace(/\d(?=\d{4})/g, "*"),
       templateName,
       language,
-      leadType: parameters[0],
-      name: parameters[1],
-      interestedIn: parameters[2],
-      leadPhone: parameters[3],
-      email: parameters[4],
+      templateBody: LEAD_WHATSAPP_TEMPLATE_BODY,
+      name: parameters[0],
+      interestedIn: parameters[1],
+      leadPhone: parameters[2],
+      email: parameters[3],
     });
 
     return await sendWhatsAppTemplate({

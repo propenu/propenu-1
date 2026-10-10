@@ -163,6 +163,7 @@ const FeaturePropertySchema = new Schema<IFeaturedProjectDocument>(
       max: { type: Number },
     },
     possessionDate: { type: String },
+    launchDate: { type: String },
     totalTowers: { type: Number },
     totalFloors: { type: String },
     projectArea: { type: Number },

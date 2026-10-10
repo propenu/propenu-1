@@ -60,6 +60,8 @@ export const buildFormData = (data: IFeaturedProject): FormData => {
   // Possession & Units
   if (data.possessionDate)
     formData.append("possessionDate", data.possessionDate);
+  if (data.launchDate)
+    formData.append("launchDate", data.launchDate);
   if (data.totalTowers !== undefined && data.totalTowers !== null)
     formData.append("totalTowers", String(data.totalTowers));
   if (data.totalFloors !== undefined && data.totalFloors !== null)

@@ -229,6 +229,7 @@ export const CreateFeaturePropertySchema = z.object({
     .optional(),
 
   possessionDate: z.string().optional(),
+  launchDate: z.string().optional(),
   totalTowers: z.number().int().optional(),
   totalFloors: z.string().optional(),
   projectArea: z.number().optional(),
@@ -341,6 +342,7 @@ export const UpdateFeaturePropertySchema = z
       .object({ min: z.number().optional(), max: z.number().optional() })
       .optional(),
     possessionDate: z.string().optional(),
+    launchDate: z.string().optional(),
     totalTowers: z.number().int().optional(),
     totalFloors: z.string().optional(),
     projectArea: z.number().optional(),

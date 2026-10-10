@@ -104,6 +104,7 @@ export interface IFeaturedProject {
     max?: number;
   };
   possessionDate?: string;
+  launchDate?: string;
   totalTowers?: number;
   totalFloors?: string;
   projectArea?: number;

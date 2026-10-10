@@ -5,10 +5,10 @@ type OverviewProps = {
 };
 
 function formatDate(date?: string) {
-  if (!date) return "--";
+  if (!date) return null;
 
   const value = new Date(date);
-  if (Number.isNaN(value.getTime())) return "--";
+  if (Number.isNaN(value.getTime())) return date;
 
   return value.toLocaleString("en-US", {
     month: "long",
@@ -95,6 +95,7 @@ function formatAvailableUnits(project: FeaturedProject) {
 }
 
 export default function Overview({ project }: OverviewProps) {
+  const launchLabel = formatDate(project.launchDate);
   const possessionLabel = formatDate(project.possessionDate);
   const items = [
     {
@@ -115,10 +116,22 @@ export default function Overview({ project }: OverviewProps) {
         ? `${project.amenities.length} Amenities`
         : "--",
     },
-    {
-      label: "Launch Date",
-      value: possessionLabel,
-    },
+    ...(launchLabel
+      ? [
+          {
+            label: "Launch Date",
+            value: launchLabel,
+          },
+        ]
+      : []),
+    ...(possessionLabel
+      ? [
+          {
+            label: "Possession Date",
+            value: possessionLabel,
+          },
+        ]
+      : []),
     {
       label: "RERA ID",
       value: project.reraNumber || "--",

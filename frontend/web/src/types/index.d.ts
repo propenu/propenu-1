@@ -76,6 +76,7 @@ export interface FeaturedProject {
 
   // timeline & counts
   possessionDate?: string;
+  launchDate?: string;
   totalTowers?: number;
   totalFloors?: string;
   projectArea?: number;

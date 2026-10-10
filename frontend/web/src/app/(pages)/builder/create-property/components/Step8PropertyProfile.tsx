@@ -88,6 +88,15 @@ export const Step8PropertyProfile: React.FC<Step8PropertyProfileProps> = ({
         />
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <InputField
+          label="Launch Date (Optional)"
+          placeholder="e.g., Q1 2024"
+          value={data.launchDate ?? ""}
+          onChange={(v) => onUpdate("launchDate", v)}
+        />
+      </div>
+
       {/* Status */}
       {/* Status & RERA */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

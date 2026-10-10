@@ -32,6 +32,7 @@ type BhkPayload = {
   color?: string | null;
   reraNumber?: string | null;
   possessionDate?: string | Date | null;
+  launchDate?: string | Date | null;
 };
 
 type Props = {
@@ -97,8 +98,8 @@ function getUnitPriceLabel(unit?: Unit) {
   return "Price on Request";
 }
 
-function formatPossessionDate(value?: string | Date | null) {
-  if (!value) return "--";
+function formatProjectDate(value?: string | Date | null) {
+  if (!value) return null;
 
   const date =
     value instanceof Date
@@ -132,7 +133,8 @@ export default function AvailableProperties({ bhk }: Props) {
       : [];
   const color = (bhk?.color ?? "#F59E0B") as string;
   const reraNumber = bhk?.reraNumber ?? "--";
-  const possessionDate = formatPossessionDate(bhk?.possessionDate);
+  const possessionDate = formatProjectDate(bhk?.possessionDate);
+  const launchDate = formatProjectDate(bhk?.launchDate);
   const category = `${bhk?.categoryType ?? bhk?.propertyType ?? ""}`.toLowerCase();
   const isLand = category === "land";
 
@@ -454,12 +456,23 @@ export default function AvailableProperties({ bhk }: Props) {
                   <span className="text-right font-medium">Available</span>
                 </li>
 
-                <li className="flex items-center justify-between gap-3">
-                  <span className="text-xs text-gray-500 sm:text-sm">Possession</span>
-                  <div className="mt-0 text-right font-medium sm:mt-1">
-                    {possessionDate}
-                  </div>
-                </li>
+                {launchDate && (
+                  <li className="flex items-center justify-between gap-3">
+                    <span className="text-xs text-gray-500 sm:text-sm">Launch</span>
+                    <div className="mt-0 text-right font-medium sm:mt-1">
+                      {launchDate}
+                    </div>
+                  </li>
+                )}
+
+                {possessionDate && (
+                  <li className="flex items-center justify-between gap-3">
+                    <span className="text-xs text-gray-500 sm:text-sm">Possession</span>
+                    <div className="mt-0 text-right font-medium sm:mt-1">
+                      {possessionDate}
+                    </div>
+                  </li>
+                )}
               </ul>
 
               <div className="mt-3 sm:mt-6">

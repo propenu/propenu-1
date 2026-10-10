@@ -110,6 +110,7 @@ export const StepSchemas = {
   8: z.object({
     totalUnits: z.number().min(1, "Total units must be at least 1"),
     possessionDate: z.string().min(1, "Possession date is required"),
+    launchDate: z.string().optional(),
     totalTowers: z.number().optional(),
     totalFloors: z.string().optional(),
   }).strict(),

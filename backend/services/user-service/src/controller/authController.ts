@@ -3176,12 +3176,25 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
       "state",
       "pincode",
     ];
+    const optionalStringFields = new Set([
+      "companyName",
+      "email",
+      "address",
+      "locality",
+      "city",
+      "state",
+      "pincode",
+    ]);
     const updates: Record<string, unknown> = {};
 
     for (const key of allowedUpdates) {
       if (req.body[key] !== undefined) {
         if (typeof req.body[key] === "string") {
           const cleaned = req.body[key].trim();
+          if (cleaned === "" && optionalStringFields.has(key)) {
+            updates[key] = undefined;
+            continue;
+          }
           updates[key] = key === "email" ? cleaned.toLowerCase() : cleaned;
         } else {
           updates[key] = req.body[key];
@@ -3199,7 +3212,9 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    Object.assign(user, updates);
+    for (const [key, value] of Object.entries(updates)) {
+      user.set(key, value);
+    }
     await user.save();
 
     const role: any = user.roleId;
@@ -3228,6 +3243,16 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
     if (error?.code === 11000 && error?.keyPattern?.email) {
       return res.status(409).json({
         message: "Email already exists. Please use a different email.",
+      });
+    }
+
+    if (error?.name === "ValidationError") {
+      const firstError = Object.values(error.errors || {})[0] as
+        | { message?: string }
+        | undefined;
+
+      return res.status(400).json({
+        message: firstError?.message || "Please check the profile details and try again.",
       });
     }
 

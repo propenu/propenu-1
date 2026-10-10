@@ -334,7 +334,20 @@ export const updateUser = async (payload: {
   const token = Cookies.get("token");
   if (!token) return null;
 
-  const res = await axiosInstance.patch(`${url}/api/users/auth/me/update`, payload, {
+  const cleanedPayload = Object.entries(payload).reduce<Record<string, string>>(
+    (result, [key, value]) => {
+      if (typeof value !== "string") return result;
+
+      const cleaned = value.trim();
+      if (key !== "name" && cleaned === "") return result;
+
+      result[key] = cleaned;
+      return result;
+    },
+    {},
+  );
+
+  const res = await axiosInstance.patch(`${url}/api/users/auth/me/update`, cleanedPayload, {
     headers: {
       Authorization: `Bearer ${token}`,
     },

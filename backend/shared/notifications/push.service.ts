@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import { notificationTemplates } from "./templates";
 import { renderTemplate } from "./templateEngine";
-import admin from "./firebase";
+import admin, { isFirebaseMessagingEnabled } from "./firebase";
 import {
   ActiveDeviceTokenRow,
   deactivateDeviceTokens,
@@ -20,6 +20,7 @@ type PushData = Record<string, string>;
 type PushPlatform = ActiveDeviceTokenRow["platform"];
 
 const FCM_MULTICAST_LIMIT = 500;
+let warnedFirebaseDisabled = false;
 
 const chunk = <T>(items: T[], size: number) => {
   const chunks: T[][] = [];
@@ -99,6 +100,21 @@ const sendMulticastChunks = async (
   messageFactory: (tokens: string[]) => admin.messaging.MulticastMessage,
   tokens: string[],
 ) => {
+  if (!isFirebaseMessagingEnabled()) {
+    if (!warnedFirebaseDisabled) {
+      console.warn(
+        "Firebase Admin is not initialized. Skipping push notifications until Firebase credentials are configured.",
+      );
+      warnedFirebaseDisabled = true;
+    }
+
+    return {
+      successCount: 0,
+      failureCount: tokens.length,
+      failedTokens: [],
+    };
+  }
+
   let result: BulkNotificationResult = {
     successCount: 0,
     failureCount: 0,

@@ -4,25 +4,56 @@ import admin from "firebase-admin";
 import dotenv from "dotenv";
 dotenv.config();
 
-const parseServiceAccount = () => {
-  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+const DEFAULT_SERVICE_ACCOUNT_PATH = "backend/firebase-service-account.json";
+
+const getServiceAccountPath = () => {
+  const configuredPath = process.env.FIREBASE_KEY_PATH;
+  const targetPath = configuredPath || DEFAULT_SERVICE_ACCOUNT_PATH;
+
+  if (path.isAbsolute(targetPath)) {
+    return targetPath;
   }
 
-  const relativePath =
-    process.env.FIREBASE_KEY_PATH || "backend/firebase-service-account.json";
-  const serviceAccountPath = path.resolve(process.cwd(), relativePath);
+  const cwdPath = path.resolve(process.cwd(), targetPath);
+  if (fs.existsSync(cwdPath)) {
+    return cwdPath;
+  }
 
-  console.log("Firebase Path:", serviceAccountPath);
+  if (!configuredPath) {
+    const backendPath = path.resolve(__dirname, "../..", "firebase-service-account.json");
+    if (fs.existsSync(backendPath)) {
+      return backendPath;
+    }
+  }
 
-  if (!fs.existsSync(serviceAccountPath)) {
+  return cwdPath;
+};
+
+const parseServiceAccount = () => {
+  try {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+      return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    }
+
+    const serviceAccountPath = getServiceAccountPath();
+
+    console.log("Firebase Path:", serviceAccountPath);
+
+    if (!fs.existsSync(serviceAccountPath)) {
+      console.warn(
+        "Firebase service account file not found. Push notifications are disabled until FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_KEY_PATH is configured.",
+      );
+      return null;
+    }
+
+    return JSON.parse(fs.readFileSync(serviceAccountPath, "utf-8"));
+  } catch (error) {
     console.warn(
-      "Firebase service account file not found. Push notifications are disabled until FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_KEY_PATH is configured.",
+      "Firebase service account could not be loaded. Push notifications are disabled.",
+      error,
     );
     return null;
   }
-
-  return JSON.parse(fs.readFileSync(serviceAccountPath, "utf-8"));
 };
 
 if (!admin.apps.length) {
@@ -34,5 +65,7 @@ if (!admin.apps.length) {
     });
   }
 }
+
+export const isFirebaseMessagingEnabled = () => admin.apps.length > 0;
 
 export default admin;

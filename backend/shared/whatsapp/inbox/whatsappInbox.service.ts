@@ -443,48 +443,159 @@ async function findUserByWhatsAppPhone(waId: string) {
   );
 }
 
+const NEW_USER_WELCOME = `👋 Welcome aboard!
+
+We're glad to have you here.
+
+What would you like to explore first on Propenu?
+
+Choose an option below 👇`;
+
+type NewUserChoice = "create_account" | "buy_property" | "rent_property" | "post_property";
+
+const NEW_USER_ROWS: { id: NewUserChoice; title: string }[] = [
+  { id: "create_account", title: "Create Account" },
+  { id: "buy_property", title: "Buy a Property" },
+  { id: "rent_property", title: "Rent a Property" },
+  { id: "post_property", title: "Post a Property" },
+];
+
+function matchNewUserChoice(text: string): NewUserChoice | null {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ");
+  return NEW_USER_ROWS.find(
+    (row) => row.id === normalized || row.title.toLowerCase() === normalized,
+  )?.id || null;
+}
+
+function newUserChoiceContent(choice: NewUserChoice) {
+  const base = String(process.env.FRONTEND_URL || "https://propenu.com")
+    .trim()
+    .replace(/\/$/, "");
+  if (choice === "create_account") {
+    return {
+      text: "Create your Propenu account to save properties, contact owners, and finish registration.",
+      url: `${base}/?auth=register&redirect=%2F`,
+    };
+  }
+  if (choice === "buy_property") {
+    return {
+      text: "Start exploring properties to buy and discover the perfect home that matches your needs, preferences, and budget.",
+      url: `${base}/properties?type=residential&listingType=sale`,
+    };
+  }
+  if (choice === "rent_property") {
+    return {
+      text: "Start exploring properties to rent and discover the perfect home that matches your needs, preferences, and budget.",
+      url: `${base}/properties?type=residential&listingType=rent`,
+    };
+  }
+  return {
+    text: "Post your property on Propenu and reach people who want to buy or rent.",
+    url: `${base}/postproperty`,
+  };
+}
+
+async function isNewWhatsAppUser(waId: string) {
+  if (mongoose.connection.readyState !== 1) {
+    console.error("WhatsApp new-user reply skipped: database is not connected");
+    return false;
+  }
+  const user = await findUserByWhatsAppPhone(waId);
+  return user?.phoneVerified !== true;
+}
+
 async function replyToInboundMessage(waId: string, text: string) {
   try {
-    const sentRegistration = await maybeSendIncompleteRegistrationReply(waId, text);
-    if (!sentRegistration) {
-      await maybeSendWelcomeAutoReply(waId);
-    }
+    const choice = matchNewUserChoice(text);
+    if (choice && (await maybeReplyNewUserChoice(waId, choice))) return;
+    const sentMenu = await maybeSendNewUserMenu(waId, text);
+    if (!sentMenu) await maybeSendWelcomeAutoReply(waId);
   } catch (err) {
     console.error("WhatsApp inbound auto-reply failed:", err);
   }
 }
 
-/**
- * New or unfinished account says hi: session text with the register link.
- * A phoneVerified account is left alone. Not a Meta template.
- */
-async function maybeSendIncompleteRegistrationReply(waId: string, text: string) {
+/** New visitor says hi: session list, not a Meta template. */
+async function maybeSendNewUserMenu(waId: string, text: string) {
   if (!waId || !isWhatsAppGreeting(text)) return false;
-  if (mongoose.connection.readyState !== 1) {
-    console.error("WhatsApp registration prompt skipped: database is not connected");
-    return false;
-  }
-
-  const user = await findUserByWhatsAppPhone(waId);
-  if (user?.phoneVerified === true) return false;
+  if (!(await isNewWhatsAppUser(waId))) return false;
 
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const alreadySent = await WhatsAppMessage.exists({
     waId,
     direction: "outbound",
-    "raw.source": "registration_prompt",
+    "raw.source": "new_user_menu",
+    status: { $in: ["sent", "delivered", "read"] },
     createdAt: { $gte: dayAgo },
   });
   if (alreadySent) return true;
 
-  const body = buildRegistrationPrompt();
-  await sendInboxTextMessage(waId, body, {
-    source: "registration_prompt",
-    sessionTextOnly: true,
-  });
-  console.log(
-    `WhatsApp registration prompt sent to ******${String(waId).slice(-4)}`,
-  );
+  const listPayload = {
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: { text: NEW_USER_WELCOME },
+      action: {
+        button: "See options",
+        sections: [{ title: "Explore", rows: NEW_USER_ROWS }],
+      },
+    },
+  };
+
+  try {
+    await sendInboxSessionPayload(waId, NEW_USER_WELCOME, listPayload, "new_user_menu");
+  } catch (err) {
+    console.error("WhatsApp new-user menu list failed, sending session text:", err);
+    const fallback = `${NEW_USER_WELCOME}\n\n1. Create Account\n2. Buy a Property\n3. Rent a Property\n4. Post a Property`;
+    await sendInboxTextMessage(waId, fallback, {
+      source: "new_user_menu",
+      sessionTextOnly: true,
+    });
+  }
+  console.log(`WhatsApp new-user menu sent to ******${String(waId).slice(-4)}`);
+  return true;
+}
+
+/** New visitor picks a menu row: session link, not a Meta template. */
+async function maybeReplyNewUserChoice(waId: string, choice: NewUserChoice) {
+  if (!waId) return false;
+  if (!(await isNewWhatsAppUser(waId))) return false;
+
+  const content = newUserChoiceContent(choice);
+  const linkLine = `Click here:\n${content.url}`;
+  const ctaPayload = {
+    type: "interactive",
+    interactive: {
+      type: "cta_url",
+      body: { text: content.text },
+      action: {
+        name: "cta_url",
+        parameters: {
+          display_text: "Click here",
+          url: content.url,
+        },
+      },
+    },
+  };
+
+  try {
+    await sendInboxSessionPayload(
+      waId,
+      `${content.text}\n\n${linkLine}`,
+      ctaPayload,
+      "new_user_choice",
+    );
+  } catch (err) {
+    console.error("WhatsApp new-user link button failed, sending session text:", err);
+    await sendInboxTextMessage(waId, `${content.text}\n\n${linkLine}`, {
+      source: "new_user_choice",
+      sessionTextOnly: true,
+    });
+  }
   return true;
 }
 
@@ -865,6 +976,112 @@ export async function markConversationRead(waIdRaw: string) {
   }
 
   return conversation;
+}
+
+/** Session interactive reply (list or link button). Never falls back to a template. */
+async function sendInboxSessionPayload(
+  waIdRaw: string,
+  inboxBody: string,
+  payload: Record<string, unknown>,
+  source: string,
+) {
+  const waId = normalizeWaId(waIdRaw);
+  const text = String(inboxBody || "").trim();
+  if (!waId) throw new Error("Recipient phone is required");
+  if (!text) throw new Error("Message text is required");
+
+  const { token, phoneNumberId } = getCredentials();
+  if (!token || !phoneNumberId) {
+    throw new Error(
+      "WhatsApp credentials are missing (WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID)",
+    );
+  }
+
+  const lastInbound = await WhatsAppMessage.findOne({
+    waId,
+    direction: "inbound",
+  })
+    .sort({ createdAt: -1 })
+    .select("createdAt")
+    .lean();
+  const lastInboundAt = lastInbound?.createdAt
+    ? new Date(lastInbound.createdAt)
+    : null;
+  const withinCareWindow =
+    !!lastInboundAt &&
+    Date.now() - lastInboundAt.getTime() <= 24 * 60 * 60 * 1000;
+  if (!withinCareWindow) {
+    throw new Error("WhatsApp session reply is only available inside the 24-hour window");
+  }
+
+  const conversation = await upsertConversation({
+    waId,
+    preview: previewFromBody(text),
+    direction: "outbound",
+  });
+  await WhatsAppConversation.updateOne(
+    { _id: conversation._id },
+    { $set: { origin: "cloud" } },
+  );
+
+  const pending = await WhatsAppMessage.create({
+    conversationId: conversation._id,
+    waId,
+    direction: "outbound",
+    type: "interactive",
+    body: text,
+    status: "pending",
+    raw: { source, withinCareWindow, sessionTextOnly: true },
+  });
+
+  try {
+    const response = await axios.post(
+      `https://graph.facebook.com/${API_VERSION}/${phoneNumberId}/messages`,
+      {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: waId,
+        ...payload,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 15000,
+      },
+    );
+    pending.wamid = response.data?.messages?.[0]?.id;
+    pending.status = "sent";
+    pending.raw = {
+      ...response.data,
+      source,
+      sendMode: "interactive",
+      sessionTextOnly: true,
+    };
+    await pending.save();
+    whatsappInboxBus.publish({
+      type: "message",
+      waId,
+      conversationId: String(conversation._id),
+      messageId: String(pending._id),
+      direction: "outbound",
+    });
+    return pending.toObject();
+  } catch (err: any) {
+    pending.status = "failed";
+    pending.error =
+      err?.response?.data?.error?.message ||
+      err?.message ||
+      "Failed to send WhatsApp message";
+    pending.raw = {
+      ...(err?.response?.data || {}),
+      source,
+      sessionTextOnly: true,
+    };
+    await pending.save();
+    throw err;
+  }
 }
 
 /** Send a free-form text reply via Cloud API and store it.

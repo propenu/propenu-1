@@ -1,11 +1,10 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FeaturedProject } from "@/types";
 import { ArrowDropdownIcon } from "@/icons/icons";
 import { useCity } from "@/hooks/useCity";
 import Image from "next/image";
-import Link from "next/link";
 import formatINR from "@/utilies/PriceFormat";
 import { getFeaturedProjects, PrimeDisplayMode } from "@/data/ClientData";
 import { minDelay } from "@/utilies/minDelay";
@@ -18,7 +17,6 @@ import {
 import { useShortlist } from "@/hooks/useShortlist";
 import { GoHeart, GoHeartFill } from "react-icons/go";
 import { IoMdShareAlt } from "react-icons/io";
-import { RiArrowRightSLine } from "react-icons/ri";
 import { RATE_LIMIT_RECOVERED_EVENT } from "@/utilies/requestMonitor";
 import { trackInteraction } from "@/services/trackingService";
 
@@ -46,9 +44,11 @@ function getPriceLabel(price?: number) {
 function PrimeProjectCard({
   project,
   showRankBadge,
+  cardWidth,
 }: {
   project: FeaturedProject;
   showRankBadge: boolean;
+  cardWidth?: number;
 }) {
   const { isShortlisted, isShortlistLoading, toggleShortlist } = useShortlist(
     project._id,
@@ -109,6 +109,7 @@ function PrimeProjectCard({
       tabIndex={0}
       onClick={openProject}
       onKeyDown={handleCardKeyDown}
+      style={cardWidth ? { width: `${cardWidth}px` } : undefined}
       className="shrink-0 w-[90%] sm:w-[calc(50%-0.5rem)] lg:w-[calc(50%-0.5rem)] card snap-start group cursor-pointer"
     >
       <div className="relative block overflow-hidden rounded-t-md h-40 sm:h-[50px] md:h-[200px] lg:h-[220px]">
@@ -120,11 +121,6 @@ function PrimeProjectCard({
           className="object-cover transition-transform duration-300 group-hover:scale-105"
         />
 
-        {showRankBadge && typeof project.rank === "number" && (
-          <span className="absolute left-3 top-3 z-10 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-gray-800 shadow">
-            #{project.rank}
-          </span>
-        )}
 
         <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
           <button
@@ -198,6 +194,12 @@ function PrimeProjectCard({
 
 export default function FeaturedProjectsClient() {
   const sliderRef = useRef<HTMLDivElement | null>(null);
+  const transitionFrameRef = useRef<number | null>(null);
+  const [isSliderPaused, setIsSliderPaused] = useState(false);
+  const [cardWidth, setCardWidth] = useState<number>();
+  const [cardsPerView, setCardsPerView] = useState(2);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isTransitionEnabled, setIsTransitionEnabled] = useState(true);
   const { selectedCity } = useCity();
   const cacheKey = getHomeSectionCacheKey("featured-projects", {
     state: selectedCity?.state,
@@ -276,55 +278,113 @@ export default function FeaturedProjectsClient() {
 
   // Gate: arrows only make sense when there are more than 2 cards.
   const hasMoreThanTwo = displayItems.length > 2;
+  const originalCount = displayItems.length;
+  const loopItems = hasMoreThanTwo
+    ? [...displayItems, ...displayItems, ...displayItems]
+    : displayItems;
+  const slideOffset = cardWidth ? currentIndex * (cardWidth + 16) : 0;
+
+  const enableTransitionAfterPaint = useCallback(() => {
+    if (transitionFrameRef.current) {
+      window.cancelAnimationFrame(transitionFrameRef.current);
+    }
+
+    transitionFrameRef.current = window.requestAnimationFrame(() => {
+      transitionFrameRef.current = window.requestAnimationFrame(() => {
+        setIsTransitionEnabled(true);
+        transitionFrameRef.current = null;
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (transitionFrameRef.current) {
+        window.cancelAnimationFrame(transitionFrameRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const slider = sliderRef.current;
 
-    // Reset when there are no cards, still loading, or ≤2 cards.
-    if (!slider || loading || !hasMoreThanTwo) {
-      setCanScrollLeft(false);
-      setCanScrollRight(false);
+    if (!slider) {
       return;
     }
 
-    const updateScrollButtons = () => {
-      const maxScrollLeft = slider.scrollWidth - slider.clientWidth;
-      // Left arrow: only after the user has scrolled away from the start.
-      setCanScrollLeft(slider.scrollLeft > 10);
-      // Right arrow: hidden only when fully scrolled to the end.
-      setCanScrollRight(slider.scrollLeft < maxScrollLeft - 10);
+    const updateCardWidth = () => {
+      const width = slider.clientWidth;
+      const gap = 16;
+      const nextCardsPerView = width < 640 ? 1 : 2;
+      setCardsPerView(nextCardsPerView);
+      setCardWidth(
+        nextCardsPerView === 1
+          ? Math.floor(width * 0.9)
+          : Math.floor((width - gap) / 2),
+      );
     };
 
-    // Double-rAF: wait for two paint frames so the DOM has fully reflowed
-    // before measuring scrollWidth (single rAF can fire before layout is done).
-    let frameId: number;
-    const outerFrameId = window.requestAnimationFrame(() => {
-      frameId = window.requestAnimationFrame(updateScrollButtons);
-    });
+    updateCardWidth();
+    setCanScrollLeft(hasMoreThanTwo);
+    setCanScrollRight(hasMoreThanTwo);
 
-    slider.addEventListener("scroll", updateScrollButtons, { passive: true });
-    window.addEventListener("resize", updateScrollButtons);
+    const resizeObserver = new ResizeObserver(updateCardWidth);
+    resizeObserver.observe(slider);
 
     return () => {
-      window.cancelAnimationFrame(outerFrameId);
-      window.cancelAnimationFrame(frameId);
-      slider.removeEventListener("scroll", updateScrollButtons);
-      window.removeEventListener("resize", updateScrollButtons);
+      resizeObserver.disconnect();
     };
-  }, [displayItems, loading, hasMoreThanTwo]);
+  }, [displayItems, hasMoreThanTwo]);
+
+  useEffect(() => {
+    if (!hasMoreThanTwo) {
+      setCurrentIndex(0);
+      return;
+    }
+
+    setIsTransitionEnabled(false);
+    setCurrentIndex(originalCount);
+
+    enableTransitionAfterPaint();
+  }, [cardsPerView, enableTransitionAfterPaint, hasMoreThanTwo, originalCount]);
+
+  useEffect(() => {
+    if (!hasMoreThanTwo || loading || isSliderPaused) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setIsTransitionEnabled(true);
+      setCurrentIndex((value) => value + cardsPerView);
+    }, 3000);
+
+    return () => window.clearInterval(intervalId);
+  }, [cardsPerView, hasMoreThanTwo, isSliderPaused, loading]);
+
+  const normalizeLoopIndex = (event: React.TransitionEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget || event.propertyName !== "transform") {
+      return;
+    }
+
+    if (!hasMoreThanTwo || originalCount === 0) return;
+
+    if (currentIndex >= originalCount * 2 || currentIndex < originalCount) {
+      const normalizedIndex =
+        originalCount + (((currentIndex % originalCount) + originalCount) % originalCount);
+
+      setIsTransitionEnabled(false);
+      setCurrentIndex(normalizedIndex);
+      enableTransitionAfterPaint();
+    }
+  };
 
   const scrollBy = (dir: "left" | "right") => {
-    const el = sliderRef.current;
-    if (!el) return;
-    const step = Math.floor(el.clientWidth / 2);
-    el.scrollBy({ left: dir === "left" ? -step : step, behavior: "smooth" });
-    // Re-evaluate after the smooth scroll animation (~300 ms) finishes.
-    setTimeout(() => {
-      if (!el) return;
-      const maxScrollLeft = el.scrollWidth - el.clientWidth;
-      setCanScrollLeft(el.scrollLeft > 10);
-      setCanScrollRight(el.scrollLeft < maxScrollLeft - 10);
-    }, 350);
+    if (!hasMoreThanTwo) return;
+
+    setIsTransitionEnabled(true);
+    setCurrentIndex((value) =>
+      dir === "left" ? value - cardsPerView : value + cardsPerView,
+    );
   };
 
   const hasItems = displayItems.length > 0;
@@ -385,15 +445,28 @@ export default function FeaturedProjectsClient() {
         {!loading && hasItems ? (
           <div
             ref={sliderRef}
-            className="flex gap-4 overflow-x-auto scroll-smooth no-scrollbar px-1 py-2 snap-x snap-mandatory"
+            onMouseEnter={() => setIsSliderPaused(true)}
+            onMouseLeave={() => setIsSliderPaused(false)}
+            onFocus={() => setIsSliderPaused(true)}
+            onBlur={() => setIsSliderPaused(false)}
+            className="overflow-hidden px-1 py-2"
           >
-            {displayItems.map((project) => (
-              <PrimeProjectCard
-                key={project._id}
-                project={project}
-                showRankBadge={displayMode === "ranked"}
-              />
-            ))}
+            <div
+              onTransitionEnd={normalizeLoopIndex}
+              className={`flex w-max gap-4 ${
+                isTransitionEnabled ? "transition-transform duration-700 ease-in-out" : ""
+              }`}
+              style={{ transform: `translateX(-${slideOffset}px)` }}
+            >
+              {loopItems.map((project, index) => (
+                <PrimeProjectCard
+                  key={`${project._id}-${index}`}
+                  project={project}
+                  showRankBadge={displayMode === "ranked"}
+                  cardWidth={cardWidth}
+                />
+              ))}
+            </div>
           </div>
         ) : null}
       </div>

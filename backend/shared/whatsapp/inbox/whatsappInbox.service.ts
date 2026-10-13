@@ -74,11 +74,14 @@ function extractInboundText(message: any): { type: string; body: string } {
     };
   }
   if (type === "interactive") {
-    const title =
-      message?.interactive?.button_reply?.title ||
-      message?.interactive?.list_reply?.title ||
-      "";
-    return { type, body: String(title || "[Interactive]") };
+    const buttonTitle = message?.interactive?.button_reply?.title || "";
+    const listReply = message?.interactive?.list_reply;
+    const listId = String(listReply?.id || "");
+    const listTitle = String(listReply?.title || "");
+    return {
+      type,
+      body: String(buttonTitle || listId || listTitle || "[Interactive]"),
+    };
   }
   if (type === "image") {
     return {
@@ -508,12 +511,196 @@ async function isNewWhatsAppUser(waId: string) {
   return user?.phoneVerified !== true;
 }
 
+const CHAT_OPENING_OPTIONS = [
+  "Create Account",
+  "Buy Property",
+  "Rent Property",
+  "Buy Commercial",
+  "Lease Commercial",
+  "Buy Plot",
+];
+
+function chatbotMessageFromInbound(text: string) {
+  const choice = matchNewUserChoice(text);
+  if (choice === "create_account") return { kind: "account" as const };
+  if (choice === "post_property") return { kind: "post" as const };
+  if (choice === "buy_property") return { kind: "chat" as const, text: "Buy Property" };
+  if (choice === "rent_property") return { kind: "chat" as const, text: "Rent Property" };
+  const trimmed = String(text || "").trim();
+  if (/^create account$/i.test(trimmed)) return { kind: "account" as const };
+  return { kind: "chat" as const, text: trimmed };
+}
+
+function listRowTitle(option: string) {
+  const label = option.replace(/^search in\s+/i, "").trim() || option;
+  return label.length <= 24 ? label : `${label.slice(0, 21)}...`;
+}
+
+function withCreateAccount(question: string, options: string[]) {
+  if (!/what would you like to do/i.test(question)) return options;
+  if (options.some((option) => /^create account$/i.test(option))) return options;
+  return ["Create Account", ...options];
+}
+
+async function sendWhatsAppOptionList(waId: string, body: string, options: string[], source: string) {
+  const rows = options
+    .map((option) => String(option || "").trim())
+    .filter(Boolean)
+    .slice(0, 10)
+    .map((option) => ({
+      id: option.slice(0, 200),
+      title: listRowTitle(option),
+    }));
+  if (!rows.length) {
+    await sendInboxTextMessage(waId, body, { source, sessionTextOnly: true });
+    return;
+  }
+  const listPayload = {
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: { text: body.slice(0, 1024) },
+      action: {
+        button: "See options",
+        sections: [{ title: "Explore", rows }],
+      },
+    },
+  };
+  try {
+    await sendInboxSessionPayload(waId, body, listPayload, source);
+  } catch (err) {
+    console.error("WhatsApp option list failed, sending session text:", err);
+    const numbered = rows.map((row, index) => `${index + 1}. ${row.id}`).join("\n");
+    await sendInboxTextMessage(waId, `${body}\n\n${numbered}`, {
+      source,
+      sessionTextOnly: true,
+    });
+  }
+}
+
+async function askPropertyChatbot(waId: string, message: string) {
+  const base = String(process.env.AI_SERVICE_URL || "http://127.0.0.1:4006").replace(/\/$/, "");
+  const response = await axios.post(
+    `${base}/api/chatbot`,
+    { message },
+    {
+      headers: {
+        "Content-Type": "application/json",
+        "x-session-id": `wa-${waId}`,
+      },
+      responseType: "text",
+      timeout: 20000,
+      validateStatus: () => true,
+    },
+  );
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Property chat replied HTTP ${response.status}`);
+  }
+  const question: string[] = [];
+  const messages: string[] = [];
+  const options: string[] = [];
+  const properties: Array<{ title?: string; location?: string; price?: string; href?: string }> = [];
+  for (const line of String(response.data || "").split(/\n+/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let event: any;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (event.type === "question" && event.question) question.push(String(event.question));
+    if (event.type === "message" && event.content) messages.push(String(event.content));
+    if (event.type === "error" && event.message) messages.push(String(event.message));
+    const eventOptions = Array.isArray(event.options) ? event.options : [];
+    for (const option of eventOptions) {
+      const label = String(option || "").trim();
+      if (label && !options.includes(label)) options.push(label);
+    }
+    if (event.type === "property" && event.property) properties.push(event.property);
+  }
+  return {
+    question: question[0] || "",
+    message: messages.filter(Boolean).join("\n\n"),
+    options,
+    properties,
+  };
+}
+
+function propertyReplyText(
+  message: string,
+  properties: Array<{ title?: string; location?: string; price?: string; href?: string }>,
+) {
+  const base = String(process.env.FRONTEND_URL || "https://propenu.com").trim().replace(/\/$/, "");
+  const cards = properties.slice(0, 2).map((property, index) => {
+    const href = String(property.href || "");
+    const link = href.startsWith("http") ? href : href ? `${base}${href}` : "";
+    return [
+      `${index + 1}. ${property.title || "Property"}`,
+      property.location || "",
+      property.price || "",
+      link,
+    ].filter(Boolean).join("\n");
+  });
+  return [message, ...cards].filter(Boolean).join("\n\n").trim();
+}
+
+async function sendChatbotReply(waId: string, text: string) {
+  const reply = await askPropertyChatbot(waId, text);
+  const question = reply.question;
+  const options = withCreateAccount(question, reply.options);
+  if (question && options.length) {
+    await sendWhatsAppOptionList(waId, question, options, "chatbot_question");
+    return;
+  }
+  const body = propertyReplyText(reply.message, reply.properties);
+  if (body) {
+    await sendInboxTextMessage(waId, body, {
+      source: "chatbot_reply",
+      sessionTextOnly: true,
+    });
+  }
+  if (!question && options.length) {
+    await sendWhatsAppOptionList(
+      waId,
+      reply.message || "Choose one",
+      options.slice(0, 10),
+      "chatbot_suggestions",
+    );
+  }
+  if (!body && !options.length) {
+    await sendWhatsAppOptionList(
+      waId,
+      "What would you like to do?",
+      CHAT_OPENING_OPTIONS,
+      "chatbot_fallback",
+    );
+  }
+}
+
 async function replyToInboundMessage(waId: string, text: string) {
   try {
-    const choice = matchNewUserChoice(text);
-    if (choice && (await maybeReplyNewUserChoice(waId, choice))) return;
-    const sentMenu = await maybeSendNewUserMenu(waId, text);
-    if (!sentMenu) await maybeSendWelcomeAutoReply(waId);
+    const inbound = chatbotMessageFromInbound(text);
+    if (inbound.kind === "chat" && !inbound.text) return;
+    if (inbound.kind === "account") {
+      await maybeReplyNewUserChoice(waId, "create_account");
+      return;
+    }
+    if (inbound.kind === "post") {
+      await maybeReplyNewUserChoice(waId, "post_property");
+      return;
+    }
+    try {
+      await sendChatbotReply(waId, inbound.text);
+    } catch (err) {
+      console.error("WhatsApp property chat failed, sending the opening list:", err);
+      await sendWhatsAppOptionList(
+        waId,
+        NEW_USER_WELCOME,
+        CHAT_OPENING_OPTIONS,
+        "chatbot_fallback",
+      );
+    }
   } catch (err) {
     console.error("WhatsApp inbound auto-reply failed:", err);
   }
@@ -563,7 +750,6 @@ async function maybeSendNewUserMenu(waId: string, text: string) {
 /** New visitor picks a menu row: session link, not a Meta template. */
 async function maybeReplyNewUserChoice(waId: string, choice: NewUserChoice) {
   if (!waId) return false;
-  if (!(await isNewWhatsAppUser(waId))) return false;
 
   const content = newUserChoiceContent(choice);
   const linkLine = `Click here:\n${content.url}`;

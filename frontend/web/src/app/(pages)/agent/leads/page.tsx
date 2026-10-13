@@ -125,11 +125,7 @@ const LeadsPage = () => {
     );
 
     if (propertiesLoading) {
-        return (
-            <div className="flex h-64 items-center justify-center text-gray-500">
-                Loading properties…
-            </div>
-        );
+        return <AgentLeadsPageSkeleton />;
     }
     return (
         <div className="space-y-4 sm:space-y-6">
@@ -259,9 +255,7 @@ const LeadsPage = () => {
 
                     {/* TABLE */}
                     {leadsLoading ? (
-                        <div className="py-14 text-center text-sm text-gray-500 sm:py-20">
-                            Loading leads…
-                        </div>
+                        <LeadsTableSkeleton />
                     ) : filteredLeads.length ? (
                         <LeadsTable leads={filteredLeads} />
                     ) : (
@@ -274,6 +268,112 @@ const LeadsPage = () => {
         </div>
     );
 };
+
+const SkeletonBlock = ({ className = "" }: { className?: string }) => (
+    <span className={`block animate-pulse rounded-md bg-gray-200/80 ${className}`} />
+);
+
+const AgentLeadsPageSkeleton = () => (
+    <div className="space-y-4 sm:space-y-6">
+        <div className="rounded-xl border border-green-100 bg-linear-to-r from-green-50 via-white to-emerald-50 px-4 py-4 sm:rounded-2xl sm:px-5 sm:py-6">
+            <SkeletonBlock className="h-8 w-36" />
+            <SkeletonBlock className="mt-3 h-4 w-full max-w-[560px]" />
+            <SkeletonBlock className="mt-2 h-4 w-9/12 max-w-[420px]" />
+        </div>
+
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex gap-2 overflow-hidden">
+                {Array.from({ length: 4 }).map((_, index) => (
+                    <SkeletonBlock key={index} className="h-9 w-28 shrink-0 rounded-full" />
+                ))}
+            </div>
+            <SkeletonBlock className="h-4 w-36" />
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:gap-4">
+            <div className="lg:col-span-4">
+                <PropertiesListSkeleton />
+            </div>
+
+            <div className="rounded-lg bg-green-50/60 p-3 sm:p-4 lg:col-span-8">
+                <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                        <SkeletonBlock className="h-6 w-24" />
+                        <SkeletonBlock className="mt-2 h-3 w-44" />
+                    </div>
+                    <SkeletonBlock className="h-6 w-10 rounded-full" />
+                </div>
+                <div className="mb-3 flex gap-1.5 overflow-hidden pb-1 sm:mb-4 sm:flex-wrap sm:gap-2">
+                    {Array.from({ length: 6 }).map((_, index) => (
+                        <SkeletonBlock key={index} className="h-7 w-20 shrink-0 rounded-full sm:rounded-md" />
+                    ))}
+                </div>
+                <LeadsTableSkeleton />
+            </div>
+        </div>
+    </div>
+);
+
+const PropertiesListSkeleton = () => (
+    <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1 lg:block lg:max-h-[60vh] lg:space-y-2 lg:overflow-y-auto lg:pr-1">
+        {Array.from({ length: 5 }).map((_, index) => (
+            <div
+                key={index}
+                className="flex w-[236px] shrink-0 gap-2 rounded-lg border border-gray-200 bg-white p-2 lg:w-full"
+            >
+                <SkeletonBlock className="h-16 w-20 shrink-0" />
+                <div className="min-w-0 flex-1">
+                    <SkeletonBlock className="h-4 w-11/12" />
+                    <SkeletonBlock className="mt-2 h-3 w-8/12" />
+                    <SkeletonBlock className="mt-2 h-3 w-7/12" />
+                    <SkeletonBlock className="mt-2 h-4 w-20" />
+                </div>
+            </div>
+        ))}
+    </div>
+);
+
+const LeadsTableSkeleton = () => (
+    <>
+        <div className="space-y-2 md:hidden">
+            {Array.from({ length: 4 }).map((_, index) => (
+                <div
+                    key={index}
+                    className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm"
+                >
+                    <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                            <SkeletonBlock className="h-4 w-32" />
+                            <SkeletonBlock className="mt-2 h-3 w-24" />
+                        </div>
+                        <SkeletonBlock className="h-5 w-20 rounded-full" />
+                    </div>
+                    <SkeletonBlock className="mt-3 h-4 w-32" />
+                </div>
+            ))}
+        </div>
+
+        <div className="hidden overflow-hidden rounded-xl border border-gray-200 bg-white md:block">
+            <div className="grid grid-cols-4 border-b bg-gray-50 px-6 py-4">
+                {Array.from({ length: 4 }).map((_, index) => (
+                    <SkeletonBlock key={index} className="h-3 w-24" />
+                ))}
+            </div>
+
+            {Array.from({ length: 6 }).map((_, rowIndex) => (
+                <div
+                    key={rowIndex}
+                    className="grid grid-cols-4 border-b px-6 py-4 last:border-b-0"
+                >
+                    <SkeletonBlock className="h-4 w-28" />
+                    <SkeletonBlock className="h-4 w-24" />
+                    <SkeletonBlock className="h-4 w-32" />
+                    <SkeletonBlock className="h-6 w-24 rounded-full" />
+                </div>
+            ))}
+        </div>
+    </>
+);
 
 /* ================= TABLE ================= */
 

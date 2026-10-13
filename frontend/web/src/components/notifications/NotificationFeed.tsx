@@ -151,6 +151,123 @@ const SUMMARY_CARD_LAYOUTS = [
   "col-span-3",
 ];
 
+const notificationSkeletonItems = Array.from({ length: 6 });
+const summarySkeletonItems = Array.from({ length: 5 });
+const filterSkeletonItems = Array.from({ length: 6 });
+const dateFilterSkeletonItems = Array.from({ length: 4 });
+
+function SkeletonBlock({ className }: { className: string }) {
+  return (
+    <div
+      className={`animate-pulse rounded-md bg-gray-200/80 ${className}`}
+      aria-hidden="true"
+    />
+  );
+}
+
+function NotificationFeedSkeleton({
+  containerClassName,
+}: {
+  containerClassName?: string;
+}) {
+  return (
+    <div
+      className={`mx-auto min-w-0 max-w-7xl space-y-4 sm:space-y-6 ${containerClassName ?? ""}`.trim()}
+      aria-busy="true"
+      aria-label="Loading notifications"
+    >
+      <div className="rounded-xl border border-green-100 bg-linear-to-r from-green-50 via-white to-emerald-50 px-4 py-4 sm:rounded-2xl sm:px-5 sm:py-6">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <SkeletonBlock className="h-8 w-56 max-w-full sm:h-9" />
+            <SkeletonBlock className="mt-3 h-4 w-full max-w-3xl" />
+            <SkeletonBlock className="mt-2 h-4 w-4/5 max-w-2xl" />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <SkeletonBlock className="h-8 w-32 rounded-full sm:h-10" />
+            <SkeletonBlock className="h-8 w-40 rounded-full sm:h-10" />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-6 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-5">
+        {summarySkeletonItems.map((_, index) => (
+          <div
+            key={`notification-summary-skeleton-${index}`}
+            className={`${SUMMARY_CARD_LAYOUTS[index]} rounded-xl border border-gray-100 bg-white px-3 py-2.5 shadow-sm sm:rounded-2xl sm:px-5 sm:py-4 xl:col-span-1`}
+          >
+            <SkeletonBlock className="h-3 w-24" />
+            <SkeletonBlock className="mt-3 h-7 w-12" />
+          </div>
+        ))}
+      </div>
+
+      <div className="min-w-0 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm sm:rounded-2xl">
+        <div className="flex flex-col gap-3 border-b border-gray-100 px-3 py-3 sm:gap-4 sm:px-5 sm:py-4">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0 space-y-2 sm:space-y-3">
+              <div className="flex gap-1.5 overflow-hidden sm:flex-wrap sm:gap-2">
+                {filterSkeletonItems.map((_, index) => (
+                  <SkeletonBlock
+                    key={`notification-filter-skeleton-${index}`}
+                    className="h-8 w-28 shrink-0 rounded-full"
+                  />
+                ))}
+              </div>
+              <div className="flex gap-1.5 overflow-hidden sm:flex-wrap sm:gap-2">
+                {dateFilterSkeletonItems.map((_, index) => (
+                  <SkeletonBlock
+                    key={`notification-date-filter-skeleton-${index}`}
+                    className="h-7 w-24 shrink-0 rounded-full"
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:gap-3 xl:w-auto xl:min-w-[22rem]">
+              <SkeletonBlock className="h-10 min-w-0 flex-1 rounded-lg sm:rounded-xl xl:w-80" />
+              <SkeletonBlock className="h-10 w-full rounded-lg sm:w-44 sm:rounded-xl" />
+            </div>
+          </div>
+        </div>
+
+        <div className="divide-y divide-gray-100">
+          {notificationSkeletonItems.map((_, index) => (
+            <div
+              key={`notification-row-skeleton-${index}`}
+              className="grid gap-2 px-3 py-3.5 sm:px-5 md:grid-cols-[minmax(0,1fr)_112px] md:gap-4"
+            >
+              <div className="min-w-0">
+                <SkeletonBlock className="h-4 w-full max-w-3xl" />
+                <SkeletonBlock className="mt-2 h-4 w-10/12 max-w-2xl" />
+                <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+                  <SkeletonBlock className="h-5 w-28 rounded-full" />
+                  <SkeletonBlock className="h-3 w-36" />
+                  <SkeletonBlock className="h-3 w-24" />
+                </div>
+              </div>
+
+              <div className="flex gap-2 md:flex-col md:items-end md:gap-1">
+                <SkeletonBlock className="h-3 w-20" />
+                <SkeletonBlock className="h-3 w-14" />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-gray-100 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
+          <SkeletonBlock className="h-4 w-48 max-w-full" />
+          <div className="flex items-center gap-2">
+            <SkeletonBlock className="h-9 w-20 rounded-lg" />
+            <SkeletonBlock className="h-9 w-10 rounded-lg" />
+            <SkeletonBlock className="h-9 w-16 rounded-lg" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const formatDate = (value?: string | null) => {
   if (!value) return "NA";
 
@@ -540,11 +657,7 @@ const NotificationFeed = ({
   };
 
   if (isLoading) {
-    return (
-      <div className="flex h-64 items-center justify-center rounded-2xl border border-gray-100 bg-white text-gray-500">
-        Loading notifications...
-      </div>
-    );
+    return <NotificationFeedSkeleton containerClassName={containerClassName} />;
   }
 
   if (isError) {

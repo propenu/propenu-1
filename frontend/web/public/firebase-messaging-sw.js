@@ -119,8 +119,8 @@ messaging.onBackgroundMessage((payload) => {
 
   self.registration.showNotification(title, {
     body,
-    icon: notification.icon || "/icons/icon-192x192.png",
-    badge: "/icons/icon-192x192.png",
+    icon: notification.icon || "/email/propenu-logo.png",
+    badge: "/email/propenu-logo.png",
     image: notification.image,
     tag: data.type || data.category || "propenu-notification",
     data: {

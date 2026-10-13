@@ -54,15 +54,14 @@ interface Property {
   };
   city?: string;
   locality?: string;
-  carpetArea?: number;
-  heroImage?: string;
-  price?: number;
-  priceFrom?: number;
-  priceTo?: number;
 }
 
 interface Lead {
   _id: string;
+  projectId?: string;
+  projectTitle?: string;
+  projectLocality?: string;
+  projectCity?: string;
   name: string;
   phone: string;
   email?: string;
@@ -72,6 +71,7 @@ interface Lead {
   purchaseTimeline?: string;
   budgetRange?: string;
   status: StoredLeadStatus;
+  activityOnly?: boolean;
   contactMasked?: boolean;
   createdAt: string;
   activity?: {
@@ -146,64 +146,6 @@ const getLeadContactDisplayValue = (lead: Lead, column: LeadColumn, shouldMaskCo
 };
 const TAB_KEY_MAP: Record<string, string> = {
   Featured: "featured",
-};
-
-const formatPrice = (price?: number) => {
-  if (!price) return "—";
-  if (price >= 10000000) return `₹ ${(price / 10000000).toFixed(2)} Cr`;
-  if (price >= 100000) return `₹ ${(price / 100000).toFixed(2)} L`;
-  return `₹ ${price.toLocaleString("en-IN")}`;
-};
-
-
-const getPropertyPriceLabel = (property: any) => {
-  const price = Number(property?.price);
-  const priceFrom = Number(property?.priceFrom);
-  const priceTo = Number(property?.priceTo);
-
-  if (Number.isFinite(price) && price > 0) {
-    return formatPrice(price);
-  }
-
-  if (Number.isFinite(priceFrom) && priceFrom > 0 && Number.isFinite(priceTo) && priceTo > 0) {
-    return `${formatPrice(priceFrom)} - ${formatPrice(priceTo)}`;
-  }
-
-  if (Number.isFinite(priceFrom) && priceFrom > 0) {
-    return `From ${formatPrice(priceFrom)}`;
-  }
-
-  if (Number.isFinite(priceTo) && priceTo > 0) {
-    return `Up to ${formatPrice(priceTo)}`;
-  }
-
-  return "—";
-};
-
-const formatPromotionTypeLabel = (promotionType?: string) => {
-  const value = String(promotionType ?? "normal").trim();
-  if (!value || value.toLowerCase() === "normal") return "Project";
-
-  if (value.toLowerCase() === "featured") {
-    return "Top Selling";
-  }
-
-  return value
-    .split(/[_\s-]+/)
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-};
-
-const formatPropertyTypeLabel = (propertyType?: string) => {
-  const value = String(propertyType ?? "").trim();
-  if (!value) return "Property";
-
-  return value
-    .split(/[_\s-]+/)
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
 };
 
 const getStatusClasses = (status: LeadStatusValue) => {
@@ -287,29 +229,22 @@ const formatLeadTime = (value?: string) => {
   });
 };
 
-const formatSpentMinutes = (value?: number | null) => {
-  if (!value || value <= 0) return null;
-  if (value < 1) return "< 1 min";
-  if (Number.isInteger(value)) return `${value} min`;
-  return `${value.toFixed(1)} min`;
-};
-
 const LeadTimestamp = ({ value }: { value?: string }) => {
   if (!value) {
-    return <span className="text-sm font-medium text-[#6B7280]">—</span>;
+    return <span className="text-xs font-medium text-[#6B7280]">—</span>;
   }
 
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    return <span className="text-sm font-medium text-[#6B7280]">—</span>;
+    return <span className="text-xs font-medium text-[#6B7280]">—</span>;
   }
 
   return (
     <div className="flex flex-col leading-tight">
-      <span className="text-sm font-medium text-[#374151]">
+      <span className="text-xs font-medium text-[#374151]">
         {formatLeadDate(value)}
       </span>
-      <span className="mt-1 text-xs font-medium uppercase tracking-wide text-[#9CA3AF]">
+      <span className="mt-0.5 text-[10px] font-medium uppercase text-[#9CA3AF]">
         {formatLeadTime(value)}
       </span>
     </div>
@@ -327,6 +262,8 @@ const getLeadTimestamp = (lead: Lead) => {
 
 const getColumnDisplayValue = (lead: Lead, column: LeadColumn) => {
   switch (column.key) {
+    case "project":
+      return getDisplayValue(lead.projectTitle);
     case "name":
       return getDisplayValue(lead.name);
     case "phone":
@@ -342,6 +279,7 @@ const getColumnDisplayValue = (lead: Lead, column: LeadColumn) => {
     case "activity":
       return "Lead activity";
     case "status":
+      if (lead.activityOnly) return "—";
       return formatStatus(lead.status);
     default:
       if (column.key.startsWith("extra:")) {
@@ -354,47 +292,55 @@ const getColumnDisplayValue = (lead: Lead, column: LeadColumn) => {
 
 const getDesktopColumnMinWidth = (column: LeadColumn) => {
   switch (column.key) {
-    case "name":
+    case "project":
       return 160;
+    case "contactDetails":
+      return 220;
+    case "name":
+      return 115;
     case "activity":
-      return 240;
+      return 170;
     case "email":
-      return 190;
+      return 145;
     case "phone":
-      return 145;
+      return 115;
     case "status":
-      return 145;
+      return 118;
     case "leadTime":
-      return 135;
+      return 108;
     case "purchaseTimeline":
-      return 180;
+      return 135;
     case "budgetRange":
-      return 145;
+      return 115;
     default:
-      return column.label.length > 14 ? 155 : 125;
+      return column.label.length > 14 ? 125 : 105;
   }
 };
 
 const getDesktopColumnMaxWidth = (column: LeadColumn) => {
   switch (column.key) {
+    case "project":
+      return 190;
+    case "contactDetails":
+      return 270;
     case "name":
-      return 200;
+      return 140;
     case "activity":
-      return 320;
-    case "email":
       return 220;
-    case "phone":
+    case "email":
       return 170;
+    case "phone":
+      return 135;
     case "status":
-      return 165;
+      return 135;
     case "leadTime":
-      return 150;
+      return 122;
     case "purchaseTimeline":
-      return 200;
+      return 150;
     case "budgetRange":
-      return 155;
+      return 130;
     default:
-      return column.label.length > 14 ? 180 : 145;
+      return column.label.length > 14 ? 145 : 125;
   }
 };
 
@@ -406,32 +352,161 @@ const getDesktopGridTemplate = (columns: LeadColumn[]) =>
     )
     .join(" ");
 
+const DEFAULT_LEAD_COLUMNS: LeadColumn[] = [
+  { key: "project", label: "Project" },
+  { key: "name", label: "Full Name" },
+  { key: "phone", label: "Phone Number" },
+  { key: "email", label: "Email" },
+  { key: "leadTime", label: "Lead Time" },
+  { key: "purchaseTimeline", label: "Planning To Purchase" },
+  { key: "budgetRange", label: "Budget Range" },
+  { key: "status", label: "Status" },
+];
+
+const swapLeadColumnPositions = (columns: LeadColumn[]) => {
+  const nextColumns = [...columns];
+  const purchaseIndex = nextColumns.findIndex(
+    (column) => column.key === "purchaseTimeline",
+  );
+  const statusIndex = nextColumns.findIndex((column) => column.key === "status");
+
+  if (purchaseIndex >= 0 && statusIndex >= 0) {
+    [nextColumns[purchaseIndex], nextColumns[statusIndex]] = [
+      nextColumns[statusIndex],
+      nextColumns[purchaseIndex],
+    ];
+  }
+
+  return nextColumns;
+};
+
+const CONTACT_DETAIL_COLUMN: LeadColumn = { key: "contactDetails", label: "Detail" };
+const CONTACT_DETAIL_KEYS = new Set(["name", "phone", "email"]);
+
+const mergeLeadContactColumns = (columns: LeadColumn[]) => {
+  let contactColumnAdded = false;
+
+  return columns.reduce<LeadColumn[]>((nextColumns, column) => {
+    if (!CONTACT_DETAIL_KEYS.has(column.key)) {
+      nextColumns.push(column);
+      return nextColumns;
+    }
+
+    if (!contactColumnAdded) {
+      nextColumns.push(CONTACT_DETAIL_COLUMN);
+      contactColumnAdded = true;
+    }
+
+    return nextColumns;
+  }, []);
+};
+
+const getPropertyTitle = (property: Property) =>
+  property.title?.trim() || "Untitled Project";
+
+const getPropertyLocation = (property: Property) =>
+  [property.locality, property.city].filter(Boolean).join(", ");
+
+const normalizeProjectSearchValue = (property: Property) =>
+  [
+    property.title,
+    property.locality,
+    property.city,
+    property.propertyType,
+    property.promotion?.type,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+const attachProjectToLeads = (leads: Lead[], property: Property) =>
+  leads.map((lead) => ({
+    ...lead,
+    projectId: property._id,
+    projectTitle: getPropertyTitle(property),
+    projectLocality: property.locality,
+    projectCity: property.city,
+  }));
+
 const LeadActivityBadges = ({ lead }: { lead: Lead }) => {
-  const timeSpent = formatSpentMinutes(lead.activity?.timeSpentMinutes);
+  const hasActivity = Boolean(
+    lead.activity?.leadSubmitted ||
+      lead.activity?.shortlisted ||
+      lead.activity?.brochureDownloaded,
+  );
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200">
-        Lead
-      </span>
+    <div className="flex flex-wrap items-center gap-1">
+      {lead.activity?.leadSubmitted ? (
+        <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 ring-1 ring-slate-200">
+          Lead
+        </span>
+      ) : null}
       {lead.activity?.shortlisted ? (
-        <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-100">
-          Shortlisted
+        <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 ring-1 ring-blue-100">
+          Shortlist
         </span>
       ) : null}
       {lead.activity?.brochureDownloaded ? (
-        <span className="inline-flex rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 ring-1 ring-violet-100">
+        <span className="inline-flex rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-violet-100">
           Brochure
         </span>
       ) : null}
-      {timeSpent ? (
-        <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-100">
-          {timeSpent}
-        </span>
+      {!hasActivity ? (
+        <span className="text-xs font-medium text-[#9CA3AF]">—</span>
       ) : null}
     </div>
   );
 };
+
+const LeadContactDetails = ({
+  lead,
+  shouldMaskContact,
+}: {
+  lead: Lead;
+  shouldMaskContact: boolean;
+}) => (
+  <div className="min-w-0 leading-tight">
+    <p
+      className="truncate text-xs font-semibold text-[#111827]"
+      title={getDisplayValue(lead.name)}
+    >
+      {getDisplayValue(lead.name)}
+    </p>
+    <p
+      className="mt-1 truncate text-[11px] font-medium text-[#4B5563]"
+      title={String(
+        getLeadContactDisplayValue(
+          lead,
+          { key: "phone", label: "Phone Number" },
+          shouldMaskContact,
+        ),
+      )}
+    >
+      {getLeadContactDisplayValue(
+        lead,
+        { key: "phone", label: "Phone Number" },
+        shouldMaskContact,
+      )}
+    </p>
+    <p
+      className="mt-0.5 truncate text-[11px] font-medium text-[#6B7280]"
+      title={String(
+        getLeadContactDisplayValue(
+          lead,
+          { key: "email", label: "Email" },
+          shouldMaskContact,
+        ),
+      )}
+    >
+      {getLeadContactDisplayValue(
+        lead,
+        { key: "email", label: "Email" },
+        shouldMaskContact,
+      )}
+    </p>
+  </div>
+);
 
 const StatusSelect = ({
   lead,
@@ -505,7 +580,7 @@ const StatusSelect = ({
   };
 
   return (
-    <div className={`relative w-full min-w-32 max-w-[150px] ${className}`}>
+    <div className={`relative w-full min-w-28 max-w-[135px] ${className}`}>
       <button
         ref={buttonRef}
         type="button"
@@ -513,9 +588,9 @@ const StatusSelect = ({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className={`flex h-9 w-full items-center justify-between gap-2 rounded-md border border-transparent px-3 text-left text-xs font-semibold leading-none ring-1 transition hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A] disabled:cursor-wait disabled:opacity-70 ${getStatusClasses(currentStatus)}`}
+        className={`flex h-8 w-full items-center justify-between gap-1.5 rounded-md border border-transparent px-2 text-left text-[11px] font-semibold leading-none ring-1 transition hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A] disabled:cursor-wait disabled:opacity-70 ${getStatusClasses(currentStatus)}`}
       >
-        <span className="flex min-w-0 items-center gap-2">
+        <span className="flex min-w-0 items-center gap-1.5">
           <span
             className={`h-2 w-2 shrink-0 rounded-full ${getStatusDotClasses(currentStatus)}`}
           />
@@ -530,7 +605,7 @@ const StatusSelect = ({
         <div
           ref={menuRef}
           style={menuStyle}
-          className="fixed z-50 overflow-hidden rounded-lg border border-[#E5E7EB] bg-white p-1.5 shadow-xl shadow-black/10"
+          className="fixed z-50 overflow-hidden rounded-lg border border-[#E5E7EB] bg-white p-1 shadow-xl shadow-black/10"
           role="listbox"
           aria-label="Lead status"
         >
@@ -544,13 +619,13 @@ const StatusSelect = ({
                 role="option"
                 aria-selected={selected}
                 onClick={() => handleSelect(status)}
-                className={`flex h-9 w-full items-center justify-between gap-3 rounded-md px-2.5 text-left text-xs font-semibold transition ${
+                className={`flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-[11px] font-semibold transition ${
                   selected
                     ? "bg-[#F0FDF4] text-[#15803D]"
                     : "text-[#374151] hover:bg-[#F9FAFB]"
                 }`}
               >
-                <span className="flex min-w-0 items-center gap-2">
+                <span className="flex min-w-0 items-center gap-1.5">
                   <span
                     className={`h-2 w-2 shrink-0 rounded-full ${getStatusDotClasses(status)}`}
                   />
@@ -562,6 +637,268 @@ const StatusSelect = ({
           })}
         </div>
       )}
+    </div>
+  );
+};
+
+const ProjectFilterDropdown = ({
+  properties,
+  selectedProperty,
+  onSelect,
+}: {
+  properties: Property[];
+  selectedProperty: Property | null;
+  onSelect: (propertyId: string | null) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const selectedLabel = selectedProperty
+    ? getPropertyTitle(selectedProperty)
+    : "All Projects";
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        buttonRef.current?.contains(target) ||
+        menuRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setOpen(false);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [open]);
+
+  const handleSelect = (propertyId: string | null) => {
+    onSelect(propertyId);
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-[#DCE1DD] bg-white px-3 text-left text-sm font-medium text-[#374151] outline-none transition hover:bg-[#F9FAFB] focus:border-[#16A34A] focus:ring-2 focus:ring-[#DCFCE7]"
+      >
+        <span className="min-w-0 truncate">{selectedLabel}</span>
+        <FiChevronDown
+          className={`h-4 w-4 shrink-0 text-[#6B7280] transition ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {open ? (
+        <div
+          ref={menuRef}
+          role="listbox"
+          aria-label="Filter by project"
+          className="absolute left-0 z-40 mt-2 w-full min-w-[280px] overflow-hidden rounded-lg border border-[#E5E7EB] bg-white p-2 shadow-xl shadow-black/10 sm:min-w-[420px]"
+        >
+          <div className="max-h-[300px] space-y-1 overflow-y-auto pr-1">
+            <button
+              type="button"
+              role="option"
+              aria-selected={!selectedProperty}
+              onClick={() => handleSelect(null)}
+              className={`flex h-9 w-full items-center justify-between gap-3 rounded-md px-2.5 text-left text-sm font-medium transition ${
+                !selectedProperty
+                  ? "bg-[#DCFCE7] text-[#14532D]"
+                  : "text-[#374151] hover:bg-[#F9FAFB]"
+              }`}
+            >
+              <span className="min-w-0 truncate">All Projects</span>
+              {!selectedProperty ? <FiCheck className="h-4 w-4 shrink-0" /> : null}
+            </button>
+
+            {properties.length ? (
+              properties.map((property) => {
+                const selected = property._id === selectedProperty?._id;
+                const location = getPropertyLocation(property);
+
+                return (
+                  <button
+                    key={property._id}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => handleSelect(property._id)}
+                    className={`flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left transition ${
+                      selected
+                        ? "bg-[#DCFCE7] text-[#14532D]"
+                        : "text-[#374151] hover:bg-[#F9FAFB]"
+                    }`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">
+                        {getPropertyTitle(property)}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-[#6B7280]">
+                        {location || property.propertyType || "Project"}
+                      </span>
+                    </span>
+                    {selected ? <FiCheck className="h-4 w-4 shrink-0" /> : null}
+                  </button>
+                );
+              })
+            ) : (
+              <p className="py-6 text-center text-sm text-[#6B7280]">
+                No matching projects
+              </p>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+const LeadStatusFilterDropdown = ({
+  value,
+  counts,
+  onChange,
+}: {
+  value: LeadStatus;
+  counts: Record<LeadStatus, number>;
+  onChange: (status: LeadStatus) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const positionMenu = () => {
+    const button = buttonRef.current;
+    if (!button) return;
+
+    const rect = button.getBoundingClientRect();
+    const menuWidth = Math.max(rect.width, 260);
+    const left = Math.min(rect.left, window.innerWidth - menuWidth - 12);
+
+    setMenuStyle({
+      left: Math.max(12, left),
+      top: rect.bottom + 8,
+      width: menuWidth,
+    });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+
+    positionMenu();
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        buttonRef.current?.contains(target) ||
+        menuRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setOpen(false);
+    };
+
+    const handleReposition = () => positionMenu();
+
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("resize", handleReposition);
+    window.addEventListener("scroll", handleReposition, true);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("resize", handleReposition);
+      window.removeEventListener("scroll", handleReposition, true);
+    };
+  }, [open]);
+
+  const statusOptions: LeadStatus[] = ["All", ...LEAD_STATUSES];
+  const label =
+    value === "All" ? "All" : formatStatus(value as LeadStatusValue);
+
+  return (
+    <div className="relative">
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className={`flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-white px-3 text-left text-sm font-medium outline-none transition focus:ring-2 focus:ring-[#DCFCE7] ${
+          value === "All"
+            ? "border-[#DCE1DD] text-[#374151] hover:bg-[#F9FAFB]"
+            : "border-[#16A34A] text-[#15803D] ring-1 ring-[#BBF7D0]"
+        }`}
+      >
+        <span className="min-w-0 truncate">
+          {label}{" "}
+          <span className="text-[#6B7280]">({counts[value] ?? 0})</span>
+        </span>
+        <FiChevronDown
+          className={`h-4 w-4 shrink-0 text-[#6B7280] transition ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {open ? (
+        <div
+          ref={menuRef}
+          role="listbox"
+          aria-label="Filter by status"
+          style={menuStyle}
+          className="fixed z-50 overflow-hidden rounded-lg border border-[#E5E7EB] bg-white p-1.5 shadow-xl shadow-black/10"
+        >
+          {statusOptions.map((status) => {
+            const selected = status === value;
+            const optionLabel =
+              status === "All" ? "All" : formatStatus(status as LeadStatusValue);
+
+            return (
+              <button
+                key={status}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => {
+                  onChange(status);
+                  setOpen(false);
+                }}
+                className={`flex h-9 w-full items-center justify-between gap-3 rounded-md px-2.5 text-left text-sm font-medium transition ${
+                  selected
+                    ? "bg-[#DCFCE7] text-[#14532D]"
+                    : "text-[#374151] hover:bg-[#F9FAFB]"
+                }`}
+              >
+                <span className="min-w-0 truncate">
+                  {optionLabel}{" "}
+                  <span className={selected ? "text-[#15803D]" : "text-[#6B7280]"}>
+                    ({counts[status] ?? 0})
+                  </span>
+                </span>
+                {selected ? <FiCheck className="h-4 w-4 shrink-0" /> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -577,12 +914,10 @@ export default function BuilderLeadsPage(): JSX.Element {
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(
     null,
   );
+  const [projectSearchTerm, setProjectSearchTerm] = useState("");
   const [activeStatus, setActiveStatus] = useState<LeadStatus>("All");
-  const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
-  const [propertyPage, setPropertyPage] = useState(1);
   const pageSize = 10;
-  const propertyPageSize = 6;
 
   /* -------- Properties -------- */
   const { data: propertiesData, isLoading: propertiesLoading } = useQuery<
@@ -597,46 +932,81 @@ export default function BuilderLeadsPage(): JSX.Element {
     return propertiesData[TAB_KEY_MAP[activeTab]] ?? [];
   }, [propertiesData, activeTab]);
 
-  useEffect(() => {
-    if (properties.length && !selectedPropertyId) {
-      setSelectedPropertyId(properties[0]._id);
-    }
-  }, [properties, selectedPropertyId]);
-
   const selectedProperty = useMemo(() => {
     return properties.find((property) => property._id === selectedPropertyId) ?? null;
   }, [properties, selectedPropertyId]);
 
-  const totalPropertyPages = Math.max(
-    1,
-    Math.ceil(properties.length / propertyPageSize),
-  );
+  const searchableProperties = useMemo<Property[]>(() => {
+    const normalizedSearch = projectSearchTerm.trim().toLowerCase();
+    if (!normalizedSearch) return properties;
 
-  const paginatedProperties = useMemo<Property[]>(() => {
-    const start = (propertyPage - 1) * propertyPageSize;
-    return properties.slice(start, start + propertyPageSize);
-  }, [properties, propertyPage]);
+    return properties.filter((property) =>
+      normalizeProjectSearchValue(property).includes(normalizedSearch),
+    );
+  }, [properties, projectSearchTerm]);
 
   /* -------- Leads -------- */
   const { data: leadsData, isLoading: leadsLoading } = useQuery<LeadsResponse>({
-    queryKey: ["projectLeadsbuilder", selectedPropertyId, fromDate, toDate],
-    queryFn: () =>
-      getProjectbuilderLeads(
-        selectedPropertyId!,
-        fromDate ?? undefined,
-        toDate ?? undefined,
-      ),
-    enabled: !!selectedPropertyId,
+    queryKey: [
+      "projectLeadsbuilder",
+      selectedPropertyId || "all",
+      properties.map((property) => property._id).join(","),
+      fromDate,
+      toDate,
+    ],
+    queryFn: async () => {
+      if (selectedProperty) {
+        const response = await getProjectbuilderLeads(
+          selectedProperty._id,
+          fromDate ?? undefined,
+          toDate ?? undefined,
+        );
+
+        return {
+          ...response,
+          data: attachProjectToLeads(response.data ?? [], selectedProperty),
+        };
+      }
+
+      const responses = await Promise.all(
+        properties.map(async (property) => {
+          const response = await getProjectbuilderLeads(
+            property._id,
+            fromDate ?? undefined,
+            toDate ?? undefined,
+          );
+
+          return attachProjectToLeads(response.data ?? [], property);
+        }),
+      );
+      const data = responses.flat();
+
+      return {
+        success: true,
+        count: data.length,
+        header: {
+          title: "All Project Leads",
+          type: "all",
+          counts: {
+            site: 0,
+            imported: 0,
+            direct: 0,
+          },
+        },
+        columns: DEFAULT_LEAD_COLUMNS,
+        promotionType: "all",
+        data,
+      };
+    },
+    enabled: !!propertiesData,
   });
-  const selectedPromotionType =
-    leadsData?.promotionType || selectedProperty?.promotion?.type || "normal";
 
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: LeadStatusValue }) =>
       updateLeadStatus(id, status),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["projectLeadsbuilder", selectedPropertyId],
+        queryKey: ["projectLeadsbuilder"],
       });
     },
   });
@@ -646,7 +1016,7 @@ export default function BuilderLeadsPage(): JSX.Element {
       importProjectLeadsCSV(projectId, file),
     onSuccess: (result) => {
       queryClient.invalidateQueries({
-        queryKey: ["projectLeadsbuilder", selectedPropertyId],
+        queryKey: ["projectLeadsbuilder"],
       });
 
       alert(
@@ -667,29 +1037,10 @@ export default function BuilderLeadsPage(): JSX.Element {
         ? leads
         : leads.filter((lead) => normalizeLeadStatus(lead.status) === activeStatus);
 
-    const normalizedSearch = searchTerm.trim().toLowerCase();
-    const searchedLeads = normalizedSearch
-      ? matchingLeads.filter((lead) => {
-          const searchableValues = [
-            lead.name,
-            lead.phone,
-            lead.email,
-            formatStatus(lead.status),
-            lead.purchaseTimeline,
-            lead.budgetRange,
-            ...(lead.extraFields ? Object.values(lead.extraFields) : []),
-          ];
-
-          return searchableValues.some((value) =>
-            String(value ?? "").toLowerCase().includes(normalizedSearch)
-          );
-        })
-      : matchingLeads;
-
-    return [...searchedLeads].sort(
+    return [...matchingLeads].sort(
       (a, b) => getLeadTimestamp(b) - getLeadTimestamp(a),
     );
-  }, [leadsData, activeStatus, searchTerm]);
+  }, [leadsData, activeStatus]);
 
   const leadCountsByStatus = useMemo(() => {
     const leads = leadsData?.data ?? [];
@@ -720,11 +1071,7 @@ export default function BuilderLeadsPage(): JSX.Element {
 
   useEffect(() => {
     setPage(1);
-  }, [selectedPropertyId, activeStatus, fromDate, toDate, searchTerm]);
-
-  useEffect(() => {
-    setPropertyPage(1);
-  }, [activeTab]);
+  }, [selectedPropertyId, activeStatus, fromDate, toDate]);
 
   useEffect(() => {
     if (page > totalPages) {
@@ -732,23 +1079,20 @@ export default function BuilderLeadsPage(): JSX.Element {
     }
   }, [page, totalPages]);
 
-  useEffect(() => {
-    if (propertyPage > totalPropertyPages) {
-      setPropertyPage(totalPropertyPages);
-    }
-  }, [propertyPage, totalPropertyPages]);
-
   /* -------- Actions -------- */
 
   const clearFilters = () => {
     setFromDate(null);
     setToDate(null);
+    setSelectedPropertyId(null);
+    setProjectSearchTerm("");
     setActiveStatus("All");
-    setSearchTerm("");
   };
 
   const handleDownloadCSV = () => {
-    if (!selectedPropertyId) return alert("Select property first");
+    if (!selectedPropertyId) {
+      return alert("Select a project to download project-wise leads");
+    }
 
     const from = fromDate?.toISOString().split("T")[0];
     const to = toDate?.toISOString().split("T")[0];
@@ -757,7 +1101,7 @@ export default function BuilderLeadsPage(): JSX.Element {
   };
 
   const handleImportClick = () => {
-    if (!selectedPropertyId) return alert("Select property first");
+    if (!selectedPropertyId) return alert("Select a project before importing leads");
     fileInputRef.current?.click();
   };
 
@@ -766,7 +1110,7 @@ export default function BuilderLeadsPage(): JSX.Element {
     event.target.value = "";
 
     if (!file) return;
-    if (!selectedPropertyId) return alert("Select property first");
+    if (!selectedPropertyId) return alert("Select a project before importing leads");
     if (!file.name.toLowerCase().endsWith(".csv")) {
       return alert("Please upload a CSV file");
     }
@@ -780,87 +1124,94 @@ export default function BuilderLeadsPage(): JSX.Element {
   /* ================= UI ================= */
 
   if (propertiesLoading) {
-    return <div className="text-center py-20">Loading properties…</div>;
+    return <BuilderLeadsLoadingSkeleton />;
   }
 
   return (
-    <div className="space-y-5 sm:space-y-6">
+    <div className="space-y-4">
       {/* HEADER */}
       <div>
         <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 mb-1">
           {leadsData?.header?.title || "My Leads"}
         </h1>
         <p className="text-sm sm:text-base text-gray-600">
-          View enquiries received on your properties
+          View enquiries received across all projects or narrow down to one project
         </p>
-        <span className="text-sm text-gray-500">
-          Showing <b>{properties.length}</b> Properties
-        </span>
       </div>
 
       {/* FILTER TOOLBAR */}
-      <div className="rounded-lg bg-[#EEF2EF] border border-[#E3E7E4] p-4 md:p-5 space-y-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            {["All", ...LEAD_STATUSES].map((status) => {
-              const active = activeStatus === status;
-              return (
-                <button
-                  key={status}
-                  onClick={() => setActiveStatus(status as LeadStatus)}
-                  className={`h-8 px-3 rounded-md text-sm capitalize transition
-                    ${
-                      active
-                        ? "bg-[#CFEFD9] text-[#14532D]"
-                        : "bg-[#E7E9E8] text-[#4B5563] hover:bg-[#DDE1DE]"
-                    }`}
-                >
-                  {status === "All" ? status : formatStatus(status as LeadStatusValue)}{" "}
-                  <span className="font-semibold">
-                    ({leadCountsByStatus[status as LeadStatus] ?? 0})
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <span className="text-sm font-medium text-[#16A34A]">
-            Showing {properties.length.toString().padStart(2, "0")} Properties
-          </span>
-        </div>
-
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2">
-            <div className="relative w-full sm:w-[230px]">
+      <div className="rounded-lg bg-[#EEF2EF] border border-[#E3E7E4] p-3 space-y-3">
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+            <div className="relative min-w-0 lg:w-[420px]">
               <FiSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6B7280]" />
               <input
                 type="text"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search leads"
+                value={projectSearchTerm}
+                onChange={(event) => setProjectSearchTerm(event.target.value)}
+                placeholder="Search project by name, city, locality, or type"
                 className="h-9 w-full rounded-md border border-[#DCE1DD] bg-white pl-9 pr-3 text-sm text-[#374151] outline-none transition placeholder:text-[#9CA3AF] focus:border-[#16A34A] focus:ring-2 focus:ring-[#DCFCE7]"
               />
             </div>
 
-            <div className="relative w-full sm:w-auto">
+            <div className="min-w-0 lg:w-[260px]">
+              <ProjectFilterDropdown
+                properties={searchableProperties}
+                selectedProperty={selectedProperty}
+                onSelect={setSelectedPropertyId}
+              />
+            </div>
+
+            <div className="flex min-w-0 flex-col gap-2 lg:ml-auto lg:flex-row lg:items-center">
+              <div className="flex h-9 w-fit shrink-0 items-center overflow-hidden rounded-md border border-[#DCE1DD] bg-white">
+                <span className="border-r border-[#E5E7EB] px-3 text-sm font-semibold text-[#16A34A]">
+                  {(selectedProperty ? 1 : properties.length).toString().padStart(2, "0")} Projects
+                </span>
+                <span className="px-3 text-sm font-medium text-[#6B7280]">
+                  {filteredLeads.length} Leads
+                </span>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-nowrap lg:items-center">
+            <div className="lg:w-[180px]">
+            <LeadStatusFilterDropdown
+              value={activeStatus}
+              counts={leadCountsByStatus}
+              onChange={setActiveStatus}
+            />
+            </div>
+
+            <div className="relative lg:w-[220px]">
               <DatePicker
                 selected={fromDate}
                 onChange={(date: any) => setFromDate(date)}
                 placeholderText="From Date"
-                className="h-9 w-full sm:w-[108px] rounded-md bg-[#E7E9E8] border border-[#DCE1DD] pl-3 pr-8 text-sm text-[#4B5563]"
+                className="h-9 w-full rounded-md bg-white border border-[#DCE1DD] pl-3 pr-10 text-sm text-[#4B5563] outline-none transition focus:border-[#16A34A] focus:ring-2 focus:ring-[#DCFCE7]"
                 dateFormat="yyyy-MM-dd"
+                popperClassName="z-[9999]"
+                popperPlacement="bottom-start"
+                portalId="builder-leads-datepicker-portal"
               />
-              <FiChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[#4B5563]" />
+              <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#4B5563]" />
             </div>
 
-            <div className="relative w-full sm:w-auto">
+            <div className="relative lg:w-[220px]">
               <DatePicker
                 selected={toDate}
                 onChange={(date: any) => setToDate(date)}
                 placeholderText="To Date"
-                className="h-9 w-full sm:w-[108px] rounded-md bg-[#E7E9E8] border border-[#DCE1DD] pl-3 pr-8 text-sm text-[#4B5563]"
+                className="h-9 w-full rounded-md bg-white border border-[#DCE1DD] pl-3 pr-10 text-sm text-[#4B5563] outline-none transition focus:border-[#16A34A] focus:ring-2 focus:ring-[#DCFCE7]"
                 dateFormat="yyyy-MM-dd"
+                popperClassName="z-[9999]"
+                popperPlacement="bottom-start"
+                portalId="builder-leads-datepicker-portal"
               />
-              <FiChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[#4B5563]" />
+              <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#4B5563]" />
             </div>
 
             <button
@@ -887,122 +1238,175 @@ export default function BuilderLeadsPage(): JSX.Element {
               {importLeadsMutation.isPending ? "Importing" : "Import"}
               <FiUploadCloud className="w-4 h-4" />
             </button>
+          </div>
 
-            {(fromDate || toDate || activeStatus !== "All") && (
+          <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
+            {(fromDate ||
+              toDate ||
+              selectedPropertyId ||
+              projectSearchTerm ||
+              activeStatus !== "All") ? (
               <button
                 onClick={clearFilters}
-                className="h-9 px-3 rounded-md text-sm text-[#4B5563] bg-[#E7E9E8] hover:bg-[#DDE1DE] transition w-full sm:w-auto"
+                className="h-9 rounded-md bg-[#E7E9E8] px-3 text-sm text-[#4B5563] transition hover:bg-[#DDE1DE]"
               >
-                Clear
+                Clear all
               </button>
-            )}
+            ) : null}
           </div>
-
-          <span className="text-sm text-[#6B7280]">
-            Total Leads: {filteredLeads.length}
-          </span>
         </div>
       </div>
 
-      {/* GRID */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* PROPERTY LIST */}
-        <div className="lg:col-span-5 xl:col-span-4 space-y-3">
-          <div className="space-y-2 pr-1">
-          {paginatedProperties.map((property: any) => {
-            const image = property.gallery?.[0]?.url || "/placeholder.jpg";
-            const active = property._id === selectedPropertyId;
-            const promotionTypeLabel = formatPromotionTypeLabel(property?.promotion?.type);
-            const propertyTypeLabel = formatPropertyTypeLabel(property?.propertyType);
-
-            return (
-              <button
-                key={property._id}
-                onClick={() => setSelectedPropertyId(property._id)}
-                className={`w-full flex flex-col gap-3 rounded-lg border p-2 text-left transition lg:flex-row lg:items-start
-                  ${
-                    active
-                      ? "border-green-500 bg-green-50"
-                      : "border-gray-200 bg-white hover:bg-gray-50"
-                  }`}
-              >
-                <div className="h-48 w-full rounded-md overflow-hidden bg-gray-100 lg:h-28 lg:w-32 lg:shrink-0">
-                  <img
-                    src={property.heroImage || image}
-                    alt={property.title}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-
-                <div className="flex-1 min-w-0 space-y-1">
-                  <h3 className="text-sm font-semibold leading-5 text-gray-900 wrap-break-word">
-                    {property.title}
-                  </h3>
-                  <p className="text-xs text-gray-500 leading-4 truncate">
-                    {property.locality}, {property.city}
-                  </p>
-                  <p className="text-xs text-gray-500 leading-4">
-                    {propertyTypeLabel}
-                  </p>
-                  <div>
-                    <span
-                      className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium leading-none ${
-                        active
-                          ? "bg-green-100 text-green-700"
-                          : "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {promotionTypeLabel}
-                    </span>
-                  </div>
-                  <p className="pt-0.5 text-sm font-semibold leading-5 text-green-600">
-                    {getPropertyPriceLabel(property)}
-                  </p>
-                </div>
-              </button>
-            );
-          })}
-          </div>
-
-          {properties.length > propertyPageSize ? (
-            <Pagination
-              page={propertyPage}
-              pageSize={propertyPageSize}
-              totalItems={properties.length}
-              totalPages={totalPropertyPages}
-              onPageChange={setPropertyPage}
-              itemLabel="properties"
+      {/* LEADS TABLE */}
+      <div className="rounded-lg bg-green-50/40 p-2 sm:p-0">
+        {leadsLoading ? (
+          <LeadsTableSkeleton />
+        ) : filteredLeads.length ? (
+          <div className="space-y-3">
+            <LeadsTable
+              columns={leadsData?.columns ?? []}
+              leads={paginatedLeads}
+              updateStatusMutation={updateStatusMutation}
             />
-          ) : null}
-        </div>
-
-        {/* LEADS TABLE */}
-        <div className="lg:col-span-7 xl:col-span-8 bg-green-50/40 rounded-lg p-2 sm:p-0">
-          {leadsLoading ? (
-            <div className="text-center py-20">Loading leads…</div>
-          ) : filteredLeads.length ? (
-            <div className="space-y-3">
-              <LeadsTable
-                columns={leadsData?.columns ?? []}
-                leads={paginatedLeads}
-                updateStatusMutation={updateStatusMutation}
-              />
-              <Pagination
-                page={page}
-                pageSize={pageSize}
-                totalItems={filteredLeads.length}
-                totalPages={totalPages}
-                onPageChange={setPage}
-              />
-            </div>
-          ) : (
-            <div className="text-center py-20 text-gray-500">
-              No leads found
-            </div>
-          )}
-        </div>
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              totalItems={filteredLeads.length}
+              totalPages={totalPages}
+              onPageChange={setPage}
+            />
+          </div>
+        ) : (
+          <div className="text-center py-20 text-gray-500">
+            No leads found
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function SkeletonBlock({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`block animate-pulse rounded-md bg-slate-200/80 ${className}`}
+    />
+  );
+}
+
+function BuilderLeadsLoadingSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div>
+        <SkeletonBlock className="h-7 w-40" />
+        <SkeletonBlock className="mt-2 h-4 w-full max-w-[520px]" />
+      </div>
+
+      <div className="rounded-lg border border-[#E3E7E4] bg-[#EEF2EF] p-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <SkeletonBlock className="h-9 w-full lg:w-1/2" />
+          <SkeletonBlock className="h-9 w-52" />
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex">
+          <SkeletonBlock className="h-9 lg:w-[180px]" />
+          <SkeletonBlock className="h-9 lg:w-[220px]" />
+          <SkeletonBlock className="h-9 lg:w-[220px]" />
+          <SkeletonBlock className="h-9 lg:w-28" />
+          <SkeletonBlock className="h-9 lg:w-28" />
+        </div>
+      </div>
+
+      <div className="rounded-lg bg-green-50/40 p-2 sm:p-0">
+        <LeadsTableSkeleton />
+      </div>
+    </div>
+  );
+}
+
+function LeadsTableSkeleton() {
+  const skeletonColumns = swapLeadColumnPositions(
+    mergeLeadContactColumns([
+      { key: "name", label: "Full Name" },
+      { key: "phone", label: "Phone Number" },
+      { key: "email", label: "Email" },
+      { key: "activity", label: "Activity" },
+      { key: "leadTime", label: "Lead Time" },
+      { key: "purchaseTimeline", label: "Planning To Purchase" },
+      { key: "status", label: "Status" },
+    ]),
+  );
+  const desktopGridTemplate = getDesktopGridTemplate(skeletonColumns);
+
+  return (
+    <>
+      <div className="space-y-3 md:hidden">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div
+            key={index}
+            className="rounded-lg border border-[#E5E7EB] bg-white p-4 shadow-sm"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-[#F3F4F6] pb-3">
+              <div className="min-w-0 flex-1">
+                <SkeletonBlock className="h-4 w-32" />
+                <SkeletonBlock className="mt-2 h-3 w-28" />
+                <SkeletonBlock className="mt-2 h-3 w-40" />
+              </div>
+              <div className="w-20">
+                <SkeletonBlock className="h-3 w-full" />
+                <SkeletonBlock className="mt-1 h-2.5 w-14" />
+              </div>
+            </div>
+            <div className="mt-3 space-y-2">
+              <SkeletonBlock className="h-3 w-11/12" />
+              <SkeletonBlock className="h-3 w-8/12" />
+            </div>
+            <div className="mt-3 flex gap-1">
+              <SkeletonBlock className="h-5 w-14 rounded-full" />
+              <SkeletonBlock className="h-5 w-16 rounded-full" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="no-scrollbar hidden cursor-grab overflow-x-auto rounded-lg border border-[#E5E7EB] bg-white shadow-sm md:block">
+        <div
+          className="grid min-w-max items-center gap-x-1 border-b border-[#E5E7EB] bg-[#F9FAFB] px-2 py-1.5"
+          style={{ gridTemplateColumns: desktopGridTemplate }}
+        >
+          {skeletonColumns.map((column) => (
+            <SkeletonBlock key={column.key} className="h-3 w-20" />
+          ))}
+        </div>
+
+        {Array.from({ length: 7 }).map((_, rowIndex) => (
+          <div
+            key={rowIndex}
+            className={`grid min-w-max items-center gap-x-1 border-b border-[#EEF2F0] px-2 py-2 last:border-b-0 ${
+              rowIndex % 2 === 0 ? "bg-white" : "bg-[#FCFDFD]"
+            }`}
+            style={{ gridTemplateColumns: desktopGridTemplate }}
+          >
+            {skeletonColumns.map((column, columnIndex) => (
+              <div key={`${rowIndex}-${column.key}`} className="min-w-0 pr-1">
+                <SkeletonBlock
+                  className={`h-3 ${
+                    column.key === "contactDetails"
+                      ? "h-10 w-36"
+                      : column.key === "activity"
+                      ? "w-14 rounded-full"
+                      : columnIndex % 3 === 0
+                        ? "w-24"
+                        : columnIndex % 3 === 1
+                          ? "w-20"
+                          : "w-28"
+                  }`}
+                />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -1023,6 +1427,22 @@ function Pagination({
 }) {
   const startItem = totalItems ? (page - 1) * pageSize + 1 : 0;
   const endItem = Math.min(page * pageSize, totalItems);
+
+  if (totalPages <= 1) {
+    return (
+      <div className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-3 shadow-sm sm:px-4">
+        <p className="text-sm text-[#6B7280]">
+          Showing{" "}
+          <span className="font-semibold text-[#111827]">
+            {startItem}-{endItem}
+          </span>{" "}
+          of <span className="font-semibold text-[#111827]">{totalItems}</span>{" "}
+          {itemLabel}
+        </p>
+      </div>
+    );
+  }
+
   const pages = Array.from({ length: totalPages }, (_, index) => index + 1);
   const visiblePages = pages.filter(
     (item) =>
@@ -1124,7 +1544,56 @@ function LeadsTable({
         { key: "budgetRange", label: "Budget Range" },
         { key: "status", label: "Status" },
       ];
-  const desktopGridTemplate = getDesktopGridTemplate(visibleColumns);
+  const displayColumns = swapLeadColumnPositions(
+    mergeLeadContactColumns(visibleColumns),
+  );
+  const desktopGridTemplate = getDesktopGridTemplate(displayColumns);
+  const desktopTableRef = useRef<HTMLDivElement | null>(null);
+  const dragStateRef = useRef({
+    dragging: false,
+    startX: 0,
+    scrollLeft: 0,
+  });
+  const [isTableDragging, setIsTableDragging] = useState(false);
+
+  const handleTableDragStart = (event: React.MouseEvent<HTMLDivElement>) => {
+    const table = desktopTableRef.current;
+    const target = event.target as HTMLElement;
+
+    if (
+      event.button !== 0 ||
+      !table ||
+      table.scrollWidth <= table.clientWidth ||
+      target.closest("button, a, input, select, textarea, [role='button']")
+    ) {
+      return;
+    }
+
+    dragStateRef.current = {
+      dragging: true,
+      startX: event.clientX,
+      scrollLeft: table.scrollLeft,
+    };
+    setIsTableDragging(true);
+    event.preventDefault();
+  };
+
+  const handleTableDragMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    const table = desktopTableRef.current;
+    const dragState = dragStateRef.current;
+
+    if (!dragState.dragging || !table) return;
+
+    table.scrollLeft = dragState.scrollLeft - (event.clientX - dragState.startX);
+    event.preventDefault();
+  };
+
+  const stopTableDrag = () => {
+    if (!dragStateRef.current.dragging) return;
+
+    dragStateRef.current.dragging = false;
+    setIsTableDragging(false);
+  };
 
   return (
     <>
@@ -1163,8 +1632,8 @@ function LeadsTable({
                 <LeadTimestamp value={getLeadDateTimeValue(lead)} />
               </div>
               <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-[#4B5563]">
-                {visibleColumns
-                  .filter((column) => !["name", "phone", "email", "leadTime", "status", "activity"].includes(column.key))
+                {displayColumns
+                  .filter((column) => !["contactDetails", "name", "phone", "email", "leadTime", "status", "activity"].includes(column.key))
                   .map((column) => (
                     <p key={`${lead._id}-${column.key}`}>
                       <span className="font-medium text-[#111827]">{column.label}: </span>
@@ -1179,11 +1648,15 @@ function LeadsTable({
                 <LeadActivityBadges lead={lead} />
               </div>
               <div className="mt-3">
-                <StatusSelect
-                  lead={lead}
-                  updateStatusMutation={updateStatusMutation}
-                  className="max-w-none"
-                />
+                {lead.activityOnly ? (
+                  <span className="text-xs font-medium text-[#9CA3AF]">—</span>
+                ) : (
+                  <StatusSelect
+                    lead={lead}
+                    updateStatusMutation={updateStatusMutation}
+                    className="max-w-none"
+                  />
+                )}
               </div>
             </div>
           );
@@ -1191,15 +1664,24 @@ function LeadsTable({
       </div>
 
       {/* Desktop Table */}
-      <div className="hidden overflow-x-auto rounded-lg border border-[#E5E7EB] bg-white shadow-sm md:block">
+      <div
+        ref={desktopTableRef}
+        onMouseDown={handleTableDragStart}
+        onMouseMove={handleTableDragMove}
+        onMouseUp={stopTableDrag}
+        onMouseLeave={stopTableDrag}
+        className={`no-scrollbar hidden select-none overflow-x-auto rounded-lg border border-[#E5E7EB] bg-white shadow-sm md:block ${
+          isTableDragging ? "cursor-grabbing" : "cursor-grab"
+        }`}
+      >
         <div
-          className="grid min-w-max items-center gap-x-2 border-b border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]"
+          className="grid min-w-max items-center gap-x-1 border-b border-[#E5E7EB] bg-[#F9FAFB] px-2 py-1.5 text-[10px] font-semibold uppercase text-[#6B7280]"
           style={{ gridTemplateColumns: desktopGridTemplate }}
         >
-          {visibleColumns.map((column) => (
+          {displayColumns.map((column) => (
             <span
               key={column.key}
-              className="truncate pl-1 leading-4"
+              className="truncate leading-4"
               title={column.label}
             >
               {column.label}
@@ -1215,12 +1697,12 @@ function LeadsTable({
           return (
             <div
               key={lead._id}
-              className={`grid min-w-max items-center gap-x-2 border-b border-[#EEF2F0] px-3 py-2.5 text-sm transition last:border-b-0 hover:bg-[#F7FBF8] ${
+              className={`grid min-w-max items-center gap-x-1 border-b border-[#EEF2F0] px-2 py-1.5 text-xs transition last:border-b-0 hover:bg-[#F7FBF8] ${
                 index % 2 === 0 ? "bg-white" : "bg-[#FCFDFD]"
               }`}
               style={{ gridTemplateColumns: desktopGridTemplate }}
             >
-              {visibleColumns.map((column) => {
+              {displayColumns.map((column) => {
                 const displayValue = getLeadContactDisplayValue(
                   lead,
                   column,
@@ -1231,16 +1713,25 @@ function LeadsTable({
                   <div key={`${lead._id}-${column.key}`} className="min-w-0 pr-1">
                     {column.key === "leadTime" ? (
                       <LeadTimestamp value={getLeadDateTimeValue(lead)} />
+                    ) : column.key === "contactDetails" ? (
+                      <LeadContactDetails
+                        lead={lead}
+                        shouldMaskContact={shouldMaskContact}
+                      />
                     ) : column.key === "activity" ? (
                       <LeadActivityBadges lead={lead} />
                     ) : column.key === "status" ? (
-                      <StatusSelect
-                        lead={lead}
-                        updateStatusMutation={updateStatusMutation}
-                      />
+                      lead.activityOnly ? (
+                        <span className="text-xs font-medium text-[#9CA3AF]">—</span>
+                      ) : (
+                        <StatusSelect
+                          lead={lead}
+                          updateStatusMutation={updateStatusMutation}
+                        />
+                      )
                     ) : (
                       <p
-                        className="truncate pl-1 text-sm font-medium text-[#374151]"
+                        className="truncate text-xs font-medium text-[#374151]"
                         title={String(displayValue)}
                       >
                         {displayValue}

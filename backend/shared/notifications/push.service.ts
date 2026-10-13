@@ -227,7 +227,7 @@ export const sendPlatformPush = async ({
             title,
             body,
             ...(image ? { image } : {}),
-            icon: "/icons/icon-192x192.png",
+            icon: "/email/propenu-logo.png",
           },
         },
       }),

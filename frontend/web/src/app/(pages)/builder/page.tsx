@@ -144,6 +144,12 @@ const DATE_RANGE_OPTIONS = [
 ];
 const PROJECT_IMAGE_FALLBACK = "/images/placeholder.svg";
 const MOMENTUM_PAGE_SIZE = 5;
+const dashboardKpiSkeletonItems = Array.from({ length: 8 });
+const dashboardMiniMetricSkeletonItems = Array.from({ length: 4 });
+const chartBarSkeletonItems = Array.from({ length: 8 });
+const chartBarHeights = ["h-32", "h-48", "h-40", "h-56", "h-44", "h-64", "h-36", "h-52"];
+const horizontalChartBarWidths = ["w-7/12", "w-10/12", "w-8/12", "w-11/12", "w-6/12", "w-9/12", "w-5/12", "w-8/12"];
+const momentumSkeletonItems = Array.from({ length: 5 });
 
 const formatNumber = (value?: number | null) => {
   const normalized = typeof value === "number" && Number.isFinite(value) ? value : 0;
@@ -197,6 +203,176 @@ const StatusCard = ({
 
 const getDateRangeLabel = (value: string) =>
   DATE_RANGE_OPTIONS.find((option) => option.value === value)?.label || "Select range";
+
+const SkeletonBlock = ({ className }: { className: string }) => (
+  <div
+    className={`animate-pulse rounded-md bg-gray-200/80 ${className}`}
+    aria-hidden="true"
+  />
+);
+
+const KpiCardSkeleton = () => (
+  <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <SkeletonBlock className="h-3 w-24" />
+        <SkeletonBlock className="mt-4 h-7 w-20" />
+      </div>
+      <SkeletonBlock className="h-11 w-11 shrink-0 rounded-xl" />
+    </div>
+  </div>
+);
+
+const ChartSkeleton = ({ variant = "vertical" }: { variant?: "vertical" | "horizontal" }) => {
+  if (variant === "horizontal") {
+    return (
+      <div className="flex h-full flex-col justify-center gap-4 rounded-xl border border-dashed border-gray-200 bg-gray-50/80 px-4 py-5">
+        {chartBarSkeletonItems.map((_, index) => (
+          <SkeletonBlock
+            key={`chart-bar-skeleton-${variant}-${index}`}
+            className={`h-7 rounded-r-lg ${horizontalChartBarWidths[index]}`}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full items-end gap-3 rounded-xl border border-dashed border-gray-200 bg-gray-50/80 px-4 py-5">
+      {chartBarSkeletonItems.map((_, index) => (
+        <SkeletonBlock
+          key={`chart-bar-skeleton-${variant}-${index}`}
+          className={`w-full rounded-t-lg ${chartBarHeights[index]}`}
+        />
+      ))}
+    </div>
+  );
+};
+
+const DashboardSkeleton = () => (
+  <div className="mx-auto w-full" aria-busy="true" aria-label="Loading dashboard">
+    <div className="mb-6 sm:mb-8">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="min-w-0 flex-1">
+          <SkeletonBlock className="h-7 w-72 max-w-full" />
+          <SkeletonBlock className="mt-3 h-4 w-full max-w-3xl" />
+          <SkeletonBlock className="mt-2 h-4 w-4/5 max-w-2xl" />
+        </div>
+
+        <div className="w-full rounded-md p-2 xl:max-w-60">
+          <SkeletonBlock className="h-[42px] w-full rounded-[14px]" />
+        </div>
+      </div>
+    </div>
+
+    <div className="grid grid-cols-2 gap-4 sm:gap-6 xl:grid-cols-4">
+      {dashboardKpiSkeletonItems.slice(0, 4).map((_, index) => (
+        <KpiCardSkeleton key={`primary-kpi-skeleton-${index}`} />
+      ))}
+    </div>
+
+    <div className="mt-4 grid grid-cols-2 gap-4 sm:gap-6 xl:grid-cols-4">
+      {dashboardKpiSkeletonItems.slice(4).map((_, index) => (
+        <KpiCardSkeleton key={`engagement-kpi-skeleton-${index}`} />
+      ))}
+    </div>
+
+    <div className="mt-8 rounded-xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
+      <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0 flex-1">
+          <SkeletonBlock className="h-6 w-48" />
+          <SkeletonBlock className="mt-2 h-4 w-full max-w-2xl" />
+        </div>
+        <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 xl:min-w-[260px]">
+          <SkeletonBlock className="h-3 w-36 bg-blue-200/70" />
+          <SkeletonBlock className="mt-3 h-4 w-44 bg-blue-200/70" />
+          <SkeletonBlock className="mt-2 h-3 w-32 bg-blue-200/70" />
+        </div>
+      </div>
+
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {dashboardMiniMetricSkeletonItems.map((_, index) => (
+          <div key={`mini-metric-skeleton-${index}`} className="rounded-xl bg-gray-50 px-4 py-3">
+            <SkeletonBlock className="h-3 w-20" />
+            <SkeletonBlock className="mt-3 h-6 w-14" />
+          </div>
+        ))}
+      </div>
+
+      <div className="h-[390px]">
+        <ChartSkeleton />
+      </div>
+    </div>
+
+    <div className="mt-8 grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-2">
+      <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
+        <SkeletonBlock className="h-6 w-40" />
+        <SkeletonBlock className="mt-2 h-4 w-full max-w-md" />
+        <div className="mt-4 h-80">
+          <ChartSkeleton />
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
+        <SkeletonBlock className="h-6 w-40" />
+        <SkeletonBlock className="mt-2 h-4 w-full max-w-md" />
+        <div className="mt-4 h-80">
+          <ChartSkeleton variant="horizontal" />
+        </div>
+      </div>
+    </div>
+
+    <div className="mt-8 rounded-xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
+      <SkeletonBlock className="h-6 w-44" />
+      <SkeletonBlock className="mt-2 h-4 w-full max-w-xl" />
+
+      <div className="mt-4 overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+        <div className="hidden grid-cols-[minmax(0,3fr)_0.65fr_0.8fr_0.7fr_0.7fr_0.85fr] gap-3 border-b border-slate-200 bg-linear-to-r from-slate-50 to-white px-5 py-3 md:grid">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <SkeletonBlock key={`momentum-head-skeleton-${index}`} className="h-3 w-20" />
+          ))}
+        </div>
+
+        <div className="divide-y divide-slate-100">
+          {momentumSkeletonItems.map((_, index) => (
+            <div
+              key={`momentum-row-skeleton-${index}`}
+              className="grid gap-2.5 px-3 py-3 md:grid-cols-[minmax(0,3fr)_0.6fr_0.75fr_0.65fr_0.65fr_0.8fr] md:items-center md:px-4"
+            >
+              <div className="flex min-w-0 items-start gap-2.5">
+                <SkeletonBlock className="h-9 w-9 shrink-0 rounded-full" />
+                <SkeletonBlock className="h-[72px] w-[88px] shrink-0 rounded-[18px]" />
+                <div className="min-w-0 flex-1">
+                  <SkeletonBlock className="h-4 w-4/5" />
+                  <SkeletonBlock className="mt-3 h-5 w-20 rounded-full" />
+                  <SkeletonBlock className="mt-3 h-3 w-32" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 md:contents">
+                {Array.from({ length: 5 }).map((__, metricIndex) => (
+                  <SkeletonBlock
+                    key={`momentum-row-${index}-metric-${metricIndex}`}
+                    className="h-10 rounded-xl md:h-4 md:w-14 md:justify-self-center md:rounded-md"
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/70 px-4 py-3">
+          <SkeletonBlock className="h-3 w-40" />
+          <div className="flex items-center gap-2">
+            <SkeletonBlock className="h-8 w-8 rounded-full" />
+            <SkeletonBlock className="h-8 w-8 rounded-full" />
+            <SkeletonBlock className="h-8 w-8 rounded-full" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
 const Dashboard = () => {
   const [dateRange, setDateRange] = useState("30d");
@@ -387,9 +563,7 @@ const Dashboard = () => {
   return (
     <div className="mx-auto w-full">
       {isLoading ? (
-        <div className="flex h-64 items-center justify-center text-gray-500">
-          Loading dashboard...
-        </div>
+        <DashboardSkeleton />
       ) : (
         <>
       {isError && error && (

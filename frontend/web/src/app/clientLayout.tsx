@@ -114,7 +114,7 @@ const showForegroundBrowserNotification = ({
     const data = payload.data || {};
     const options: NotificationOptions & { image?: string } = {
       body,
-      icon: payload.notification?.icon || "/icons/icon-192x192.png",
+      icon: payload.notification?.icon || "/email/propenu-logo.png",
       image: payload.notification?.image,
       tag: data.type || data.category || "propenu-notification",
       data: { href },

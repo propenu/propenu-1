@@ -5,6 +5,7 @@ import {
   WhatsAppMessage,
 } from "./whatsappInbox.model";
 import { whatsappInboxBus } from "./whatsappInbox.events";
+import { searchInboxAssignableAgents } from "./whatsappInbox.assign";
 
 const API_VERSION = process.env.WHATSAPP_API_VERSION || "v23.0";
 
@@ -74,13 +75,15 @@ function extractInboundText(message: any): { type: string; body: string } {
     };
   }
   if (type === "interactive") {
-    const buttonTitle = message?.interactive?.button_reply?.title || "";
+    const button = message?.interactive?.button_reply;
     const listReply = message?.interactive?.list_reply;
+    const buttonId = String(button?.id || "");
+    const buttonTitle = String(button?.title || "");
     const listId = String(listReply?.id || "");
     const listTitle = String(listReply?.title || "");
     return {
       type,
-      body: String(buttonTitle || listId || listTitle || "[Interactive]"),
+      body: String(buttonId || buttonTitle || listId || listTitle || "[Interactive]"),
     };
   }
   if (type === "image") {
@@ -442,8 +445,23 @@ async function findUserByWhatsAppPhone(waId: string) {
         { phone: { $regex: `${last10}$` } },
       ],
     },
-    { projection: { phoneVerified: 1 } },
+    { projection: { phoneVerified: 1, name: 1 } },
   );
+}
+
+async function findWhatsAppAccount(waId: string) {
+  if (mongoose.connection.readyState !== 1) {
+    console.error("WhatsApp welcome skipped the account lookup: database is not connected");
+    return { isNew: false, name: "" };
+  }
+  const user = await findUserByWhatsAppPhone(waId);
+  const isNew = user?.phoneVerified !== true;
+  let name = String(user?.name || "").trim();
+  if (!isNew && !name) {
+    const conversation = await WhatsAppConversation.findOne({ waId }).select("profileName").lean();
+    name = String(conversation?.profileName || "").trim();
+  }
+  return { isNew, name };
 }
 
 const NEW_USER_WELCOME = `👋 Welcome aboard!
@@ -503,16 +521,20 @@ function newUserChoiceContent(choice: NewUserChoice) {
 }
 
 async function isNewWhatsAppUser(waId: string) {
-  if (mongoose.connection.readyState !== 1) {
-    console.error("WhatsApp new-user reply skipped: database is not connected");
-    return false;
-  }
-  const user = await findUserByWhatsAppPhone(waId);
-  return user?.phoneVerified !== true;
+  return (await findWhatsAppAccount(waId)).isNew;
+}
+
+function existingUserWelcome(name: string) {
+  const safeName = String(name || "").trim();
+  const hello = safeName ? `Welcome back, ${safeName}!` : "Welcome back!";
+  return `${hello}
+
+What would you like to explore on Propenu?
+
+Choose an option below 👇`;
 }
 
 const CHAT_OPENING_OPTIONS = [
-  "Create Account",
   "Buy Property",
   "Rent Property",
   "Buy Commercial",
@@ -520,14 +542,37 @@ const CHAT_OPENING_OPTIONS = [
   "Buy Plot",
 ];
 
+const CONTACT_AGENT_ID = "contact_agent";
+const CONTACT_AGENT_LABEL = "Please contact agent";
+const replyInFlight = new Set<string>();
+
+function isContactAgentChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ");
+  return (
+    normalized === CONTACT_AGENT_ID ||
+    normalized === "please contact agent" ||
+    normalized === "contact agent" ||
+    normalized === "contact our agent" ||
+    normalized === "contact our agents"
+  );
+}
+
 function chatbotMessageFromInbound(text: string) {
   const choice = matchNewUserChoice(text);
-  if (choice === "create_account") return { kind: "account" as const };
+  const trimmed = String(text || "").trim();
+  if (choice === "create_account" || /^create account$/i.test(trimmed)) {
+    return { kind: "account" as const };
+  }
   if (choice === "post_property") return { kind: "post" as const };
+  if (isContactAgentChoice(trimmed) || isContactAgentChoice(choice || "")) {
+    return { kind: "agent" as const };
+  }
   if (choice === "buy_property") return { kind: "chat" as const, text: "Buy Property" };
   if (choice === "rent_property") return { kind: "chat" as const, text: "Rent Property" };
-  const trimmed = String(text || "").trim();
-  if (/^create account$/i.test(trimmed)) return { kind: "account" as const };
   return { kind: "chat" as const, text: trimmed };
 }
 
@@ -536,13 +581,110 @@ function listRowTitle(option: string) {
   return label.length <= 24 ? label : `${label.slice(0, 21)}...`;
 }
 
-function withCreateAccount(question: string, options: string[]) {
-  if (!/what would you like to do/i.test(question)) return options;
-  if (options.some((option) => /^create account$/i.test(option))) return options;
-  return ["Create Account", ...options];
+function withChatOptions(question: string, options: string[], includeCreateAccount: boolean) {
+  const next = options.filter((option) => !isContactAgentChoice(option));
+  if (
+    /what would you like to do/i.test(question) &&
+    includeCreateAccount &&
+    !next.some((option) => /^create account$/i.test(option))
+  ) {
+    next.unshift("Create Account");
+  }
+  return [...next.filter((option) => !isContactAgentChoice(option)).slice(0, 9), CONTACT_AGENT_LABEL];
+}
+
+async function sentSameBodyRecently(waId: string, body: string) {
+  const since = new Date(Date.now() - 20000);
+  return Boolean(
+    await WhatsAppMessage.exists({
+      waId,
+      direction: "outbound",
+      body,
+      createdAt: { $gte: since },
+      status: { $ne: "failed" },
+    }),
+  );
+}
+
+async function isBotPaused(waId: string) {
+  const conversation = await WhatsAppConversation.findOne({ waId }).select("botPaused").lean();
+  return Boolean(conversation?.botPaused);
+}
+
+async function findInboxAgent() {
+  const roles = ["customer_care_executive", "customer_care", "customer_support_team_lead"];
+  for (const role of roles) {
+    const agents = await searchInboxAssignableAgents("", 20, role);
+    if (!agents.length) continue;
+    const counted = await Promise.all(
+      agents.map(async (agent) => ({
+        agent,
+        openChats: await WhatsAppConversation.countDocuments({
+          assignedAgentId: agent.id,
+          inboxStatus: { $in: ["new", "waiting"] },
+          botPaused: true,
+        }),
+      })),
+    );
+    counted.sort((left, right) => left.openChats - right.openChats);
+    return counted[0]?.agent || null;
+  }
+  return null;
+}
+
+async function handOffToAgent(waId: string) {
+  const agent = await findInboxAgent();
+  const update: Record<string, unknown> = {
+    botPaused: true,
+    inboxStatus: "waiting",
+  };
+  if (agent) {
+    update.assignedAgentId = agent.id;
+    update.assignedAgentName = agent.name;
+    update.assignedAgentRole = agent.roleLabel;
+  }
+  await WhatsAppConversation.updateOne({ waId }, { $set: update });
+  const text = agent
+    ? `Thank you. ${agent.name} from our team will reply in this chat. The assistant will stay quiet now.`
+    : "Thank you. A Propenu agent will reply in this chat. The assistant will stay quiet now.";
+  await sendInboxTextMessage(waId, text, {
+    source: "agent_handoff",
+    sessionTextOnly: true,
+  });
+  whatsappInboxBus.publish({ type: "conversation", waId });
+}
+
+async function sendContactAgentButton(waId: string) {
+  const body = "If you want help from our team, please contact an agent.";
+  if (await sentSameBodyRecently(waId, body)) return;
+  const payload = {
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: body },
+      action: {
+        buttons: [
+          {
+            type: "reply",
+            reply: { id: CONTACT_AGENT_ID, title: CONTACT_AGENT_LABEL },
+          },
+        ],
+      },
+    },
+  };
+  try {
+    await sendInboxSessionPayload(waId, body, payload, "contact_agent_prompt");
+  } catch (err) {
+    console.error("WhatsApp contact-agent button failed, sending session text:", err);
+    await sendInboxTextMessage(waId, `${body}\n\nReply: ${CONTACT_AGENT_LABEL}`, {
+      source: "contact_agent_prompt",
+      sessionTextOnly: true,
+    });
+  }
 }
 
 async function sendWhatsAppOptionList(waId: string, body: string, options: string[], source: string) {
+  if (await sentSameBodyRecently(waId, body)) return;
   const rows = options
     .map((option) => String(option || "").trim())
     .filter(Boolean)
@@ -631,7 +773,10 @@ function propertyReplyText(
   message: string,
   properties: Array<{ title?: string; location?: string; price?: string; href?: string }>,
 ) {
-  const base = String(process.env.FRONTEND_URL || "https://propenu.com").trim().replace(/\/$/, "");
+  const configured = String(process.env.FRONTEND_URL || "https://propenu.com").trim().replace(/\/$/, "");
+  const base = /^http:\/\/(www\.)?propenu\.com$/i.test(configured)
+    ? "https://propenu.com"
+    : configured || "https://propenu.com";
   const cards = properties.slice(0, 2).map((property, index) => {
     const href = String(property.href || "");
     const link = href.startsWith("http") ? href : href ? `${base}${href}` : "";
@@ -645,42 +790,66 @@ function propertyReplyText(
   return [message, ...cards].filter(Boolean).join("\n\n").trim();
 }
 
+async function openingOptions(includeCreateAccount: boolean) {
+  return withChatOptions("What would you like to do?", CHAT_OPENING_OPTIONS, includeCreateAccount);
+}
+
 async function sendChatbotReply(waId: string, text: string) {
+  const account = await findWhatsAppAccount(waId);
   const reply = await askPropertyChatbot(waId, text);
   const question = reply.question;
-  const options = withCreateAccount(question, reply.options);
+  const options = withChatOptions(question, reply.options, account.isNew);
   if (question && options.length) {
-    await sendWhatsAppOptionList(waId, question, options, "chatbot_question");
+    const body = /what would you like to do/i.test(question)
+      ? account.isNew
+        ? NEW_USER_WELCOME
+        : existingUserWelcome(account.name)
+      : question;
+    await sendWhatsAppOptionList(waId, body, options, "chatbot_question");
     return;
   }
   const body = propertyReplyText(reply.message, reply.properties);
-  if (body) {
+  if (body && !(await sentSameBodyRecently(waId, body))) {
     await sendInboxTextMessage(waId, body, {
       source: "chatbot_reply",
       sessionTextOnly: true,
     });
   }
-  if (!question && options.length) {
-    await sendWhatsAppOptionList(
-      waId,
-      reply.message || "Choose one",
-      options.slice(0, 10),
-      "chatbot_suggestions",
-    );
+  if (reply.properties.length) {
+    await sendContactAgentButton(waId);
+    return;
   }
-  if (!body && !options.length) {
-    await sendWhatsAppOptionList(
-      waId,
-      "What would you like to do?",
-      CHAT_OPENING_OPTIONS,
-      "chatbot_fallback",
-    );
+  if (options.length) {
+    await sendWhatsAppOptionList(waId, "Choose one", options, "chatbot_suggestions");
+    return;
   }
+  await sendWelcomeMenu(waId);
+}
+
+async function sendWelcomeMenu(waId: string) {
+  const account = await findWhatsAppAccount(waId);
+  await sendWhatsAppOptionList(
+    waId,
+    account.isNew ? NEW_USER_WELCOME : existingUserWelcome(account.name),
+    await openingOptions(account.isNew),
+    account.isNew ? "new_user_welcome" : "existing_user_welcome",
+  );
 }
 
 async function replyToInboundMessage(waId: string, text: string) {
+  if (replyInFlight.has(waId)) return;
+  replyInFlight.add(waId);
   try {
+    if (await isBotPaused(waId)) return;
     const inbound = chatbotMessageFromInbound(text);
+    if (inbound.kind === "chat" && isWhatsAppGreeting(inbound.text)) {
+      await sendWelcomeMenu(waId);
+      return;
+    }
+    if (inbound.kind === "agent") {
+      await handOffToAgent(waId);
+      return;
+    }
     if (inbound.kind === "chat" && !inbound.text) return;
     if (inbound.kind === "account") {
       await maybeReplyNewUserChoice(waId, "create_account");
@@ -694,15 +863,12 @@ async function replyToInboundMessage(waId: string, text: string) {
       await sendChatbotReply(waId, inbound.text);
     } catch (err) {
       console.error("WhatsApp property chat failed, sending the opening list:", err);
-      await sendWhatsAppOptionList(
-        waId,
-        NEW_USER_WELCOME,
-        CHAT_OPENING_OPTIONS,
-        "chatbot_fallback",
-      );
+      await sendWelcomeMenu(waId);
     }
   } catch (err) {
     console.error("WhatsApp inbound auto-reply failed:", err);
+  } finally {
+    replyInFlight.delete(waId);
   }
 }
 

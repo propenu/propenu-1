@@ -163,7 +163,7 @@ export function updateMemory(memory: any, message: string) {
     : { ...memory, analytics: false, quickSearch: false };
 
   const keyword = extractKeyword(message);
-  if (keyword) {
+  if (keyword && (hasPropertyRequest || next.locality)) {
     next.keyword = keyword;
     next.intent = next.intent || "buy";
     next.listingType = next.listingType || "sale";

@@ -13,6 +13,8 @@ export interface IWhatsAppConversation extends Document {
   assignedAgentId?: string;
   assignedAgentName?: string;
   assignedAgentRole?: string;
+  /** True after the customer asks to talk to an agent. The assistant stays quiet. */
+  botPaused?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -52,6 +54,7 @@ const ConversationSchema = new Schema<IWhatsAppConversation>(
     assignedAgentId: { type: String, default: "", index: true },
     assignedAgentName: { type: String, default: "" },
     assignedAgentRole: { type: String, default: "" },
+    botPaused: { type: Boolean, default: false },
     origin: {
       type: String,
       enum: ["cloud", "campaign_log"],

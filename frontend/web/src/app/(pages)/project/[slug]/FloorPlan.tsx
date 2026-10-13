@@ -167,6 +167,7 @@ export default function FloorPlan({ project }: FloorPlanProps) {
   const groups = useMemo(() => getPlanGroups(project), [project]);
   const planScrollRef = useRef<HTMLDivElement | null>(null);
   const groupTabsScrollRef = useRef<HTMLDivElement | null>(null);
+  const unitTabsScrollRef = useRef<HTMLDivElement | null>(null);
   const groupTabsRef = useRef<Array<HTMLButtonElement | null>>([]);
   const dragStartRef = useRef({
     clientX: 0,
@@ -174,10 +175,24 @@ export default function FloorPlan({ project }: FloorPlanProps) {
     scrollLeft: 0,
     scrollTop: 0,
   });
+  const groupTabsDragRef = useRef({
+    dragging: false,
+    moved: false,
+    clientX: 0,
+    scrollLeft: 0,
+  });
+  const unitTabsDragRef = useRef({
+    dragging: false,
+    moved: false,
+    clientX: 0,
+    scrollLeft: 0,
+  });
   const [activeGroupIndex, setActiveGroupIndex] = useState(0);
   const [activeUnitIndex, setActiveUnitIndex] = useState(0);
   const [planZoom, setPlanZoom] = useState(MIN_PLAN_ZOOM);
   const [isDraggingPlan, setIsDraggingPlan] = useState(false);
+  const [isDraggingGroupTabs, setIsDraggingGroupTabs] = useState(false);
+  const [isDraggingUnitTabs, setIsDraggingUnitTabs] = useState(false);
   const [canScrollGroupTabsLeft, setCanScrollGroupTabsLeft] = useState(false);
   const [canScrollGroupTabsRight, setCanScrollGroupTabsRight] = useState(false);
   const isLand = project.categoryType?.toLowerCase() === "land";
@@ -281,6 +296,82 @@ export default function FloorPlan({ project }: FloorPlanProps) {
     setIsDraggingPlan(false);
   };
 
+  const handleGroupTabsPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    const container = groupTabsScrollRef.current;
+    if (!container || container.scrollWidth <= container.clientWidth) return;
+
+    groupTabsDragRef.current = {
+      dragging: true,
+      moved: false,
+      clientX: event.clientX,
+      scrollLeft: container.scrollLeft,
+    };
+    setIsDraggingGroupTabs(true);
+    container.setPointerCapture(event.pointerId);
+  };
+
+  const handleGroupTabsPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const container = groupTabsScrollRef.current;
+    const dragState = groupTabsDragRef.current;
+    if (!dragState.dragging || !container) return;
+
+    const deltaX = event.clientX - dragState.clientX;
+    if (Math.abs(deltaX) > 4) {
+      dragState.moved = true;
+    }
+
+    container.scrollLeft = dragState.scrollLeft - deltaX;
+    event.preventDefault();
+  };
+
+  const stopGroupTabsDrag = () => {
+    if (!groupTabsDragRef.current.dragging) return;
+
+    groupTabsDragRef.current.dragging = false;
+    setIsDraggingGroupTabs(false);
+    window.setTimeout(() => {
+      groupTabsDragRef.current.moved = false;
+    }, 0);
+  };
+
+  const handleUnitTabsPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    const container = unitTabsScrollRef.current;
+    if (!container || container.scrollWidth <= container.clientWidth) return;
+
+    unitTabsDragRef.current = {
+      dragging: true,
+      moved: false,
+      clientX: event.clientX,
+      scrollLeft: container.scrollLeft,
+    };
+    setIsDraggingUnitTabs(true);
+    container.setPointerCapture(event.pointerId);
+  };
+
+  const handleUnitTabsPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const container = unitTabsScrollRef.current;
+    const dragState = unitTabsDragRef.current;
+    if (!dragState.dragging || !container) return;
+
+    const deltaX = event.clientX - dragState.clientX;
+    if (Math.abs(deltaX) > 4) {
+      dragState.moved = true;
+    }
+
+    container.scrollLeft = dragState.scrollLeft - deltaX;
+    event.preventDefault();
+  };
+
+  const stopUnitTabsDrag = () => {
+    if (!unitTabsDragRef.current.dragging) return;
+
+    unitTabsDragRef.current.dragging = false;
+    setIsDraggingUnitTabs(false);
+    window.setTimeout(() => {
+      unitTabsDragRef.current.moved = false;
+    }, 0);
+  };
+
   const scrollGroupTabs = (direction: "left" | "right") => {
     const container = groupTabsScrollRef.current;
     if (!container) return;
@@ -354,7 +445,14 @@ export default function FloorPlan({ project }: FloorPlanProps) {
                 />
                 <div
                   ref={groupTabsScrollRef}
-                  className="flex w-full min-w-0 max-w-full snap-x snap-mandatory gap-2 overflow-x-auto whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-2.5 [&::-webkit-scrollbar]:hidden"
+                  onPointerDown={handleGroupTabsPointerDown}
+                  onPointerMove={handleGroupTabsPointerMove}
+                  onPointerUp={stopGroupTabsDrag}
+                  onPointerCancel={stopGroupTabsDrag}
+                  onPointerLeave={stopGroupTabsDrag}
+                  className={`flex w-full min-w-0 max-w-full snap-x snap-mandatory gap-2 overflow-x-auto whitespace-nowrap select-none [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-2.5 [&::-webkit-scrollbar]:hidden ${
+                    isDraggingGroupTabs ? "cursor-grabbing" : "cursor-grab"
+                  }`}
                 >
                   {groups.map((group, index) => (
                     <button
@@ -363,7 +461,11 @@ export default function FloorPlan({ project }: FloorPlanProps) {
                         groupTabsRef.current[index] = element;
                       }}
                       type="button"
-                      onClick={() => {
+                      onClick={(event) => {
+                        if (groupTabsDragRef.current.moved) {
+                          event.preventDefault();
+                          return;
+                        }
                         setActiveGroupIndex(index);
                         setActiveUnitIndex(0);
                       }}
@@ -381,12 +483,28 @@ export default function FloorPlan({ project }: FloorPlanProps) {
               </div>
             </div>
 
-            <div className="no-scrollbar mt-3 flex w-full min-w-0 max-w-full overflow-x-auto border-b border-slate-200 sm:mt-4">
+            <div
+              ref={unitTabsScrollRef}
+              onPointerDown={handleUnitTabsPointerDown}
+              onPointerMove={handleUnitTabsPointerMove}
+              onPointerUp={stopUnitTabsDrag}
+              onPointerCancel={stopUnitTabsDrag}
+              onPointerLeave={stopUnitTabsDrag}
+              className={`no-scrollbar mt-3 flex w-full min-w-0 max-w-full overflow-x-auto border-b border-slate-200 select-none sm:mt-4 ${
+                isDraggingUnitTabs ? "cursor-grabbing" : "cursor-grab"
+              }`}
+            >
               {activeGroup.units.map((unit, index) => (
                 <button
                   key={`${unit.minSqft}-${unit.price}-${index}`}
                   type="button"
-                  onClick={() => setActiveUnitIndex(index)}
+                  onClick={(event) => {
+                    if (unitTabsDragRef.current.moved) {
+                      event.preventDefault();
+                      return;
+                    }
+                    setActiveUnitIndex(index);
+                  }}
                   className={`shrink-0 cursor-pointer border-b-2 px-3 pb-2 text-center transition sm:px-8 sm:pb-3 ${
                     activeUnitIndex === index
                       ? "border-emerald-500"

@@ -105,12 +105,19 @@ export default async function Page({ params }: PageProps) {
     );
   }
 
+  const isLandProject = [project.categoryType, project.propertyType]
+    .filter(Boolean)
+    .some((value) => {
+      const normalized = String(value).trim().toLowerCase();
+      return normalized === "land" || normalized === "landplots";
+    });
+
   const links = [
     { title: "Available Units", href: "#available-properties" },
     { title: "Amenities", href: "#amenities" },
     { title: "Location Advantages", href: "#map-view" },
     { title: "Gallery", href: "#gallery" },
-    { title: "Specifications", href: "#specification" },
+    ...(!isLandProject ? [{ title: "Specifications", href: "#specification" }] : []),
     { title: "About Us", href: "#about-us" },
     ...(project?.brochure?.url ? [{ title: "Brochure Preview", href: "#brochure-preview" }] : []),
   ];
@@ -219,6 +226,8 @@ export default async function Page({ params }: PageProps) {
   const specifications = {
     specifications: project?.specifications,
     color: project?.color?.trim(),
+    categoryType: project?.categoryType,
+    propertyType: project?.propertyType,
   }
 
   const structuredData = buildListingStructuredData(
@@ -285,9 +294,11 @@ export default async function Page({ params }: PageProps) {
           </div>
 
           
-          <div id="specification" className="scroll-mt-20">
-            <Specification specifications={specifications} />
-          </div>
+          {!isLandProject ? (
+            <div id="specification" className="scroll-mt-20">
+              <Specification specifications={specifications} />
+            </div>
+          ) : null}
 
           <div id="about-us" className="scroll-mt-20">
             <AboutUS aboutSummary={aboutSummary} />

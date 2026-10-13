@@ -15,6 +15,7 @@ import {
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  FiAlertTriangle,
   FiChevronDown,
   FiChevronLeft,
   FiChevronRight,
@@ -295,11 +296,11 @@ const getDesktopColumnMinWidth = (column: LeadColumn) => {
     case "project":
       return 160;
     case "contactDetails":
-      return 220;
+      return 210;
     case "name":
       return 115;
     case "activity":
-      return 170;
+      return 105;
     case "email":
       return 145;
     case "phone":
@@ -309,7 +310,7 @@ const getDesktopColumnMinWidth = (column: LeadColumn) => {
     case "leadTime":
       return 108;
     case "purchaseTimeline":
-      return 135;
+      return 150;
     case "budgetRange":
       return 115;
     default:
@@ -322,11 +323,11 @@ const getDesktopColumnMaxWidth = (column: LeadColumn) => {
     case "project":
       return 190;
     case "contactDetails":
-      return 270;
+      return 240;
     case "name":
       return 140;
     case "activity":
-      return 220;
+      return 125;
     case "email":
       return 170;
     case "phone":
@@ -336,7 +337,7 @@ const getDesktopColumnMaxWidth = (column: LeadColumn) => {
     case "leadTime":
       return 122;
     case "purchaseTimeline":
-      return 150;
+      return 175;
     case "budgetRange":
       return 130;
     default:
@@ -363,21 +364,27 @@ const DEFAULT_LEAD_COLUMNS: LeadColumn[] = [
   { key: "status", label: "Status" },
 ];
 
-const swapLeadColumnPositions = (columns: LeadColumn[]) => {
-  const nextColumns = [...columns];
-  const purchaseIndex = nextColumns.findIndex(
-    (column) => column.key === "purchaseTimeline",
+const arrangeLeadColumns = (columns: LeadColumn[]) => {
+  const preferredOrder = [
+    "project",
+    "contactDetails",
+    "activity",
+    "purchaseTimeline",
+    "leadTime",
+    "budgetRange",
+    "status",
+  ];
+  const orderMap = new Map(
+    preferredOrder.map((columnKey, index) => [columnKey, index]),
   );
-  const statusIndex = nextColumns.findIndex((column) => column.key === "status");
 
-  if (purchaseIndex >= 0 && statusIndex >= 0) {
-    [nextColumns[purchaseIndex], nextColumns[statusIndex]] = [
-      nextColumns[statusIndex],
-      nextColumns[purchaseIndex],
-    ];
-  }
+  return [...columns].sort((a, b) => {
+    const aOrder = orderMap.get(a.key) ?? preferredOrder.length;
+    const bOrder = orderMap.get(b.key) ?? preferredOrder.length;
 
-  return nextColumns;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return columns.indexOf(a) - columns.indexOf(b);
+  });
 };
 
 const CONTACT_DETAIL_COLUMN: LeadColumn = { key: "contactDetails", label: "Detail" };
@@ -916,6 +923,12 @@ export default function BuilderLeadsPage(): JSX.Element {
   );
   const [projectSearchTerm, setProjectSearchTerm] = useState("");
   const [activeStatus, setActiveStatus] = useState<LeadStatus>("All");
+  const [showImportProjectWarning, setShowImportProjectWarning] = useState(false);
+  const [importFeedback, setImportFeedback] = useState<{
+    type: "success" | "warning" | "error";
+    title: string;
+    message: string;
+  } | null>(null);
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
@@ -1018,15 +1031,49 @@ export default function BuilderLeadsPage(): JSX.Element {
       queryClient.invalidateQueries({
         queryKey: ["projectLeadsbuilder"],
       });
-
-      alert(
-        `Imported ${result.imported ?? 0} leads. Skipped ${
-          result.skipped ?? 0
-        } rows.`
+      const notificationReason = result.whatsappNotification?.reason;
+      const shouldShowWhatsappStatus = Boolean(
+        result.whatsappNotification?.sent ||
+          (notificationReason &&
+            !["importer_is_project_owner", "no_new_imported_leads"].includes(
+              notificationReason,
+            )),
       );
+      const whatsappMessage =
+        shouldShowWhatsappStatus && result.whatsappNotification?.sent
+          ? "Owner WhatsApp notification sent."
+          : shouldShowWhatsappStatus && notificationReason
+            ? `Owner WhatsApp notification not sent: ${notificationReason}.`
+            : "";
+      const importedCount = result.imported ?? 0;
+      const skippedCount = result.skipped ?? 0;
+      const feedbackType =
+        importedCount > 0 ? "success" : skippedCount > 0 ? "warning" : "success";
+
+      setImportFeedback({
+        type: feedbackType,
+        title:
+          importedCount > 0
+            ? "Leads imported successfully"
+            : "No new leads imported",
+        message: [
+          `${importedCount} ${importedCount === 1 ? "lead" : "leads"} imported.`,
+          `${skippedCount} ${skippedCount === 1 ? "row" : "rows"} skipped.`,
+          whatsappMessage,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      });
     },
     onError: (error: any) => {
-      alert(error?.response?.data?.message || error.message || "Import failed");
+      setImportFeedback({
+        type: "error",
+        title: "Import failed",
+        message:
+          error?.response?.data?.message ||
+          error.message ||
+          "Please check the CSV and try again.",
+      });
     },
   });
 
@@ -1074,6 +1121,12 @@ export default function BuilderLeadsPage(): JSX.Element {
   }, [selectedPropertyId, activeStatus, fromDate, toDate]);
 
   useEffect(() => {
+    if (selectedPropertyId) {
+      setShowImportProjectWarning(false);
+    }
+  }, [selectedPropertyId]);
+
+  useEffect(() => {
     if (page > totalPages) {
       setPage(totalPages);
     }
@@ -1087,6 +1140,8 @@ export default function BuilderLeadsPage(): JSX.Element {
     setSelectedPropertyId(null);
     setProjectSearchTerm("");
     setActiveStatus("All");
+    setShowImportProjectWarning(false);
+    setImportFeedback(null);
   };
 
   const handleDownloadCSV = () => {
@@ -1101,7 +1156,14 @@ export default function BuilderLeadsPage(): JSX.Element {
   };
 
   const handleImportClick = () => {
-    if (!selectedPropertyId) return alert("Select a project before importing leads");
+    if (!selectedPropertyId) {
+      setShowImportProjectWarning(true);
+      setImportFeedback(null);
+      return;
+    }
+
+    setShowImportProjectWarning(false);
+    setImportFeedback(null);
     fileInputRef.current?.click();
   };
 
@@ -1110,9 +1172,18 @@ export default function BuilderLeadsPage(): JSX.Element {
     event.target.value = "";
 
     if (!file) return;
-    if (!selectedPropertyId) return alert("Select a project before importing leads");
+    if (!selectedPropertyId) {
+      setShowImportProjectWarning(true);
+      setImportFeedback(null);
+      return;
+    }
     if (!file.name.toLowerCase().endsWith(".csv")) {
-      return alert("Please upload a CSV file");
+      setImportFeedback({
+        type: "error",
+        title: "Invalid file type",
+        message: "Please upload a CSV file.",
+      });
+      return;
     }
 
     importLeadsMutation.mutate({
@@ -1232,8 +1303,15 @@ export default function BuilderLeadsPage(): JSX.Element {
 
             <button
               onClick={handleImportClick}
-              disabled={!selectedPropertyId || importLeadsMutation.isPending}
-              className="h-9 px-4 rounded-md bg-white border border-[#16A34A] text-[#15803D] text-sm font-medium hover:bg-[#ECFDF3] disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400 disabled:bg-gray-100 transition flex items-center justify-center gap-2 w-full sm:w-auto"
+              disabled={importLeadsMutation.isPending}
+              aria-describedby={
+                showImportProjectWarning ? "import-project-warning" : undefined
+              }
+              className={`h-9 px-4 rounded-md bg-white border text-sm font-medium transition flex items-center justify-center gap-2 w-full sm:w-auto disabled:cursor-wait disabled:border-gray-300 disabled:text-gray-400 disabled:bg-gray-100 ${
+                showImportProjectWarning && !selectedPropertyId
+                  ? "border-[#F59E0B] text-[#B45309] ring-2 ring-[#FEF3C7] hover:bg-[#FFFBEB]"
+                  : "border-[#16A34A] text-[#15803D] hover:bg-[#ECFDF3]"
+              }`}
             >
               {importLeadsMutation.isPending ? "Importing" : "Import"}
               <FiUploadCloud className="w-4 h-4" />
@@ -1255,6 +1333,63 @@ export default function BuilderLeadsPage(): JSX.Element {
             ) : null}
           </div>
         </div>
+
+        {showImportProjectWarning && !selectedPropertyId ? (
+          <div
+            id="import-project-warning"
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-[#FCD34D] bg-[#FFFBEB] px-3 py-2 text-sm text-[#92400E]"
+          >
+            <FiAlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#D97706]" />
+            <div className="min-w-0">
+              <p className="font-semibold text-[#78350F]">
+                Select one project before importing leads.
+              </p>
+              <p className="mt-0.5 text-xs font-medium text-[#A16207]">
+                CSV imports are project-wise, so importing is not available for
+                All Projects.
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {importFeedback ? (
+          <div
+            role="status"
+            className={`flex items-start justify-between gap-3 rounded-md border px-3 py-2 text-sm ${
+              importFeedback.type === "success"
+                ? "border-[#BBF7D0] bg-[#F0FDF4] text-[#166534]"
+                : importFeedback.type === "warning"
+                  ? "border-[#FCD34D] bg-[#FFFBEB] text-[#92400E]"
+                  : "border-[#FECACA] bg-[#FEF2F2] text-[#991B1B]"
+            }`}
+          >
+            <div className="flex min-w-0 items-start gap-2">
+              <span
+                className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+                  importFeedback.type === "success"
+                    ? "bg-[#16A34A]"
+                    : importFeedback.type === "warning"
+                      ? "bg-[#D97706]"
+                      : "bg-[#DC2626]"
+                }`}
+              />
+              <div className="min-w-0">
+                <p className="font-semibold">{importFeedback.title}</p>
+                <p className="mt-0.5 text-xs font-medium opacity-90">
+                  {importFeedback.message}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setImportFeedback(null)}
+              className="shrink-0 rounded px-2 py-1 text-xs font-semibold opacity-70 transition hover:bg-white/60 hover:opacity-100"
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {/* LEADS TABLE */}
@@ -1324,7 +1459,7 @@ function BuilderLeadsLoadingSkeleton() {
 }
 
 function LeadsTableSkeleton() {
-  const skeletonColumns = swapLeadColumnPositions(
+  const skeletonColumns = arrangeLeadColumns(
     mergeLeadContactColumns([
       { key: "name", label: "Full Name" },
       { key: "phone", label: "Phone Number" },
@@ -1544,7 +1679,7 @@ function LeadsTable({
         { key: "budgetRange", label: "Budget Range" },
         { key: "status", label: "Status" },
       ];
-  const displayColumns = swapLeadColumnPositions(
+  const displayColumns = arrangeLeadColumns(
     mergeLeadContactColumns(visibleColumns),
   );
   const desktopGridTemplate = getDesktopGridTemplate(displayColumns);

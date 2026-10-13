@@ -41,6 +41,48 @@ const getNotificationAudienceForRole = (roleName?: string) => {
   return "owner";
 };
 
+const DEFAULT_VISIBLE_LEAD_LIMIT = 5;
+
+const toNonNegativeInt = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.trunc(parsed);
+};
+
+const getVisibleLeadLimitForPromotion = (promotion?: {
+  type?: string | null;
+  visibleLeadLimit?: number | null;
+} | null) => {
+  const configuredLimit = toNonNegativeInt(promotion?.visibleLeadLimit);
+  if (configuredLimit !== null) return configuredLimit;
+
+  const type = String(promotion?.type || "normal").toLowerCase();
+  if (!type || type === "normal") return 0;
+
+  return DEFAULT_VISIBLE_LEAD_LIMIT;
+};
+
+const maskNotificationPhone = (phone?: string | null) => {
+  const value = String(phone || "").trim();
+  if (!value) return "No phone";
+  if (value.length <= 4) return "*".repeat(value.length);
+  return `${value.slice(0, 2)}${"*".repeat(Math.max(4, value.length - 4))}${value.slice(-2)}`;
+};
+
+const maskNotificationEmail = (email?: string | null) => {
+  const value = String(email || "").trim().toLowerCase();
+  if (!value) return "No email";
+
+  const [name = "", domain = ""] = value.split("@");
+  if (!domain) {
+    return name.length <= 2 ? `${name.slice(0, 1)}***` : `${name.slice(0, 2)}***`;
+  }
+
+  const visibleName = name.length <= 2 ? name.slice(0, 1) : name.slice(0, 2);
+  return `${visibleName}***@${domain}`;
+};
+
 export const notifyShortlist = async ({
   ownerId,
   actorUserId,
@@ -1418,7 +1460,7 @@ export const getBuilderNotificationsFeed = async (
   const ticketNotifications = await getTicketNotificationsForRequester(builderId);
 
   const projects = await FeaturedProject.find(projectMatch)
-    .select("_id title slug heroImage meta")
+    .select("_id title slug heroImage meta promotion.type promotion.visibleLeadLimit")
     .lean();
 
   if (!projects.length) {
@@ -1774,9 +1816,28 @@ export const getBuilderNotificationsFeed = async (
     });
   });
 
-  [...projectLeadRows, ...publicLeadRows].forEach((row) => {
+  const contactLeadRows = [...projectLeadRows, ...publicLeadRows].sort((a, b) => {
+    const aTime = a.createdAt ? new Date(String(a.createdAt)).getTime() : 0;
+    const bTime = b.createdAt ? new Date(String(b.createdAt)).getTime() : 0;
+    return bTime - aTime;
+  });
+  const visibleLeadCountsByProject = new Map<string, number>();
+
+  contactLeadRows.forEach((row) => {
     const project = projectMap.get(String(row.projectId));
     if (!project) return;
+
+    const projectId = String(row.projectId);
+    const visibleLeadLimit = getVisibleLeadLimitForPromotion((project as any).promotion);
+    const currentVisibleCount = visibleLeadCountsByProject.get(projectId) ?? 0;
+    const contactMasked = currentVisibleCount >= visibleLeadLimit;
+    visibleLeadCountsByProject.set(projectId, currentVisibleCount + 1);
+    const userPhone = contactMasked
+      ? maskNotificationPhone(row.userPhone)
+      : row.userPhone || "No phone";
+    const userEmail = contactMasked
+      ? maskNotificationEmail(row.userEmail)
+      : row.userEmail || "No email";
 
     notifications.push({
       id: `contact-${row._id}`,
@@ -1785,8 +1846,8 @@ export const getBuilderNotificationsFeed = async (
       user: {
         id: row.userId ? String(row.userId) : "",
         name: row.userName || "Unknown user",
-        phone: row.userPhone || "No phone",
-        email: row.userEmail || "No email",
+        phone: userPhone,
+        email: userEmail,
         role: row.userRole || "User",
         userCode: row.userCode || "No code",
       },

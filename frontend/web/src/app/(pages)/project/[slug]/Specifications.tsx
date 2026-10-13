@@ -51,6 +51,14 @@ function formatSpecificationDescription(description: string) {
     .trim();
 }
 
+function isLandProject(project: FeaturedProject) {
+  const values = [project.categoryType, project.propertyType]
+    .filter(Boolean)
+    .map((value) => String(value).trim().toLowerCase());
+
+  return values.some((value) => value === "land" || value === "landplots");
+}
+
 export default function Specifications({ project }: SpecificationsProps) {
   const specifications = useMemo(
     () =>
@@ -79,12 +87,11 @@ export default function Specifications({ project }: SpecificationsProps) {
             row,
           ): row is { kind: "html" | "text"; value: string } =>
             Boolean(row?.value),
-        ),
+    ),
     [specifications],
   );
-  console.log("specifications", specifications);
 
-  if (!specifications.length || !descriptions.length) {
+  if (isLandProject(project) || !specifications.length || !descriptions.length) {
     return null;
   }
   return (

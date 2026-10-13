@@ -31,7 +31,7 @@ import {
   shouldSendHighTimeSpentPush,
 } from "../services/pushNotificationService";
 import { generateToken, verifyToken } from "../utils/jwt";
-import { sendOtpWhatsApp } from "../utils/whatsapp";
+import { sendLeadImportSummaryWhatsApp, sendOtpWhatsApp } from "../utils/whatsapp";
 import {
   consumeVerifiedLeadPhone,
   generateLeadOtp,
@@ -2173,6 +2173,7 @@ export const importProjectLeadsCSVController = async (
 
     const project = await FeaturedProject.findById(projectId)
       .select("createdBy title projectName buildingName propertyCode state city locality slug heroImage gallery price priceFrom priceTo listingType promotion status")
+      .populate("createdBy", "name phone email")
       .lean();
 
     if (!project) {
@@ -2313,8 +2314,58 @@ export const importProjectLeadsCSVController = async (
       propertySnapshot: buildLeadPropertySnapshot(project, "featuredprojects"),
     }));
 
-    if (leadsToInsert.length) {
-      await PublicLead.insertMany(leadsToInsert, { ordered: false });
+    const importedLeads = leadsToInsert.length
+      ? await PublicLead.insertMany(leadsToInsert, { ordered: false })
+      : [];
+    const ownerPhone =
+      typeof project.createdBy === "object"
+        ? String((project.createdBy as any)?.phone || "")
+        : "";
+    const ownerId =
+      typeof project.createdBy === "object"
+        ? String((project.createdBy as any)?._id || "")
+        : String(project.createdBy || "");
+    const importerId = String(userId || "");
+    const importSource = String(req.body?.source || req.query?.source || "csv")
+      .trim()
+      .toLowerCase();
+    const isAutomaticImport = ["meta", "facebook", "integration", "system", "auto", "automatic"].includes(importSource);
+    const shouldNotifyOwner = importedLeads.length > 0 && (isAutomaticImport || importerId !== ownerId);
+    const projectRecord = project as any;
+    const projectTitle =
+      projectRecord.title ||
+      projectRecord.projectName ||
+      projectRecord.buildingName ||
+      "your project";
+    let whatsappNotification = {
+      attempted: false,
+      sent: false,
+      reason: "",
+    };
+
+    if (shouldNotifyOwner && ownerPhone) {
+      whatsappNotification.attempted = true;
+      const whatsappResult = await sendLeadImportSummaryWhatsApp(ownerPhone, {
+        projectTitle,
+        importedCount: importedLeads.length,
+        skippedCount: rows.length - importedLeads.length,
+        leads: importedLeads.map((lead: any) => ({
+          name: lead.name,
+          phone: lead.phone,
+        })),
+      });
+
+      whatsappNotification = {
+        attempted: true,
+        sent: Boolean(whatsappResult),
+        reason: whatsappResult ? "sent" : "send_failed",
+      };
+    } else if (importedLeads.length && importerId === ownerId && !isAutomaticImport) {
+      whatsappNotification.reason = "importer_is_project_owner";
+    } else if (!ownerPhone) {
+      whatsappNotification.reason = "owner_phone_missing";
+    } else if (!importedLeads.length) {
+      whatsappNotification.reason = "no_new_imported_leads";
     }
 
     res.status(201).json({
@@ -2323,6 +2374,7 @@ export const importProjectLeadsCSVController = async (
       totalRows: rows.length,
       imported: leadsToInsert.length,
       skipped: rows.length - leadsToInsert.length,
+      whatsappNotification,
       errors,
     });
   } catch (err: any) {

@@ -170,13 +170,18 @@ function getGalleryImages(project: FeaturedProject): GalleryImage[] {
 }
 
 export default function HeroSection({ project }: HeroSectionProps) {
-    const isLand = project.categoryType?.toLowerCase() === "land";
+    const isLand = [project.categoryType, project.propertyType]
+        .filter(Boolean)
+        .some((value) => {
+            const normalized = String(value).trim().toLowerCase();
+            return normalized === "land" || normalized === "landplots";
+        });
     const tabs: Array<{ label: string; href: string; isDownload?: boolean }> = [
         { label: "Overview", href: "#overview" },
         { label: isLand ? "Layout" : "Floor Plans", href: "#floor-plans" },
         { label: "Amenities", href: "#amenities" },
         { label: "Location Advantages", href: "#location" },
-        { label: "Specifications", href: "#specifications" },
+        ...(!isLand ? [{ label: "Specifications", href: "#specifications" }] : []),
         { label: "Gallery", href: "#gallery" },
         { label: "About", href: "#about-project" },
         ...(project.brochure?.url ? [{ label: "Brochure Preview", href: "#brochure-preview" }] : []),

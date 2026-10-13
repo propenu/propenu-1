@@ -26,6 +26,8 @@ type Props = {
   specifications: {
     specifications?: SpecificationType[];
     color?: string;
+    categoryType?: string | null;
+    propertyType?: string | null;
   };
 };
 
@@ -69,6 +71,14 @@ function sanitizeRichText(value?: string) {
     .trim();
 }
 
+function isLandSpecification(specifications?: Props["specifications"]) {
+  const values = [specifications?.categoryType, specifications?.propertyType]
+    .filter(Boolean)
+    .map((value) => String(value).trim().toLowerCase());
+
+  return values.some((value) => value === "land" || value === "landplots");
+}
+
 const Specification = ({ specifications }: Props) => {
   const specs = specifications?.specifications || [];
   const color = specifications?.color || "#16a34a";
@@ -93,6 +103,7 @@ const Specification = ({ specifications }: Props) => {
     }
   }, [activeKey, sorted]);
 
+  if (isLandSpecification(specifications)) return null;
   if (!sorted.length) return null;
 
   const activeSpec = sorted.find((s) => s.key === activeKey) || sorted[0];

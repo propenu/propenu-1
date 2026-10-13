@@ -14,6 +14,12 @@ import mongoose from "mongoose";
 import { readOwnerUserId } from "../utils/ownerUserFilter";
 import BuilderMember from "../models/builderMemberModel";
 import { projectRequiresApprovalOnCreate } from "../utils/projectApprovalPolicy";
+import {
+  getDeletedProject,
+  listDeletedProjects,
+  projectFromDeletedArchive,
+  purgeDeletedProjectArchive,
+} from "../services/deletedProjectArchive.service";
 
 const getBuilderProjectScope = async (req: AuthRequest) => {
   if (!req.user?.id) {
@@ -561,8 +567,21 @@ export const permanentlyDeleteFeatureProperties = async (
     const { id } = req.params;
     if (!id) return res.status(400).json({ error: "Missing property ID" });
 
+    const actor: {
+      id?: string;
+      name?: string;
+      email?: string;
+      roleName?: string;
+    } = {};
+    if (req.user?.id) actor.id = req.user.id;
+    if (req.user?.name) actor.name = req.user.name;
+    if (req.user?.email) actor.email = req.user.email;
+    if (req.user?.roleName) actor.roleName = req.user.roleName;
     const deleted =
-      await FeaturePropertyService.permanentlyDeleteFeatureProperty(id);
+      await FeaturePropertyService.permanentlyDeleteFeatureProperty(
+        id,
+        Object.keys(actor).length ? actor : null,
+      );
     if (!deleted)
       return res.status(404).json({ error: "Feature property not found" });
 
@@ -675,5 +694,61 @@ export const getFeaturedLocationOptions = async (
     return res
       .status(500)
       .json({ error: err.message || "Failed to load location options" });
+  }
+};
+
+const isSuperAdmin = (req: AuthRequest) =>
+  normalizeActorRole(req.user?.roleName) === "super_admin";
+
+/** Deleted-project archive — Super Admin only. */
+export const getDeletedProjects = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isSuperAdmin(req)) {
+      return res.status(403).json({ error: "Only Super Admin can view deleted projects" });
+    }
+    const page = typeof req.query.page === "string" ? Number(req.query.page) : 1;
+    const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 12;
+    const q = typeof req.query.q === "string" ? req.query.q : "";
+    const category = typeof req.query.category === "string" ? req.query.category : "";
+    const from = typeof req.query.from === "string" ? req.query.from : "";
+    const to = typeof req.query.to === "string" ? req.query.to : "";
+    const result = await listDeletedProjects({ page, limit, q, category, from, to });
+    return res.json(result);
+  } catch (err: any) {
+    console.error("getDeletedProjects:", err);
+    return res.status(500).json({ error: err.message || "Failed to load deleted projects" });
+  }
+};
+
+export const purgeDeletedProject = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isSuperAdmin(req)) {
+      return res.status(403).json({ error: "Only Super Admin can delete archived projects" });
+    }
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Missing id" });
+    const removed = await purgeDeletedProjectArchive(id);
+    if (!removed) return res.status(404).json({ error: "Deleted project not found" });
+    return res.json({ success: true, id: removed._id });
+  } catch (err: any) {
+    console.error("purgeDeletedProject:", err);
+    return res.status(500).json({ error: err.message || "Failed to delete the archived project" });
+  }
+};
+
+export const getDeletedProjectById = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isSuperAdmin(req)) {
+      return res.status(403).json({ error: "Only Super Admin can view deleted projects" });
+    }
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Missing id" });
+    const item = await getDeletedProject(id);
+    if (!item) return res.status(404).json({ error: "Deleted project not found" });
+    const project = await projectFromDeletedArchive(id);
+    return res.json({ item, project });
+  } catch (err: any) {
+    console.error("getDeletedProjectById:", err);
+    return res.status(500).json({ error: err.message || "Failed to load deleted project" });
   }
 };

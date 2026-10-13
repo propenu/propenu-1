@@ -1,7 +1,7 @@
 // src/routes/featurePropertiesRoute.ts
 import express, { Request, Response } from "express";
 import multer from "multer";
-import { createFeatureProperties, deleteFeatureGalleryImage, deleteFeatureProperties, permanentlyDeleteFeatureProperties, editFeatureProperties, getAllFeatureProperties, getCityFeatureProperties, getFeatureBySlug,getIndetailFeatureProperties, getSearchFeatureProperties, incrementFeatureClicks, getFeaturedLocationOptions, getProjectBoardFilterOptions,
+import { createFeatureProperties, deleteFeatureGalleryImage, deleteFeatureProperties, permanentlyDeleteFeatureProperties, editFeatureProperties, getAllFeatureProperties, getCityFeatureProperties, getFeatureBySlug,getIndetailFeatureProperties, getSearchFeatureProperties, incrementFeatureClicks, getFeaturedLocationOptions, getProjectBoardFilterOptions, getDeletedProjects, getDeletedProjectById, purgeDeletedProject,
 } from "../controller/featurePropertiesController";
 import {
   CreateFeaturePropertySchema,
@@ -82,6 +82,9 @@ editFeatureProperties
 
 // router.get("/analytics", );
 router.get("/", getAllFeatureProperties);
+router.get("/deleted", authMiddleware, getDeletedProjects);
+router.delete("/deleted/:id", authMiddleware, purgeDeletedProject);
+router.get("/deleted/:id", authMiddleware, getDeletedProjectById);
 router.get("/location-options", getFeaturedLocationOptions);
 router.get("/filter-options", getProjectBoardFilterOptions);
 router.get("/city", getCityFeatureProperties);

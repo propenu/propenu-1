@@ -35,7 +35,7 @@ export const chatbotLimiter = rateLimit({
   max: 30,
   message: {
     success: false,
-    message: "HomeMate is receiving too many messages. Please try again in a few minutes.",
+    message: "Propenu is receiving too many messages. Please try again in a few minutes.",
   },
 });
 

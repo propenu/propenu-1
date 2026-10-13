@@ -9,6 +9,7 @@ import { Provider } from "react-redux";
 import { Toaster, toast } from "sonner";
 import Footer, { FooterLegalBar } from "@/components/Footer";
 import FloatingWhatsAppButton from "@/components/FloatingWhatsAppButton";
+import HomeMateChatbot from "@/app/(pages)/chatbot/HomeMateChatbot";
 import Navbar from "@/components/Navbar";
 import MobileBottomNav from "@/components/MobileBottomNav";
 import { ModalProvider, useModal } from "@/app/context/ModalContext";
@@ -208,6 +209,8 @@ function ClientProvidersContent({
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [hasOpenDialog, setHasOpenDialog] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { isAgentRegistrationModalOpen } = useModal();
 
   const hideLayout = HIDE_LAYOUT_ROUTES.some((route) =>
@@ -240,6 +243,19 @@ function ClientProvidersContent({
 
     return () => {
       window.removeEventListener("auth-changed", handleAuthChanged);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleMobileMenuState = (event: Event) => {
+      const { open } = (event as CustomEvent<{ open?: boolean }>).detail ?? {};
+      setIsMobileMenuOpen(Boolean(open));
+    };
+
+    window.addEventListener("propenu:mobile-menu-state", handleMobileMenuState);
+
+    return () => {
+      window.removeEventListener("propenu:mobile-menu-state", handleMobileMenuState);
     };
   }, []);
 
@@ -400,6 +416,22 @@ function ClientProvidersContent({
           />
         )}
         <FloatingWhatsAppButton />
+        {!isMobileMenuOpen && (
+          <div
+            className={
+              isChatOpen
+                ? "fixed top-20 right-4 bottom-28 left-4 z-[61] sm:top-auto sm:left-auto sm:h-auto sm:w-[min(360px,calc(100vw-32px))] sm:bottom-[100px] sm:right-6 lg:right-8"
+                : "fixed bottom-[164px] right-4 z-[61] sm:bottom-[100px] sm:right-6 lg:right-8"
+            }
+          >
+            <HomeMateChatbot
+              isOpen={isChatOpen}
+              onOpen={() => setIsChatOpen(true)}
+              onClose={() => setIsChatOpen(false)}
+              account={user?.user || null}
+            />
+          </div>
+        )}
         <Toaster
           position="top-right"
           richColors

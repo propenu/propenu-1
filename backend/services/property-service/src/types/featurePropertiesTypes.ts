@@ -300,7 +300,15 @@ export interface IFeaturedProject {
   postedBy?: IPostedBy;
   lastUpdatedBy?: ILastUpdatedBy;
   deletedAt?: Date | null;
+  deletionArchivedAt?: Date | null;
   deletedBy?: IDeletedBy | null;
+  returnedToDraftAt?: Date | null;
+  returnedToDraftBy?: {
+    userId?: Types.ObjectId | string | null;
+    name?: string;
+    email?: string;
+    roleName?: string;
+  } | null;
   updateCount?: number;
   updateHistory?: IUpdateHistory[];
 

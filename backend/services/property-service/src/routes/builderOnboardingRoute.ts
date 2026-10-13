@@ -17,6 +17,7 @@ import {
   requestDirectBuilderOtp,
   requestPublicInviteOtp,
   saveProjectContacts,
+  returnActiveProjectToDraft,
   sendBuilderInvite,
   submitProjectForApproval,
   trackInviteEmailClick,
@@ -67,6 +68,12 @@ router.post(
   "/:id/builder/assign-existing",
   ...staffAuth,
   assignExistingBuilder,
+);
+
+router.post(
+  "/:id/builder/return-to-draft",
+  ...staffAuth,
+  returnActiveProjectToDraft,
 );
 
 router.post("/:id/builder/invite", ...staffAuth, sendBuilderInvite);

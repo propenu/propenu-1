@@ -6,6 +6,7 @@ import { builderOnboardingPublicRouter } from "./routes/builderOnboardingRoute";
 import popularOwnerPropertiesRoute from "./routes/popularOwnerPropertiesRoute";
 import highlightProjectsRoute from "./routes/highlightProjectsRoute";
 import residentialRoute from "./routes/residentialRoute";
+import deletedPropertyRoute from "./routes/deletedPropertyRoute";
 import commercialRoutes from "./routes/commercialRoute";
 import landRoutes from "./routes/landRoute";
 import agriculturalRoutes from "./routes/agriculturalRoute";
@@ -82,6 +83,7 @@ async function start() {
     // so PATCH /api/properties/{category}/:id/promote always resolves.
     app.use("/api/properties", listingPromotionRoute);
 
+    app.use("/api/properties/deleted-listings", deletedPropertyRoute);
     app.use("/api/properties/residential", residentialRoute);
     app.use("/api/properties/commercial", commercialRoutes);
     app.use("/api/properties/land", landRoutes);

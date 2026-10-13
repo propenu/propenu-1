@@ -24,6 +24,10 @@ import {
 import { applyOwnerUserFilter, ownerListLimit } from "../utils/ownerUserFilter";
 import { getPrimeDisplayMode } from "../siteBranding/siteBranding.service";
 import { promotionHasStartedMatch } from "./promotionService";
+import {
+  archiveDeletedProject,
+  archiveEventFromActor,
+} from "./deletedProjectArchive.service";
 
 dotenv.config({ quiet: true });
 
@@ -79,6 +83,10 @@ function applyFeaturedUserPopulates(query: any) {
     .populate({
       path: "lastUpdatedBy.userId",
       ...withRoleAndManager,
+    })
+    .populate({
+      path: "deletedBy.userId",
+      select: AUDIT_USER_FIELDS,
     })
     .populate({
       path: "updateHistory.userId",
@@ -151,6 +159,22 @@ async function enrichFeaturedListWithUsers(items: any[]) {
       );
     }),
   );
+}
+
+/** Users whose name, company, email, or phone contains this search token. */
+async function findUserIdsMatchingSearchToken(token: string) {
+  const pattern = String(token || "")
+    .trim()
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (pattern.length < 2) return [];
+  const rx = { $regex: pattern, $options: "i" };
+  const users = await User.find({
+    $or: [{ name: rx }, { companyName: rx }, { email: rx }, { phone: rx }],
+  })
+    .select("_id")
+    .limit(40)
+    .lean();
+  return users.map((user) => user._id).filter(Boolean);
 }
 
 type MulterFiles = { [fieldname: string]: Express.Multer.File[] } | undefined;
@@ -2244,10 +2268,10 @@ export const FeaturePropertyService = {
       filter.createdAt = createdAt;
     }
 
-    // Title / location / code search. Token regex so "morton villas" matches
-    // title "Morton Villas" even when the row is not in the loaded page set.
-    // $text is not used here — it misses partial titles and fails if the
-    // text index is unavailable.
+    // Title / location / builder / creator search.
+    // createdBy is an ObjectId, so a typed builder name is resolved to user
+    // ids first. status=all (admin "All Status") already includes deactivated
+    // projects (status inactive). $text is not used — it misses partial titles.
     if (options?.q) {
       const tokens = String(options.q)
         .trim()
@@ -2255,28 +2279,47 @@ export const FeaturePropertyService = {
         .filter(Boolean)
         .slice(0, 8);
       if (tokens.length) {
+        const creatorIdsByToken = await Promise.all(
+          tokens.map((token) => findUserIdsMatchingSearchToken(token)),
+        );
         andFilters.push({
-          $and: tokens.map((token) => {
+          $and: tokens.map((token, index) => {
             const pattern = escapeRegex(token);
-            return {
-              $or: [
-                { title: { $regex: pattern, $options: "i" } },
-                { slug: { $regex: pattern, $options: "i" } },
-                { address: { $regex: pattern, $options: "i" } },
-                { city: { $regex: pattern, $options: "i" } },
-                { locality: { $regex: pattern, $options: "i" } },
-                { state: { $regex: pattern, $options: "i" } },
-                { propertyCode: { $regex: pattern, $options: "i" } },
-                { heroTagline: { $regex: pattern, $options: "i" } },
-                { metaTitle: { $regex: pattern, $options: "i" } },
-                { "about.builderName": { $regex: pattern, $options: "i" } },
-                { "aboutSummary.builderName": { $regex: pattern, $options: "i" } },
-                { builderName: { $regex: pattern, $options: "i" } },
-                { "createdBy.name": { $regex: pattern, $options: "i" } },
-                { "createdBy.fullName": { $regex: pattern, $options: "i" } },
-                { "createdBy.companyName": { $regex: pattern, $options: "i" } },
-              ],
-            };
+            const rx = { $regex: pattern, $options: "i" };
+            const or: Record<string, unknown>[] = [
+              { title: rx },
+              { slug: rx },
+              { address: rx },
+              { city: rx },
+              { locality: rx },
+              { state: rx },
+              { propertyCode: rx },
+              { heroTagline: rx },
+              { heroSubTagline: rx },
+              { metaTitle: rx },
+              { metaKeywords: rx },
+              { "about.builderName": rx },
+              { "aboutSummary.builderName": rx },
+              { builderName: rx },
+              { "postedBy.name": rx },
+              { "postedBy.email": rx },
+              { "deletedBy.name": rx },
+              { "projectContacts.name": rx },
+              { "projectContacts.phone": rx },
+              { "projectContacts.email": rx },
+              { "builderOnboarding.builderSnapshot.companyName": rx },
+              { "builderOnboarding.builderSnapshot.contactName": rx },
+              { "builderOnboarding.builderSnapshot.email": rx },
+              { "builderOnboarding.builderSnapshot.phone": rx },
+              { "builderOnboarding.inviteEmail": rx },
+              { "builderOnboarding.invitePhone": rx },
+            ];
+            const creatorIds = creatorIdsByToken[index] || [];
+            if (creatorIds.length) {
+              or.push({ createdBy: { $in: creatorIds } });
+              or.push({ "postedBy.userId": { $in: creatorIds } });
+            }
+            return { $or: or };
           }),
         });
       }
@@ -2685,10 +2728,18 @@ export const FeaturePropertyService = {
   },
 
   /**
-   * Hard delete: remove DB row + best-effort S3 cleanup.
+   * Hard delete: copy the full project into deleted projects, then remove the live row.
    * Intended only after soft-delete (inactive), for privileged roles.
    */
-  async permanentlyDeleteFeatureProperty(id: string) {
+  async permanentlyDeleteFeatureProperty(
+    id: string,
+    actor?: {
+      id?: string;
+      name?: string;
+      email?: string;
+      roleName?: string;
+    } | null,
+  ) {
     if (!mongoose.Types.ObjectId.isValid(id)) throw new Error("Invalid id");
 
     const existing = await FeaturedProject.findById(id).lean();
@@ -2701,31 +2752,14 @@ export const FeaturePropertyService = {
       );
     }
 
-    const projectSummary =
-      (existing as any).projectSummary ?? existing.bhkSummary;
-    if (Array.isArray(projectSummary)) {
-      for (const b of projectSummary) {
-        for (const u of b.units || []) {
-          if (u?.plan?.key) {
-            await deleteS3ObjectIfExists(u.plan.key);
-          }
-        }
-      }
+    const removedAt = new Date();
+    const saved = await archiveDeletedProject(existing, {
+      purged: true,
+      event: archiveEventFromActor("permanently_deleted", removedAt, actor),
+    });
+    if (!saved) {
+      throw new Error("Could not save the deleted project copy");
     }
-
-    if (Array.isArray(existing.gallerySummary)) {
-      for (const g of existing.gallerySummary) {
-        if ((g as any)?.key) {
-          await deleteS3ObjectIfExists((g as any).key);
-        }
-      }
-    }
-
-    const logoKey = (existing as any).logo?.key;
-    if (logoKey) await deleteS3ObjectIfExists(logoKey);
-
-    const brochureKey = (existing as any).brochure?.key;
-    if (brochureKey) await deleteS3ObjectIfExists(brochureKey);
 
     const deleted = await FeaturedProject.findByIdAndDelete(id).exec();
     return deleted;

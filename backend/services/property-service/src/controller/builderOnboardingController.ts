@@ -140,6 +140,22 @@ export const assignExistingBuilder = async (req: AuthRequest, res: Response) => 
   }
 };
 
+export const returnActiveProjectToDraft = async (
+  req: AuthRequest,
+  res: Response,
+) => {
+  try {
+    const projectId = String(req.params.id || "");
+    const data = await BuilderOnboardingService.returnActiveProjectToDraft(
+      projectId,
+      asStaff(req.user),
+    );
+    return res.status(200).json({ success: true, data });
+  } catch (err: any) {
+    return sendError(res, err);
+  }
+};
+
 export const sendBuilderInvite = async (req: AuthRequest, res: Response) => {
   try {
     const projectId = String(req.params.id || "");

@@ -68,6 +68,50 @@ function getCategory(property: any) {
   return "Property";
 }
 
+function firstImageUrl(value: unknown) {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (value && typeof value === "object" && typeof (value as { url?: unknown }).url === "string") {
+    const url = String((value as { url: string }).url).trim();
+    return url || undefined;
+  }
+  return undefined;
+}
+
+function getPropertyImage(property: any) {
+  const gallery = Array.isArray(property.gallery)
+    ? [...property.gallery].sort(
+        (left, right) => Number(left?.order || 0) - Number(right?.order || 0),
+      )
+    : [];
+  const gallerySummary = Array.isArray(property.gallerySummary) ? property.gallerySummary : [];
+  const media = Array.isArray(property.media) ? property.media : [];
+
+  return (
+    firstImageUrl(property.heroImage) ||
+    firstImageUrl(gallery[0]) ||
+    firstImageUrl(gallerySummary[0]) ||
+    firstImageUrl(media[0]) ||
+    firstImageUrl(property.coverImage) ||
+    firstImageUrl(property.image)
+  );
+}
+
+function cardHref(property: any) {
+  const slug = String(property.slug || "").trim();
+  if (!slug) return "";
+
+  const kind = String(property.cardKind || "").toLowerCase();
+  if (kind === "featured" || (!kind && (property.categoryType || property.heroImage))) {
+    return String(property.promotion?.type || "").toLowerCase() === "prime"
+      ? `/prime/${slug}`
+      : `/project/${slug}`;
+  }
+  if (kind === "commercial") return `/properties/commercial/${slug}`;
+  if (kind === "land") return `/properties/land/${slug}`;
+  if (kind === "agricultural") return `/properties/agricultural/${slug}`;
+  return `/properties/residential/${slug}`;
+}
+
 export function toPropertyCard(property: any) {
   const projectBhks = Array.isArray(property.projectSummary)
     ? property.projectSummary
@@ -78,6 +122,7 @@ export function toPropertyCard(property: any) {
   return {
     id: String(property._id || property.id || property.slug || ""),
     title: getPropertyTitle(property),
+    image: getPropertyImage(property),
     price: formatPrice(property.price) || formatPriceRange(property.priceFrom, property.priceTo),
     location: getPropertyLocation(property),
     bhk: property.bhk || property.bedrooms || projectBhks[0],
@@ -87,5 +132,16 @@ export function toPropertyCard(property: any) {
     listingType: label(property.listingType),
     constructionStatus: label(property.constructionStatus),
     slug: property.slug,
+    href: cardHref(property),
+  };
+}
+
+export function toPromptProperty(property: any) {
+  const card = toPropertyCard(property);
+  return {
+    title: card.title || "Property",
+    locality: String(property.locality || "").trim(),
+    city: String(property.city || "").trim(),
+    price: card.price || "",
   };
 }

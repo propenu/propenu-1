@@ -36,6 +36,8 @@ type MulterFiles = { [field: string]: Express.Multer.File[] } | undefined;
 
 const auditUserPopulate = [
   { path: "approvedBy", select: "name email phone role roleId" },
+  { path: "deactivatedBy", select: "name email phone role roleName roleId" },
+  { path: "deactivationActor.userId", select: "name email phone role roleName roleId" },
   { path: "lastUpdatedBy.userId", select: "name email phone role roleId" },
   { path: "updateHistory.userId", select: "name email phone role roleId" },
 ];

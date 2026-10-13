@@ -22,6 +22,7 @@ const jsonKeys = [
 ];
 
 import {  createCommercial,  editCommercial,  getAllCommercial,  getCommercialBySlug,  getCommercialDetail,  deleteCommercial, createCommercialDraft, updateCommercialBasicStep, updateCommercialLocationStep, updateCommercialDetailsStep, finalizeCommercial, getAllCommercialDraftsForAdmin, verifyCommercialDocument, getMyCommercialDraft, approveCommercialProperty, deactivateCommercialProperty, deleteCommercialGalleryImage} from "../controller/commercialController";
+import { permanentlyDeleteCommercial } from "../controller/deletedPropertyController";
 import { requireActiveSubscription } from "../middlewares/requireActiveSubscription";
 import { authMiddleware, AuthRequest } from "../middlewares/authMiddleware";
 import { uploadMedia } from "../middlewares/multer";
@@ -43,7 +44,8 @@ router.get("/draft/me", authMiddleware, getMyCommercialDraft);
 router.get("/", getAllCommercial);
 router.get("/slug/:slug", getCommercialBySlug);
 router.get("/:id", getCommercialDetail);
-router.delete("/:id", deleteCommercial);
+router.delete("/:id/permanent", authMiddleware, permanentlyDeleteCommercial);
+router.delete("/:id", authMiddleware, deleteCommercial);
 
 
 router.patch("/:id/verify-document", authMiddleware, requirePermission("commercial:verify_document"), verifyCommercialDocument);

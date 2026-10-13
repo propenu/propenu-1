@@ -109,7 +109,7 @@ function proxy(serviceName: string, target: string, extras: Record<string, unkno
             error: `${serviceName} service down`,
             message:
               serviceName === "AI"
-                ? "HomeMate AI service is not running on port 4006. Start backend/services/ai-service and try again."
+                ? "Propenu Assistant is not running on port 4006. Start backend/services/ai-service and try again."
                 : `${serviceName} service is not reachable.`,
           });
         }

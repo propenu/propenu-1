@@ -114,7 +114,14 @@ function buildProjectQuery(filters: any) {
 function residentialQuery(filters: any) {
   const query = buildBaseQuery(filters);
   if (filters.bhk) query.$and = [...(query.$and || []), { $or: [{ bhk: Number(filters.bhk) }, { bedrooms: Number(filters.bhk) }] }];
-  if (filters.propertyType && filters.propertyType !== "plot" && !filters.keyword) query.propertyType = textRegex(filters.propertyType);
+  if (
+    filters.propertyType &&
+    filters.propertyType !== "plot" &&
+    filters.propertyType !== "all" &&
+    !filters.keyword
+  ) {
+    query.propertyType = textRegex(filters.propertyType);
+  }
   if (filters.constructionStatus) query.constructionStatus = filters.constructionStatus;
   if (filters.furnishing) query.furnishing = filters.furnishing;
   return query;
@@ -163,6 +170,10 @@ function sortByRelevance(query: any) {
     .lean();
 }
 
+function markKind(items: any[], kind: string) {
+  return (items || []).map((item) => ({ ...item, cardKind: kind }));
+}
+
 function sortProjectsByRelevance(query: any) {
   return query
     .sort({
@@ -189,19 +200,31 @@ export async function searchProperties(filters: any) {
     };
 
     if (category === "residential") {
-      return sortByRelevance(Residential.find(residentialQuery(relaxedFilters)));
+      return markKind(
+        await sortByRelevance(Residential.find(residentialQuery(relaxedFilters))),
+        "residential",
+      );
     }
 
     if (category === "commercial") {
-      return sortByRelevance(Commercial.find(commercialQuery(relaxedFilters)));
+      return markKind(
+        await sortByRelevance(Commercial.find(commercialQuery(relaxedFilters))),
+        "commercial",
+      );
     }
 
     if (category === "land") {
-      return sortByRelevance(LandPlot.find(landQuery(relaxedFilters)));
+      return markKind(
+        await sortByRelevance(LandPlot.find(landQuery(relaxedFilters))),
+        "land",
+      );
     }
 
     if (category === "agricultural") {
-      return sortByRelevance(Agricultural.find(agriculturalQuery(relaxedFilters)));
+      return markKind(
+        await sortByRelevance(Agricultural.find(agriculturalQuery(relaxedFilters))),
+        "agricultural",
+      );
     }
 
     const [residential, commercial, land, agricultural] = await Promise.all([
@@ -211,7 +234,12 @@ export async function searchProperties(filters: any) {
       sortByRelevance(Agricultural.find(agriculturalQuery(relaxedFilters)).limit(4)),
     ]);
 
-    return [...residential, ...commercial, ...land, ...agricultural].slice(0, 12);
+    return [
+      ...markKind(residential, "residential"),
+      ...markKind(commercial, "commercial"),
+      ...markKind(land, "land"),
+      ...markKind(agricultural, "agricultural"),
+    ].slice(0, 12);
   }
 
   if (filters.keyword) {
@@ -224,11 +252,11 @@ export async function searchProperties(filters: any) {
     ]);
 
     const strictResults = [
-      ...residential,
-      ...projects,
-      ...commercial,
-      ...land,
-      ...agricultural,
+      ...markKind(residential, "residential"),
+      ...markKind(projects, "featured"),
+      ...markKind(commercial, "commercial"),
+      ...markKind(land, "land"),
+      ...markKind(agricultural, "agricultural"),
     ].slice(0, 12);
 
     if (strictResults.length) return strictResults;
@@ -242,15 +270,21 @@ export async function searchProperties(filters: any) {
       sortProjectsByRelevance(FeaturedProject.find(buildProjectQuery(filters))),
     ]);
 
-    return [...properties, ...projects].slice(0, 12);
+    return [
+      ...markKind(properties, "residential"),
+      ...markKind(projects, "featured"),
+    ].slice(0, 12);
   }
 
   if (category === "land") {
-    return sortByRelevance(LandPlot.find(landQuery(filters)));
+    return markKind(await sortByRelevance(LandPlot.find(landQuery(filters))), "land");
   }
 
   if (category === "agricultural") {
-    return sortByRelevance(Agricultural.find(agriculturalQuery(filters)));
+    return markKind(
+      await sortByRelevance(Agricultural.find(agriculturalQuery(filters))),
+      "agricultural",
+    );
   }
 
   if (category === "commercial") {
@@ -259,7 +293,10 @@ export async function searchProperties(filters: any) {
       sortProjectsByRelevance(FeaturedProject.find(buildProjectQuery(filters))),
     ]);
 
-    return [...properties, ...projects].slice(0, 12);
+    return [
+      ...markKind(properties, "commercial"),
+      ...markKind(projects, "featured"),
+    ].slice(0, 12);
   }
 
   const [residential, land, commercial, agricultural, projects] = await Promise.all([
@@ -271,10 +308,10 @@ export async function searchProperties(filters: any) {
   ]);
 
   return [
-    ...residential,
-    ...land,
-    ...commercial,
-    ...agricultural,
-    ...projects,
+    ...markKind(residential, "residential"),
+    ...markKind(land, "land"),
+    ...markKind(commercial, "commercial"),
+    ...markKind(agricultural, "agricultural"),
+    ...markKind(projects, "featured"),
   ].slice(0, 12);
 }

@@ -1,0 +1,9 @@
+﻿# .env files stay out of git. These lines let Cursor open and edit them locally.
+!**/.env
+!**/.env.*
+!**/.env.local
+!**/.env.development
+!**/.env.development.local
+!**/.env.production
+!**/.env.production.local
+!**/production.env

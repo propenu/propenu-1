@@ -16,6 +16,7 @@ import User from "../models/userModel";
 import { syncListingFollowUpAfterLocation } from "../utils/listingFollowUpAssign";
 import { sendManagerApprovalMail } from "../utils/sendManagerMail";
 import mongoose from "mongoose";
+import { deactivateListing } from "../services/listingDeletion.service";
 import { readOwnerUserId } from "../utils/ownerUserFilter";
 import { deleteS3ObjectIfExists } from "../utils/s3Helpers";
 import {
@@ -314,15 +315,20 @@ export const editAgricultural = async (req: Request, res: Response) => {
 };
 
 /** DELETE */
-export const deleteAgricultural = async (req: Request, res: Response) => {
+export const deleteAgricultural = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     if (!id) return res.status(400).json({ error: "Missing id" });
 
-    const deleted = await AgriculturalService.delete(id);
-    if (!deleted) return res.status(404).json({ error: "Not found" });
+    const property = await deactivateListing(Agricultural, id, {
+      id: req.user?.id,
+      name: (req.user as { name?: string } | undefined)?.name,
+      email: (req.user as { email?: string } | undefined)?.email,
+      roleName: req.user?.roleName,
+    });
+    if (!property) return res.status(404).json({ error: "Not found" });
 
-    return res.json({ data: deleted, message: "Deleted successfully" });
+    return res.json({ data: property, message: "Property deactivated" });
   } catch (err: any) {
     return res.status(400).json({ error: err.message || "Bad request" });
   }
@@ -1096,15 +1102,15 @@ export const deactivateAgriculturalProperty = async (
   try {
     const { id } = req.params;
 
-    const property = await Agricultural.findById(id);
+    const property = await deactivateListing(Agricultural, id, {
+      id: req.user?.id,
+      name: (req.user as { name?: string } | undefined)?.name,
+      email: (req.user as { email?: string } | undefined)?.email,
+      roleName: req.user?.roleName,
+    });
     if (!property) {
       return res.status(404).json({ message: "Property not found" });
     }
-
-    property.status = "deactivated";
-    property.isPublished = false;
-    property.updatedBy = new mongoose.Types.ObjectId(req.user!.id);
-    await property.save();
 
     try {
       const ownerId = property.createdBy || (property as any).ownerId;

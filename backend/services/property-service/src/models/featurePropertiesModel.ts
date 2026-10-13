@@ -471,11 +471,21 @@ const FeaturePropertySchema = new Schema<IFeaturedProjectDocument>(
 
     /** Soft-delete audit (Delete in admin = deactivate, status → inactive). */
     deletedAt: { type: Date, index: true },
+    /** Set after a copy is stored in the deleted-projects archive. */
+    deletionArchivedAt: { type: Date },
     deletedBy: {
       userId: {
         type: Schema.Types.ObjectId,
         ref: "User",
       },
+      name: String,
+      email: String,
+      roleName: String,
+    },
+    /** Active project returned to draft so a new builder email invite can be sent. */
+    returnedToDraftAt: { type: Date },
+    returnedToDraftBy: {
+      userId: { type: Schema.Types.ObjectId, ref: "User" },
       name: String,
       email: String,
       roleName: String,
@@ -501,6 +511,7 @@ const FeaturePropertySchema = new Schema<IFeaturedProjectDocument>(
           type: Date,
           default: Date.now,
         },
+        action: { type: String, trim: true },
       },
     ],
 
@@ -518,6 +529,10 @@ FeaturePropertySchema.index(
 FeaturePropertySchema.index(
   { status: 1, rank: -1, createdAt: -1 },
   { name: "Idx_Featured_Status_Rank_CreatedAt" },
+);
+FeaturePropertySchema.index(
+  { status: 1, deletionArchivedAt: 1 },
+  { name: "Idx_Featured_Status_DeletionArchive" },
 );
 
 FeaturePropertySchema.index(

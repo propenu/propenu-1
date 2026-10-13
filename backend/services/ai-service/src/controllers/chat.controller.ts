@@ -7,8 +7,11 @@ from "../services/propertySearch.service";
 import { sendNDJSON }
 from "../utils/ndjson";
 
-import { toPropertyCard }
+import { toPromptProperty, toPropertyCard }
 from "../utils/chatPresentation";
+
+import { writeShortPropertyReply }
+from "../services/shortReply.service";
 
 import { updateMemory }
 from "../utils/updateMemory";
@@ -77,6 +80,10 @@ export async function chatController(
       memory.state = context.state;
     }
 
+    if (context.locality && !memory.locality) {
+      memory.locality = String(context.locality).trim();
+    }
+
     req.memory = memory;
 
     saveMemory(sessionId, memory);
@@ -131,6 +138,26 @@ export async function chatController(
         req.memory
       );
 
+    const excludeSlug = String(context.excludeSlug || "").trim();
+    const seenSlugs = new Set(
+      (Array.isArray(memory.seenSlugs) ? memory.seenSlugs : []).map(String),
+    );
+    if (excludeSlug) seenSlugs.add(excludeSlug);
+
+    const unseen = properties.filter(
+      (item) => !seenSlugs.has(String(item?.slug || "")),
+    );
+    const withoutCurrentPage = properties.filter(
+      (item) => String(item?.slug || "") !== excludeSlug,
+    );
+    const picked = (unseen.length ? unseen : withoutCurrentPage).slice(0, 2);
+
+    memory.seenSlugs = [
+      ...seenSlugs,
+      ...picked.map((item) => String(item?.slug || "")).filter(Boolean),
+    ].slice(-30);
+    saveMemory(sessionId, memory);
+
     // NO RESULTS
     if (!properties.length) {
       const locationLabel =
@@ -158,8 +185,23 @@ export async function chatController(
       return res.end();
     }
 
+    if (!picked.length) {
+      sendNDJSON(res, {
+        type: "message",
+        content: "The matching property is the one already open. Ask for another locality or property type.",
+      });
+      sendNDJSON(res, {
+        type: "suggestions",
+        options: ["Buy Property", "Rent Property", "Buy Plot", "Buy Commercial"],
+      });
+      return res.end();
+    }
+
+    const shortRows = picked.slice(0, 2).map(toPromptProperty);
+    const shortReply = await writeShortPropertyReply(String(message), shortRows);
+
     const topProperties =
-      properties.slice(0, 3).map(toPropertyCard);
+      picked.slice(0, 2).map(toPropertyCard);
 
     // STREAM PROPERTY CARDS
     for (const property of topProperties) {
@@ -173,7 +215,7 @@ export async function chatController(
     const cityLabel =
       memory.city ? ` in ${memory.city}` : "";
 
-    const aiText =
+    const aiText = shortReply ||
       `I found ${properties.length} matching verified ${properties.length === 1 ? "property" : "properties"}${cityLabel}. Here are the best matches to start with.`;
 
     // STREAM AI RESPONSE

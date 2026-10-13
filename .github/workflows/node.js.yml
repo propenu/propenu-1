@@ -89,8 +89,9 @@ jobs:
           PROPERTY_ENV: ${{ secrets.PRPPENU_PROPERTY_ENV }}
           USER_ENV: ${{ secrets.PRPPENU_USER_ENV }}
           TICKET_ENV: ${{ secrets.PRPPENU_TICKET_ENV }}
+          AI_ENV: ${{ secrets.PRPPENU_AI_ENV }}
         run: |
-          for variable in GATEWAY_ENV PAYMENT_ENV PROPERTY_ENV USER_ENV TICKET_ENV; do
+          for variable in GATEWAY_ENV PAYMENT_ENV PROPERTY_ENV USER_ENV TICKET_ENV AI_ENV; do
             if [ -z "${!variable}" ]; then
               echo "::error::Required GitHub secret for ${variable} is empty or missing."
               exit 1
@@ -103,6 +104,7 @@ jobs:
           printf '%s\n' "$PROPERTY_ENV" > backend/services/property-service/.env
           printf '%s\n' "$USER_ENV" > backend/services/user-service/.env
           printf '%s\n' "$TICKET_ENV" > backend/services/ticket-service/.env
+          printf '%s\n' "$AI_ENV" > backend/services/ai-service/.env
 
       - name: Verify Firebase credentials
         shell: bash

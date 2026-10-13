@@ -28,7 +28,7 @@ export function getRequestGroup(path: string) {
   if (path.includes("/api/properties/search")) return "Search";
   if (path.includes("/api/properties")) return "Properties";
   if (path.includes("/api/payments")) return "Payments";
-  if (path.includes("/api/chatbot")) return "HomeMate";
+  if (path.includes("/api/chatbot")) return "Propenu Assistant";
   if (path.includes("/api/tickets")) return "Tickets";
   return "Other";
 }

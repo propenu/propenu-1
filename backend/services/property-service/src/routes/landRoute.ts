@@ -22,6 +22,7 @@ import {
   deactivateLandProperty,
   deleteLandGalleryImage,
 } from "../controller/landController";
+import { permanentlyDeleteLand } from "../controller/deletedPropertyController";
 import { CreateLandSchema, UpdateLandSchema } from "../zod/landZod";
 import { requireActiveSubscription } from "../middlewares/requireActiveSubscription";
 import { authMiddleware, AuthRequest } from "../middlewares/authMiddleware";
@@ -82,7 +83,8 @@ router.get("/draft/all", getAllLandDraftsForAdmin);
 router.get("/", getAllLands);
 router.get("/slug/:slug", getLandBySlug);
 router.get("/:id", getLandDetail);
-router.delete("/:id", deleteLand);
+router.delete("/:id/permanent", authMiddleware, permanentlyDeleteLand);
+router.delete("/:id", authMiddleware, deleteLand);
 
 
 router.patch("/:id/verify-document", authMiddleware, requirePermission("land:verify_document"), verifyLandDocument);

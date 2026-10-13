@@ -6,6 +6,7 @@ import fallbackCoerceDefault from "../middlewares/fallbackCoerce";
 import { validateBody } from "../middlewares/validate";
 import { AgriculturalCreateSchema, AgriculturalUpdateSchema } from "../zod/agriculturalZod";
 import { approveAgriculturalProperty, createAgricultural, createAgriculturalDraft, deactivateAgriculturalProperty, deleteAgricultural, deleteAgriculturalGalleryImage, editAgricultural, finalizeAgricultural, getAgriculturalBySlug, getAgriculturalDetail, getAllAgricultural, getAllAgriculturalDraftsForAdmin, getMyAgriculturalDraft, updateAgriculturalBasicStep, updateAgriculturalDetailsStep, updateAgriculturalLocationStep, verifyAgricultiralDocument } from "../controller/agriculturalController";
+import { permanentlyDeleteAgricultural } from "../controller/deletedPropertyController";
 import { requireActiveSubscription } from "../middlewares/requireActiveSubscription";
 import { authMiddleware, AuthRequest } from "../middlewares/authMiddleware";
 import { uploadMedia } from "../middlewares/multer";
@@ -65,7 +66,8 @@ router.get("/draft/all", getAllAgriculturalDraftsForAdmin);
 router.get("/", getAllAgricultural);
 router.get("/slug/:slug", getAgriculturalBySlug);
 router.get("/:id", getAgriculturalDetail);
-router.delete("/:id", deleteAgricultural);
+router.delete("/:id/permanent", authMiddleware, permanentlyDeleteAgricultural);
+router.delete("/:id", authMiddleware, deleteAgricultural);
 
 router.post("/draft", authMiddleware, blockBuilderPropertyPosting, createAgriculturalDraft);
 router.patch(

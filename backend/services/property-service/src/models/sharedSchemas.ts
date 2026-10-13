@@ -387,6 +387,12 @@ export const BaseFields = {
   subscriptionEndDate: Date,
   deactivatedAt: Date,
   deactivatedBy: { type: Schema.Types.ObjectId, ref: "User" },
+  deactivationActor: {
+    userId: { type: Schema.Types.ObjectId, ref: "User" },
+    name: String,
+    email: String,
+    roleName: String,
+  },
   approval: {
       status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
     approvedByManager: { type: Schema.Types.ObjectId, ref: "User" },

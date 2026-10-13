@@ -6,6 +6,7 @@ import { parseJsonFields } from "../middlewares/parseJsonFields";
 import fallbackCoerceDefault from "../middlewares/fallbackCoerce";
 import { ResidentialCreateSchema, ResidentialUpdateSchema } from "../zod/residentialZod";
 import { approveProperty, createResidential, createResidentialDraft, deactivateProperty, deleteGalleryImage, deleteResidential, editResidential, finalizeResidential, getAllResidential, getAllResidentialDraftsForAdmin, getMyResidentialDraft, getResidentialBySlug, getResidentialDetail, updateBasicStep, updateDetailsStep, updateLocationStep, verifyResidentialDocument } from "../controller/residentialController";
+import { permanentlyDeleteResidential } from "../controller/deletedPropertyController";
 import { requireActiveSubscription } from "../middlewares/requireActiveSubscription";
 import { authMiddleware, AuthRequest } from "../middlewares/authMiddleware";
 import { uploadMedia } from "../middlewares/multer";
@@ -62,6 +63,7 @@ router.patch("/:id", authMiddleware, uploadMedia, parseJsonFields(jsonKeys), fal
 router.get("/", getAllResidential);
 router.get("/slug/:slug", getResidentialBySlug);
 router.get("/:id", getResidentialDetail);
-router.delete("/:id", deleteResidential);
+router.delete("/:id/permanent", authMiddleware, permanentlyDeleteResidential);
+router.delete("/:id", authMiddleware, deleteResidential);
 
 export default router;

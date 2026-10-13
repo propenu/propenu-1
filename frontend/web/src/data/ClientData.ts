@@ -1723,6 +1723,8 @@ export const getChatbotResponse = async (
   context?: {
     city?: string;
     state?: string;
+    locality?: string;
+    excludeSlug?: string;
     localities?: string[];
   }
 ) => {

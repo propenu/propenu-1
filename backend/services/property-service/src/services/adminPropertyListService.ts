@@ -76,6 +76,8 @@ const CARD_PROJECT = {
   images: { $slice: ["$images", 1] },
   createdBy: 1,
   postedBy: 1,
+  deactivatedAt: 1,
+  deactivationActor: 1,
   listingSource: 1,
   slug: 1,
   meta: 1,

@@ -1977,6 +1977,122 @@ export const BuilderOnboardingService = {
     return { ...user.toObject(), _id: user._id, createdNew: true };
   },
 
+  /**
+   * Active project → draft. Builder attachment is cleared. Title, gallery,
+   * price, location, and the rest of the project stay. Who did this is saved.
+   */
+  async returnActiveProjectToDraft(projectId: string, staff?: StaffUser) {
+    const role = String(staff?.roleName || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_");
+    if (
+      role !== "super_admin" &&
+      role !== "admin" &&
+      role !== "business_development_head"
+    ) {
+      const err: any = new Error(
+        "Only Super Admin, Admin, or Business Development Head can move an active project back to draft",
+      );
+      err.statusCode = 403;
+      throw err;
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      const err: any = new Error("Invalid project id");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const project = await FeaturedProject.findById(projectId);
+    if (!project) {
+      const err: any = new Error("Project not found");
+      err.statusCode = 404;
+      throw err;
+    }
+    if (String(project.status || "").toLowerCase() !== "active") {
+      const err: any = new Error(
+        "Only an active project can be moved back to draft for a builder invite",
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
+    await revokeActiveInvites(projectId);
+
+    let name = String(staff?.name || "");
+    let email = String(staff?.email || "");
+    const roleName = String(staff?.roleName || role);
+    if (staff?.id && mongoose.Types.ObjectId.isValid(staff.id) && !name) {
+      const actorUser = await User.findById(staff.id)
+        .select("name email roleName")
+        .lean();
+      name = String(actorUser?.name || "");
+      email = email || String(actorUser?.email || "");
+    }
+
+    const now = new Date();
+    const userId =
+      staff?.id && mongoose.Types.ObjectId.isValid(staff.id)
+        ? new mongoose.Types.ObjectId(staff.id)
+        : undefined;
+    const actor = { userId, name, email, roleName };
+
+    const contacts = Array.isArray((project as any).projectContacts)
+      ? (project as any).projectContacts
+      : [];
+    (project as any).projectContacts = contacts.filter(
+      (contact: { role?: string }) =>
+        String(contact?.role || "").trim().toLowerCase() !== "builder",
+    );
+
+    project.status = "draft";
+    project.approvalStatus = "pending";
+    project.set("createdBy", undefined);
+    (project as any).builderOnboarding = {
+      enabled: false,
+      mode: "",
+      assignStatus: "pending",
+      inviteEmail: "",
+      invitePhone: "",
+      emailStatus: "",
+      emailUiStatus: "",
+      builderSnapshot: {
+        companyName: "",
+        contactName: "",
+        email: "",
+        phone: "",
+      },
+    };
+    (project as any).returnedToDraftAt = now;
+    (project as any).returnedToDraftBy = actor;
+    (project as any).lastUpdatedBy = { ...actor, updatedAt: now };
+    if (userId) project.updatedBy = userId as any;
+    (project as any).updateCount = Number((project as any).updateCount || 0) + 1;
+    const history = Array.isArray((project as any).updateHistory)
+      ? (project as any).updateHistory
+      : [];
+    history.push({ ...actor, updatedAt: now, action: "returned_to_draft" });
+    (project as any).updateHistory = history;
+
+    await project.save();
+    await FeaturedProject.updateOne(
+      { _id: project._id },
+      { $unset: { createdBy: "" } },
+    );
+
+    return {
+      projectId: String(project._id),
+      status: "draft",
+      returnedToDraftAt: now,
+      returnedToDraftBy: {
+        name,
+        email,
+        roleName,
+      },
+    };
+  },
+
   isBuilderOnboardingBlocking(project: any) {
     const onboarding = project?.builderOnboarding;
     if (!onboarding?.enabled) return false;

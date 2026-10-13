@@ -5,16 +5,7 @@ export function saveMemory(
   data: any
 ) {
 
-  const existing =
-    memoryStore.get(sessionId) || {};
-
-  memoryStore.set(
-    sessionId,
-    {
-      ...existing,
-      ...data,
-    }
-  );
+  memoryStore.set(sessionId, { ...data });
 }
 
 export function getMemory(

@@ -19,6 +19,21 @@ const requestWords = [
   "sale",
   "rent",
   "lease",
+  "new",
+  "latest",
+  "fresh",
+  "some",
+  "any",
+  "the",
+  "this",
+  "that",
+  "just",
+  "only",
+  "more",
+  "other",
+  "others",
+  "different",
+  "li",
 ];
 
 function titleCase(value: string) {
@@ -60,7 +75,78 @@ function extractKeyword(message: string) {
   return keyword.length >= 3 ? titleCase(keyword) : undefined;
 }
 
+function guidedReply(message: string) {
+  const text = message.trim().toLowerCase().replace(/\s+/g, " ");
+
+  if (text === "buy property" || text === "buy a property") {
+    return { intent: "buy", listingType: "sale", propertyCategory: "residential" };
+  }
+  if (text === "rent property" || text === "rent a property") {
+    return { intent: "rent", listingType: "rent", propertyCategory: "residential" };
+  }
+  if (text === "buy commercial") {
+    return { intent: "buy", listingType: "sale", propertyCategory: "commercial" };
+  }
+  if (text === "lease commercial") {
+    return { intent: "lease", listingType: "lease", propertyCategory: "commercial" };
+  }
+  if (text === "buy plot") {
+    return { intent: "buy", listingType: "sale", propertyCategory: "land", propertyType: "plot" };
+  }
+  if (text === "apartment" || /^\d+\s*bhk apartment$/.test(text)) {
+    return { propertyType: "apartment", propertyCategory: "residential" };
+  }
+  if (text === "villa" || /^\d+\s*bhk villa$/.test(text)) {
+    return { propertyType: "villa", propertyCategory: "residential" };
+  }
+  if (text === "independent house") {
+    return { propertyType: "independent_house", propertyCategory: "residential" };
+  }
+  if (text === "gated community") {
+    return { propertyType: "gated community", propertyCategory: "residential" };
+  }
+  if (text === "plot") {
+    return { propertyType: "plot", propertyCategory: "land" };
+  }
+  if (text === "show all homes") {
+    return { propertyCategory: "residential", propertyType: "all" };
+  }
+
+  return null;
+}
+
+function isGreeting(message: string) {
+  const text = message
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ");
+  return /^(hi+|hello+|hey+|hai|helo|namaste|namaskar|good morning|good evening|good afternoon)$/.test(text);
+}
+
 export function updateMemory(memory: any, message: string) {
+  if (isGreeting(message)) {
+    return {
+      city: memory.city,
+      state: memory.state,
+      analytics: false,
+      quickSearch: false,
+      keyword: "",
+      seenSlugs: [],
+    };
+  }
+
+  const choice = guidedReply(message);
+  if (choice) {
+    return {
+      ...memory,
+      ...choice,
+      analytics: false,
+      quickSearch: false,
+      keyword: "",
+    };
+  }
+
   const lower = message.toLowerCase();
   const hasPropertyRequest =
     /\b(home|homes|property|properties|apartment|apartments|flat|flats|bhk|bk|villa|villas|plot|plots|land|commercial|office|shop|warehouse|showroom|retail|project|projects)\b/.test(lower);
@@ -69,8 +155,10 @@ export function updateMemory(memory: any, message: string) {
     ? {
         city: memory.city,
         state: memory.state,
+        seenSlugs: memory.seenSlugs || [],
         analytics: false,
         quickSearch: true,
+        keyword: "",
       }
     : { ...memory, analytics: false, quickSearch: false };
 
@@ -206,6 +294,9 @@ export function updateMemory(memory: any, message: string) {
   } else if (/50\s*k\s*-\s*1\s*l/.test(lower)) {
     next.budget = "50K - 1L";
     next.maxPrice = 100000;
+  } else if (/^1\s*l\+$/.test(lower.trim()) || /\b1\s*l\+\b/.test(lower)) {
+    next.budget = "1L+";
+    next.maxPrice = undefined;
   }
 
   if (/ready[\s-]to[\s-]move/.test(lower)) next.constructionStatus = "ready-to-move";
@@ -223,6 +314,21 @@ export function updateMemory(memory: any, message: string) {
 
   if (lower.includes("negotiable")) next.isPriceNegotiable = true;
   if (/ready[\s-]to[\s-]construct/.test(lower)) next.readyToConstruct = true;
+
+  const answeringLocality =
+    Boolean(memory.city) &&
+    !memory.locality &&
+    Boolean(memory.intent) &&
+    Boolean(memory.budget || memory.quickSearch) &&
+    !hasPropertyRequest;
+
+  if (answeringLocality) {
+    const chipLocality = message.replace(/^search in\s+/i, "").trim();
+    if (!next.locality && chipLocality) next.locality = titleCase(chipLocality);
+    if (!next.locality && next.keyword) next.locality = next.keyword;
+    next.keyword = "";
+    next.quickSearch = Boolean(memory.quickSearch);
+  }
 
   return next;
 }

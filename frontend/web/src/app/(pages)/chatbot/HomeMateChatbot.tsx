@@ -1,17 +1,26 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { usePathname } from "next/navigation";
+import { useMutation } from "@tanstack/react-query";
 import { IoClose, IoSend } from "react-icons/io5";
 
-import { getChatbotResponse, getChatbotSuggestions } from "@/data/ClientData";
+import { getChatbotResponse } from "@/data/ClientData";
 import { useCity } from "@/hooks/useCity";
 import { ChatbotIcon } from "@/icons/icons";
+
+type HomeMateAccount = {
+  name?: string;
+  city?: string;
+  locality?: string;
+  state?: string;
+};
 
 type HomeMateChatbotProps = {
   isOpen?: boolean;
   onOpen?: () => void;
   onClose?: () => void;
+  account?: HomeMateAccount | null;
 };
 
 type ChatMessage = {
@@ -23,14 +32,10 @@ type ChatMessage = {
   analytics?: ChatAnalytics;
 };
 
-type ChatSuggestion = {
-  label: string;
-  value: string;
-};
-
 type ChatProperty = {
   id?: string;
   title?: string;
+  image?: string;
   price?: string | null;
   location?: string;
   bhk?: number;
@@ -40,6 +45,7 @@ type ChatProperty = {
   category?: string;
   constructionStatus?: string;
   slug?: string;
+  href?: string;
 };
 
 type ChatAnalytics = {
@@ -49,18 +55,35 @@ type ChatAnalytics = {
   topLocalities?: Record<string, { _id: string; count: number; avgPrice?: number }[]>;
 };
 
+const INTENT_OPTIONS = [
+  "Buy Property",
+  "Rent Property",
+  "Buy Commercial",
+  "Lease Commercial",
+  "Buy Plot",
+];
+
+const getWelcomeMessage = (account?: HomeMateAccount | null, city?: string) => {
+  const place = account?.city || city;
+  if (account) {
+    return place
+    ? `Welcome back. I'm Propenu, and I can help you find verified homes, plots, and commercial spaces in ${place}. What are you looking for today?`
+    : "Welcome back. I'm Propenu, and I can help you find verified homes, plots, and commercial spaces. What are you looking for today?";
+  }
+
+  return place
+    ? `Hi, I'm Propenu. I can help you find verified homes, plots, and commercial spaces in ${place}. What are you looking for today?`
+    : "Hi, I'm Propenu. I can help you find verified homes, plots, and commercial spaces. What are you looking for today?";
+};
+
 const initialMessages: ChatMessage[] = [
   {
     id: "welcome",
     role: "assistant",
-    text: "Hi, I can help you find verified homes, plots, and commercial spaces. What are you looking for today?",
+    text: getWelcomeMessage(),
+    options: INTENT_OPTIONS,
   },
 ];
-
-const getWelcomeMessage = (city?: string) =>
-  city
-    ? `Hi, I can help you find verified homes, plots, and commercial spaces in ${city}. What are you looking for today?`
-    : "Hi, I can help you find verified homes, plots, and commercial spaces. What are you looking for today?";
 
 const parseChatbotResponse = (
   data: any
@@ -138,9 +161,10 @@ const metricToneClasses: Record<string, string> = {
 };
 
 const HomeMateChatbot = ({
-  isOpen = true,
+  isOpen = false,
   onOpen,
   onClose,
+  account,
 }: HomeMateChatbotProps) => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
@@ -148,19 +172,18 @@ const HomeMateChatbot = ({
   const [isClosing, setIsClosing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const { selectedCity } = useCity();
-
-  const suggestionsQuery = useQuery<ChatSuggestion[]>({
-    queryKey: ["homemate-chatbot-suggestions", selectedCity?.city],
-    queryFn: () => getChatbotSuggestions(selectedCity?.city),
-    staleTime: 5 * 60 * 1000,
-    enabled: isOpen,
-  });
+  const pathname = usePathname() || "";
+  const currentPageSlug = pathname.match(
+    /^\/(?:properties\/(?:residential|commercial|land|agricultural)|project|prime)\/([^/?#]+)/,
+  )?.[1];
 
   const chatbotMutation = useMutation({
     mutationFn: (nextMessage: string) =>
       getChatbotResponse(nextMessage, {
-        city: selectedCity?.city,
-        state: selectedCity?.state,
+        city: account?.city || selectedCity?.city,
+        state: account?.state || selectedCity?.state,
+        locality: account?.locality || undefined,
+        excludeSlug: currentPageSlug,
         localities: selectedCity?.localities
           ?.map((locality: any) =>
             typeof locality === "string"
@@ -188,7 +211,7 @@ const HomeMateChatbot = ({
       const errorMessage =
         error?.response?.status === 429
           ? error?.response?.data?.message ||
-            "HomeMate is receiving too many messages. Please try again in a few minutes."
+            "Propenu is receiving too many messages. Please try again in a few minutes."
           : error?.response?.data?.message ||
             error?.response?.data?.error ||
             error?.message ||
@@ -230,12 +253,13 @@ const HomeMateChatbot = ({
       return [
         {
           ...firstMessage,
-          text: getWelcomeMessage(selectedCity?.city),
+          text: getWelcomeMessage(account, selectedCity?.city),
+          options: firstMessage.options?.length ? firstMessage.options : INTENT_OPTIONS,
         },
         ...restMessages,
       ];
     });
-  }, [selectedCity?.city]);
+  }, [account, selectedCity?.city]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -281,7 +305,7 @@ const HomeMateChatbot = ({
       <>
         <button
           type="button"
-          aria-label="Open HomeMate chatbot"
+          aria-label="Open Propenu chatbot"
           onClick={onOpen}
           className="group relative grid h-16 w-16 place-items-center rounded-full bg-[#20b35c] text-white shadow-[0_14px_30px_rgba(32,179,92,0.35)] transition hover:-translate-y-0.5 hover:bg-[#1aa552] hover:shadow-[0_18px_38px_rgba(32,179,92,0.42)]"
         >
@@ -297,7 +321,7 @@ const HomeMateChatbot = ({
 
   return (
     <section
-      className={`relative h-[min(560px,calc(100vh-96px))] w-[min(360px,calc(100vw-32px))] origin-bottom-right overflow-hidden rounded-[26px] border border-white/70 bg-[#f7fffb] shadow-[0_22px_60px_rgba(15,82,45,0.22)] transition-all duration-220 ease-out ${
+      className={`relative h-full w-full origin-bottom-right overflow-hidden rounded-[26px] border border-white/70 bg-[#f7fffb] shadow-[0_22px_60px_rgba(15,82,45,0.22)] transition-all duration-220 ease-out sm:h-[min(520px,calc(100dvh-8rem))] sm:w-[min(360px,calc(100vw-32px))] ${
         isPanelVisible && !isClosing
           ? "translate-y-0 scale-100 opacity-100"
           : "translate-y-4 scale-95 opacity-0"
@@ -314,7 +338,7 @@ const HomeMateChatbot = ({
             </span>
 
             <div className="min-w-0 leading-tight">
-              <h2 className="truncate text-base font-semibold">HomeMate</h2>
+              <h2 className="truncate text-base font-semibold">Propenu Assistant</h2>
               <p className="truncate text-[11px] font-medium text-white/90">
                 Your Verified Property Assistant
               </p>
@@ -379,53 +403,83 @@ const HomeMateChatbot = ({
                 ) : null}
                 {chatMessage.role === "assistant" && chatMessage.properties?.length ? (
                   <div className="mt-3 space-y-2">
-                    {chatMessage.properties.map((property) => (
-                      <div
-                        key={property.id || property.slug || property.title}
-                        className="rounded-xl border border-emerald-100 bg-white px-3 py-2 shadow-[0_4px_12px_rgba(15,82,45,0.08)]"
-                      >
-                        <div className="line-clamp-2 text-[12px] font-semibold leading-4 text-gray-800">
-                          {property.title || "Verified property"}
-                        </div>
-                        {property.location ? (
-                          <div className="mt-1 truncate text-[11px] text-gray-500">
-                            {property.location}
+                    {chatMessage.properties.map((property) => {
+                      const card = (
+                        <>
+                          {property.image ? (
+                            <img
+                              src={property.image}
+                              alt={property.title || "Property"}
+                              className="h-28 w-full object-cover"
+                            />
+                          ) : null}
+                          <div className="px-3 py-2">
+                            <div className="line-clamp-2 text-[12px] font-semibold leading-4 text-gray-800">
+                              {property.title || "Verified property"}
+                            </div>
+                            {property.location ? (
+                              <div className="mt-1 truncate text-[11px] text-gray-500">
+                                {property.location}
+                              </div>
+                            ) : null}
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              {property.category ? (
+                                <span className="rounded-full bg-[#eefbf4] px-2 py-0.5 text-[11px] font-semibold text-[#168a48]">
+                                  {property.category}
+                                </span>
+                              ) : null}
+                              {property.price ? (
+                                <span className="rounded-full bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
+                                  {property.price}
+                                </span>
+                              ) : null}
+                              {property.area ? (
+                                <span className="rounded-full bg-gray-50 px-2 py-0.5 text-[11px] text-gray-600">
+                                  {property.area}
+                                </span>
+                              ) : null}
+                              {property.bhk ? (
+                                <span className="rounded-full bg-gray-50 px-2 py-0.5 text-[11px] text-gray-600">
+                                  {property.bhk} BHK
+                                </span>
+                              ) : null}
+                              {property.listingType ? (
+                                <span className="rounded-full bg-gray-50 px-2 py-0.5 text-[11px] text-gray-600">
+                                  {property.listingType}
+                                </span>
+                              ) : null}
+                              {property.constructionStatus ? (
+                                <span className="rounded-full bg-gray-50 px-2 py-0.5 text-[11px] text-gray-600">
+                                  {property.constructionStatus}
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
-                        ) : null}
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          {property.category ? (
-                            <span className="rounded-full bg-[#eefbf4] px-2 py-0.5 text-[11px] font-semibold text-[#168a48]">
-                              {property.category}
-                            </span>
-                          ) : null}
-                          {property.price ? (
-                            <span className="rounded-full bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
-                              {property.price}
-                            </span>
-                          ) : null}
-                          {property.area ? (
-                            <span className="rounded-full bg-gray-50 px-2 py-0.5 text-[11px] text-gray-600">
-                              {property.area}
-                            </span>
-                          ) : null}
-                          {property.bhk ? (
-                            <span className="rounded-full bg-gray-50 px-2 py-0.5 text-[11px] text-gray-600">
-                              {property.bhk} BHK
-                            </span>
-                          ) : null}
-                          {property.listingType ? (
-                            <span className="rounded-full bg-gray-50 px-2 py-0.5 text-[11px] text-gray-600">
-                              {property.listingType}
-                            </span>
-                          ) : null}
-                          {property.constructionStatus ? (
-                            <span className="rounded-full bg-gray-50 px-2 py-0.5 text-[11px] text-gray-600">
-                              {property.constructionStatus}
-                            </span>
-                          ) : null}
+                        </>
+                      );
+
+                      const className =
+                        "block overflow-hidden rounded-xl border border-emerald-100 bg-white shadow-[0_4px_12px_rgba(15,82,45,0.08)] transition hover:-translate-y-0.5 hover:border-[#20b35c]/40";
+
+                      return property.href ? (
+                        <a
+                          key={property.id || property.slug || property.title}
+                          href={property.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={className}
+                        >
+                          {card}
+                        </a>
+                      ) : (
+                        <div
+                          key={property.id || property.slug || property.title}
+                          className={className}
+                        >
+                          {card}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : null}
                 {chatMessage.role === "assistant" && chatMessage.options?.length ? (
@@ -453,22 +507,6 @@ const HomeMateChatbot = ({
             ) : null}
             <div ref={messagesEndRef} className="h-px" aria-hidden="true" />
           </div>
-
-          {suggestionsQuery.data?.length ? (
-            <div className="flex flex-wrap gap-2">
-              {suggestionsQuery.data.slice(0, 4).map((suggestion) => (
-                <button
-                  key={suggestion.value}
-                  type="button"
-                  onClick={() => sendMessage(suggestion.value)}
-                  disabled={chatbotMutation.isPending}
-                  className="rounded-full border border-[#20b35c]/15 bg-white/85 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition hover:border-[#20b35c]/35 hover:text-[#168a48]"
-                >
-                  {suggestion.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
 
           <form
             className="mt-auto flex h-12 items-center rounded-full border border-gray-100 bg-white px-4 shadow-[0_8px_24px_rgba(15,23,42,0.16)]"

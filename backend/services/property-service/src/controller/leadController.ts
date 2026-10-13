@@ -571,30 +571,33 @@ const resolveLeadUserIds = async (leads: any[]) => {
   return resolvedUserIds;
 };
 
-const attachProjectLeadActivity = async (projectId: string, leads: any[]) => {
-  if (!leads.length || !Types.ObjectId.isValid(projectId)) {
+const getContactPhoneLookup = (value?: string | null) => {
+  const digits = normalizeLeadPhone(value).replace(/\D/g, "");
+  if (!digits) return "";
+  return digits.length > 10 ? digits.slice(-10) : digits;
+};
+
+const getContactEmailLookup = (value?: string | null) =>
+  String(value ?? "").trim().toLowerCase();
+
+const attachProjectLeadActivity = async (
+  projectId: string,
+  leads: any[],
+  createdAtMatch?: Record<string, unknown>,
+) => {
+  if (!Types.ObjectId.isValid(projectId)) {
     return leads;
   }
 
   const resolvedUserIds = await resolveLeadUserIds(leads);
   const uniqueUserIds = Array.from(new Set(resolvedUserIds.values()));
-
-  if (!uniqueUserIds.length) {
-    return leads.map((lead: any) => ({
-      ...lead,
-      activity: {
-        leadSubmitted: true,
-        shortlisted: false,
-        brochureDownloaded: false,
-        timeSpentMinutes: null,
-      },
-    }));
-  }
-
   const projectObjectId = new Types.ObjectId(projectId);
-  const userObjectIds = uniqueUserIds.map((id) => new Types.ObjectId(id));
+  const interactionDateMatch =
+    createdAtMatch && Object.keys(createdAtMatch).length
+      ? { createdAt: createdAtMatch }
+      : {};
 
-  const [shortlistRows, brochureRows, durationRows] = await Promise.all([
+  const [shortlistRows, brochureRows] = await Promise.all([
     mongoose.connection
       .collection("shortlists")
       .aggregate([
@@ -602,12 +605,13 @@ const attachProjectLeadActivity = async (projectId: string, leads: any[]) => {
           $match: {
             propertyType: "FeaturedProject",
             propertyId: projectObjectId,
-            userId: { $in: userObjectIds },
+            ...interactionDateMatch,
           },
         },
         {
           $group: {
             _id: "$userId",
+            createdAt: { $max: "$createdAt" },
           },
         },
       ])
@@ -619,29 +623,13 @@ const attachProjectLeadActivity = async (projectId: string, leads: any[]) => {
           $match: {
             projectId: projectObjectId,
             source: "brochure_download",
-            userId: { $in: userObjectIds },
+            ...interactionDateMatch,
           },
         },
         {
           $group: {
             _id: "$userId",
-          },
-        },
-      ])
-      .toArray(),
-    mongoose.connection
-      .collection("projectviewdurations")
-      .aggregate([
-        {
-          $match: {
-            projectId: projectObjectId,
-            userId: { $in: userObjectIds },
-          },
-        },
-        {
-          $group: {
-            _id: "$userId",
-            totalDurationMs: { $sum: { $ifNull: ["$durationMs", 0] } },
+            createdAt: { $max: "$createdAt" },
           },
         },
       ])
@@ -650,14 +638,42 @@ const attachProjectLeadActivity = async (projectId: string, leads: any[]) => {
 
   const shortlistedUserIds = new Set(shortlistRows.map((row) => String(row._id)));
   const brochureUserIds = new Set(brochureRows.map((row) => String(row._id)));
-  const timeSpentByUserId = new Map<string, number>(
-    durationRows.map((row) => [
+  const interactionCreatedAtByUserId = new Map<string, Date>(
+    [...shortlistRows, ...brochureRows].map((row) => [
       String(row._id),
-      Number(((row.totalDurationMs ?? 0) / 60000).toFixed(1)),
+      row.createdAt ? new Date(row.createdAt) : new Date(),
     ]),
   );
 
-  return leads.map((lead: any) => {
+  [...shortlistRows, ...brochureRows].forEach((row) => {
+    const userId = String(row._id);
+    const current = interactionCreatedAtByUserId.get(userId);
+    const next = row.createdAt ? new Date(row.createdAt) : new Date();
+    if (!current || next.getTime() > current.getTime()) {
+      interactionCreatedAtByUserId.set(userId, next);
+    }
+  });
+
+  const leadUserIds = new Set(uniqueUserIds);
+  const interactionCandidateUserIds = Array.from(interactionCreatedAtByUserId.keys()).filter(
+    (userId) => Types.ObjectId.isValid(userId) && !leadUserIds.has(userId),
+  );
+  const interactionUsers = interactionCandidateUserIds.length
+    ? await mongoose.connection
+        .collection("users")
+        .find({
+          _id: {
+            $in: interactionCandidateUserIds.map((id) => new Types.ObjectId(id)),
+          },
+        })
+        .project({ name: 1, email: 1, phone: 1 })
+        .toArray()
+    : [];
+  const interactionUserById = new Map(
+    interactionUsers.map((user) => [String(user._id), user]),
+  );
+
+  const leadsWithActivity = leads.map((lead: any) => {
     const resolvedUserId = resolvedUserIds.get(String(lead._id)) || "";
 
     return {
@@ -666,12 +682,77 @@ const attachProjectLeadActivity = async (projectId: string, leads: any[]) => {
         leadSubmitted: true,
         shortlisted: resolvedUserId ? shortlistedUserIds.has(resolvedUserId) : false,
         brochureDownloaded: resolvedUserId ? brochureUserIds.has(resolvedUserId) : false,
-        timeSpentMinutes: resolvedUserId
-          ? timeSpentByUserId.get(resolvedUserId) ?? null
-          : null,
+        timeSpentMinutes: null,
       },
     };
   });
+
+  const leadIndexByContact = new Map<string, number>();
+  leadsWithActivity.forEach((lead: any, index: number) => {
+    const email = getContactEmailLookup(lead.email);
+    const phone = getContactPhoneLookup(lead.phone);
+
+    if (email) leadIndexByContact.set(`email:${email}`, index);
+    if (phone) leadIndexByContact.set(`phone:${phone}`, index);
+  });
+
+  const mergedInteractionUserIds = new Set<string>();
+  interactionCandidateUserIds.forEach((userId) => {
+    const user = interactionUserById.get(userId);
+    if (!user) return;
+
+    const email = getContactEmailLookup(user.email);
+    const phone = getContactPhoneLookup(user.phone);
+    const leadIndex =
+      (email ? leadIndexByContact.get(`email:${email}`) : undefined) ??
+      (phone ? leadIndexByContact.get(`phone:${phone}`) : undefined);
+
+    if (leadIndex === undefined) return;
+
+    const activity = leadsWithActivity[leadIndex].activity ?? {};
+    leadsWithActivity[leadIndex] = {
+      ...leadsWithActivity[leadIndex],
+      activity: {
+        ...activity,
+        shortlisted: Boolean(activity.shortlisted || shortlistedUserIds.has(userId)),
+        brochureDownloaded: Boolean(
+          activity.brochureDownloaded || brochureUserIds.has(userId),
+        ),
+        timeSpentMinutes: null,
+      },
+    };
+    mergedInteractionUserIds.add(userId);
+  });
+
+  const interactionOnlyUserIds = interactionCandidateUserIds.filter(
+    (userId) => !mergedInteractionUserIds.has(userId),
+  );
+
+  const interactionOnlyRows = interactionOnlyUserIds.map((userId) => {
+    const user = interactionUserById.get(userId) || {};
+    const createdAt = interactionCreatedAtByUserId.get(userId) || new Date();
+
+    return {
+      _id: `activity:${projectId}:${userId}`,
+      projectId,
+      name: user.name || "Unknown User",
+      phone: user.phone || "",
+      email: user.email || "",
+      source: "site",
+      sourceCreatedAt: createdAt.toISOString(),
+      createdAt: createdAt.toISOString(),
+      status: "new_lead",
+      activityOnly: true,
+      activity: {
+        leadSubmitted: false,
+        shortlisted: shortlistedUserIds.has(userId),
+        brochureDownloaded: brochureUserIds.has(userId),
+        timeSpentMinutes: null,
+      },
+    };
+  });
+
+  return [...leadsWithActivity, ...interactionOnlyRows];
 };
 
 const getCombinedProjectLeads = async (query: any) => {
@@ -697,7 +778,11 @@ const getCombinedProjectLeads = async (query: any) => {
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
-  return attachProjectLeadActivity(String(query.projectId), combinedLeads);
+  return attachProjectLeadActivity(
+    String(query.projectId),
+    combinedLeads,
+    query.createdAt,
+  );
 };
 
 const buildProjectLeadsHeader = (leads: any[]) => {

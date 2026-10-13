@@ -353,7 +353,7 @@ const DiscoverRealestate = () => {
             </div>
             {showLocalityDialog && (
                 <div
-                    className="fixed inset-0 z-70 flex items-end justify-center bg-black/35 px-3 py-3 sm:items-center sm:px-5"
+                    className="fixed inset-0 z-[100] flex items-end justify-center bg-black/35 px-3 py-3 sm:items-center sm:px-5"
                     role="dialog"
                     aria-modal="true"
                     aria-labelledby="locality-dialog-title"

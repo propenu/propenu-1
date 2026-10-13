@@ -19,6 +19,7 @@ import {
   FiCheck,
   FiEdit2,
   FiPlus,
+  FiSearch,
   FiShield,
   FiTrash2,
   FiUserPlus,
@@ -127,6 +128,12 @@ const getPermissionAction = (permission: string) =>
 
 const normalizeRoleName = (name: string) => name.trim().toLowerCase();
 
+const getProjectTitle = (project: Project) =>
+  project.title || project.projectName || "Project";
+
+const getProjectLocation = (project: Project) =>
+  [project.locality, project.city].filter(Boolean).join(", ");
+
 const getRoleTone = (index: number) => {
   const tones = [
     "border-emerald-200 bg-emerald-50 text-emerald-800",
@@ -152,6 +159,13 @@ const INDIA_DIAL_CODE = "+91";
 const NAME_REGEX = /^[A-Za-z]+(?:[A-Za-z\s'.-]*[A-Za-z])?$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^[6-9]\d{9}$/;
+const statsSkeletonItems = Array.from({ length: 3 });
+const stepSkeletonItems = Array.from({ length: 3 });
+const permissionActionSkeletonItems = Array.from({ length: 6 });
+const permissionRowSkeletonItems = Array.from({ length: 3 });
+const formFieldSkeletonItems = Array.from({ length: 4 });
+const roleSkeletonItems = Array.from({ length: 3 });
+const memberSkeletonItems = Array.from({ length: 4 });
 
 const normalizePhoneInput = (value: string) =>
   value.replace(/\D/g, "").slice(-10);
@@ -219,6 +233,202 @@ function SwitchToggle({
   );
 }
 
+function SkeletonBlock({ className }: { className: string }) {
+  return (
+    <div
+      className={`animate-pulse rounded-md bg-gray-200/80 ${className}`}
+      aria-hidden="true"
+    />
+  );
+}
+
+function BuilderRolesPageSkeleton() {
+  return (
+    <div className="space-y-6" aria-busy="true" aria-label="Loading builder access">
+      <div className="space-y-5 bg-white">
+        <div>
+          <SkeletonBlock className="h-3 w-24" />
+          <SkeletonBlock className="mt-3 h-9 w-64 max-w-full" />
+          <SkeletonBlock className="mt-3 h-4 w-full max-w-4xl" />
+          <SkeletonBlock className="mt-2 h-4 w-4/5 max-w-3xl" />
+        </div>
+
+        <div className="inline-flex w-full flex-col overflow-hidden rounded-[4px] border border-[#E2F0E6] bg-[#F4FCF6] sm:w-auto sm:flex-row">
+          {statsSkeletonItems.map((_, index) => (
+            <div key={`roles-stat-skeleton-${index}`} className="flex items-center gap-2 px-4 py-3">
+              <SkeletonBlock className="h-4 w-4 rounded-full" />
+              <SkeletonBlock className="h-4 w-28" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white md:sticky md:top-0 md:z-30">
+        <div className="grid grid-cols-1 gap-2 rounded-md bg-white sm:grid-cols-3 sm:gap-3">
+          {stepSkeletonItems.map((_, index) => (
+            <div
+              key={`roles-step-skeleton-${index}`}
+              className="rounded-md border border-[#E2F0E6] bg-[#F8FCF9] px-4 py-3 sm:px-5 sm:py-4"
+            >
+              <SkeletonBlock className="h-3 w-14" />
+              <SkeletonBlock className="mt-3 h-5 w-44 max-w-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-12">
+        <section className="bg-white">
+          <div className="flex flex-col gap-4 py-8 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <SkeletonBlock className="h-6 w-56" />
+              <SkeletonBlock className="mt-3 h-4 w-72 max-w-full" />
+            </div>
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
+              <SkeletonBlock className="h-10 w-full sm:w-[260px] lg:w-[340px]" />
+              <SkeletonBlock className="h-10 w-full sm:w-36" />
+              <SkeletonBlock className="h-10 w-full sm:w-32" />
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-md border border-[#E3E3E3] bg-white shadow-xs">
+            <div className="overflow-x-auto pb-2">
+              <div className="min-w-[640px] sm:min-w-[760px]">
+                <div className="grid grid-cols-[160px_repeat(6,minmax(84px,1fr))] bg-[#F4FCF6] px-4 py-3">
+                  <SkeletonBlock className="h-4 w-20" />
+                  {permissionActionSkeletonItems.map((_, index) => (
+                    <SkeletonBlock
+                      key={`permission-head-skeleton-${index}`}
+                      className="mx-auto h-4 w-16"
+                    />
+                  ))}
+                </div>
+                <div className="divide-y divide-[#EFEFEF]">
+                  {permissionRowSkeletonItems.map((_, rowIndex) => (
+                    <div
+                      key={`permission-row-skeleton-${rowIndex}`}
+                      className="grid grid-cols-[160px_repeat(6,minmax(84px,1fr))] items-center px-4 py-5"
+                    >
+                      <SkeletonBlock className="h-5 w-20" />
+                      {permissionActionSkeletonItems.map((__, actionIndex) => (
+                        <SkeletonBlock
+                          key={`permission-toggle-skeleton-${rowIndex}-${actionIndex}`}
+                          className="mx-auto h-6 w-11 rounded-full"
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="border-t border-gray-100 bg-gray-50/80 px-4 py-2.5 sm:hidden">
+              <SkeletonBlock className="h-3 w-64 max-w-full" />
+            </div>
+          </div>
+        </section>
+
+        <section className="bg-white">
+          <div className="flex flex-col gap-4 py-2 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <SkeletonBlock className="h-6 w-40" />
+              <SkeletonBlock className="mt-3 h-4 w-64 max-w-full" />
+            </div>
+            <SkeletonBlock className="h-10 w-40" />
+          </div>
+
+          <div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {formFieldSkeletonItems.map((_, index) => (
+              <SkeletonBlock key={`member-field-skeleton-${index}`} className="h-10 w-full" />
+            ))}
+          </div>
+        </section>
+
+        <section className="bg-white">
+          <div>
+            <SkeletonBlock className="h-6 w-36" />
+            <SkeletonBlock className="mt-3 h-4 w-72 max-w-full" />
+          </div>
+
+          <div className="mt-6 sm:mt-7">
+            <div className="mb-5 flex flex-col gap-3 sm:mb-6 lg:flex-row lg:items-start lg:justify-between">
+              <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[720px] lg:grid-cols-3">
+                <SkeletonBlock className="h-10 w-full" />
+                <SkeletonBlock className="h-10 w-full" />
+                <SkeletonBlock className="h-10 w-full sm:col-span-2 lg:col-span-1" />
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center lg:justify-end">
+                <SkeletonBlock className="h-10 w-full sm:w-28" />
+                <SkeletonBlock className="h-10 w-full sm:w-32" />
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div className="border-t border-[#E6EFE9]" />
+
+      <section className="bg-white">
+        <div className="py-2">
+          <SkeletonBlock className="h-6 w-36" />
+          <SkeletonBlock className="mt-3 h-4 w-64 max-w-full" />
+        </div>
+        <div className="mt-7 hidden space-y-2 md:block">
+          {roleSkeletonItems.map((_, index) => (
+            <div
+              key={`existing-role-skeleton-${index}`}
+              className="flex flex-col gap-3 rounded-md bg-[#F8F8F8] px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <SkeletonBlock className="h-5 w-32" />
+              <div className="flex flex-1 flex-wrap items-center gap-x-8 gap-y-2">
+                <SkeletonBlock className="h-4 w-28" />
+                <SkeletonBlock className="h-4 w-32" />
+                <SkeletonBlock className="h-4 w-24" />
+              </div>
+              <div className="flex items-center gap-4">
+                <SkeletonBlock className="h-5 w-5" />
+                <SkeletonBlock className="h-5 w-5" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="bg-white">
+        <div className="py-2">
+          <SkeletonBlock className="h-6 w-36" />
+          <SkeletonBlock className="mt-3 h-4 w-72 max-w-full" />
+        </div>
+        <div className="mt-7 hidden overflow-x-auto rounded-md border border-[#E3E3E3] md:block">
+          <div className="min-w-[760px]">
+            <div className="grid grid-cols-[1fr_1.4fr_1fr_1fr_120px] bg-[#F4FCF6] px-3 py-3">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <SkeletonBlock key={`member-head-skeleton-${index}`} className="h-4 w-20" />
+              ))}
+            </div>
+            <div className="divide-y divide-[#E6E6E6] bg-white">
+              {memberSkeletonItems.map((_, rowIndex) => (
+                <div
+                  key={`member-row-skeleton-${rowIndex}`}
+                  className="grid grid-cols-[1fr_1.4fr_1fr_1fr_120px] items-center px-3 py-3"
+                >
+                  <SkeletonBlock className="h-4 w-28" />
+                  <SkeletonBlock className="h-4 w-40" />
+                  <SkeletonBlock className="h-4 w-28" />
+                  <SkeletonBlock className="h-4 w-24" />
+                  <div className="flex justify-end gap-2">
+                    <SkeletonBlock className="h-10 w-10" />
+                    <SkeletonBlock className="h-10 w-10" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function BuilderRolesPage() {
   const queryClient = useQueryClient();
   const roleEditorRef = useRef<HTMLElement | null>(null);
@@ -227,6 +437,7 @@ export default function BuilderRolesPage() {
   const memberRoleDropdownRef = useRef<HTMLDivElement | null>(null);
   const assignRoleDropdownRef = useRef<HTMLDivElement | null>(null);
   const assignMemberDropdownRef = useRef<HTMLDivElement | null>(null);
+  const projectDropdownRef = useRef<HTMLDivElement | null>(null);
   const roleHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const memberHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const assignHeadingRef = useRef<HTMLHeadingElement | null>(null);
@@ -238,6 +449,8 @@ export default function BuilderRolesPage() {
   const [memberRoleOpen, setMemberRoleOpen] = useState(false);
   const [assignRoleOpen, setAssignRoleOpen] = useState(false);
   const [assignMemberOpen, setAssignMemberOpen] = useState(false);
+  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
+  const [projectSearchTerm, setProjectSearchTerm] = useState("");
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [assignRoleId, setAssignRoleId] = useState("");
   const [activeStep, setActiveStep] = useState<1 | 2 | 3>(1);
@@ -321,6 +534,43 @@ export default function BuilderRolesPage() {
       (a, b) => actionOrder.indexOf(a) - actionOrder.indexOf(b),
     );
   }, [groupedPermissions]);
+
+  const filteredProjects = useMemo(() => {
+    const search = projectSearchTerm.trim().toLowerCase();
+    if (!search) return projects;
+
+    return projects.filter((project) => {
+      const searchableText = [
+        getProjectTitle(project),
+        project.propertyCode,
+        project.city,
+        project.locality,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(search);
+    });
+  }, [projectSearchTerm, projects]);
+
+  const selectedProjectSummary = useMemo(() => {
+    if (!memberForm.projectIds.length) return "Select Projects";
+
+    const selectedProjects = projects.filter((project) =>
+      memberForm.projectIds.includes(project._id),
+    );
+
+    if (!selectedProjects.length) {
+      return `${memberForm.projectIds.length} selected`;
+    }
+
+    if (selectedProjects.length === 1) {
+      return getProjectTitle(selectedProjects[0]);
+    }
+
+    return `${selectedProjects.length} projects selected`;
+  }, [memberForm.projectIds, projects]);
 
   const createRoleMutation = useMutation({
     mutationFn: createBuilderRole,
@@ -639,6 +889,9 @@ export default function BuilderRolesPage() {
       if (!assignMemberDropdownRef.current?.contains(event.target as Node)) {
         setAssignMemberOpen(false);
       }
+      if (!projectDropdownRef.current?.contains(event.target as Node)) {
+        setProjectDropdownOpen(false);
+      }
     };
 
     const handleEscape = (event: KeyboardEvent) => {
@@ -646,6 +899,7 @@ export default function BuilderRolesPage() {
         setMemberRoleOpen(false);
         setAssignRoleOpen(false);
         setAssignMemberOpen(false);
+        setProjectDropdownOpen(false);
       }
     };
 
@@ -659,7 +913,7 @@ export default function BuilderRolesPage() {
   }, []);
 
   if (loading) {
-    return <div className="py-20 text-center text-gray-500">Loading builder access...</div>;
+    return <BuilderRolesPageSkeleton />;
   }
 
   return (
@@ -1157,6 +1411,125 @@ export default function BuilderRolesPage() {
                     </div>
                   )}
                 </div>
+                <div ref={projectDropdownRef} className="relative sm:col-span-2 lg:col-span-1">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setProjectDropdownOpen((prev) => !prev);
+                    }}
+                    className="flex h-10 w-full items-center justify-between rounded-md border border-[#ECECEC] bg-[#F3F3F3] px-4 text-sm text-gray-700 outline-none transition hover:border-[#D7E7DC] focus:border-[#16A34A] focus:bg-white"
+                    aria-haspopup="listbox"
+                    aria-expanded={projectDropdownOpen}
+                  >
+                    <span
+                      className={`truncate ${
+                        memberForm.projectIds.length ? "text-gray-700" : "text-[#6B7280]"
+                      }`}
+                    >
+                      {selectedProjectSummary}
+                    </span>
+                    <ArrowDropdownIcon
+                      size={12}
+                      color="#111827"
+                      className={`transition-transform duration-200 ${
+                        projectDropdownOpen ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+
+                  {projectDropdownOpen && (
+                    <div
+                      className="absolute left-0 top-[calc(100%+8px)] z-60 w-full min-w-[280px] overflow-hidden rounded-xl border border-gray-200 bg-white p-3 shadow-lg sm:min-w-[420px] lg:right-0 lg:left-auto"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <div className="pointer-events-none absolute -top-2 right-6 hidden lg:block">
+                        <div className="h-3 w-3 rotate-45 border-l border-t border-gray-200 bg-white" />
+                      </div>
+                      <div className="relative">
+                        <FiSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6B7280]" />
+                        <input
+                          value={projectSearchTerm}
+                          onChange={(event) => setProjectSearchTerm(event.target.value)}
+                          placeholder="Search project by name, city, locality, or code"
+                          className="h-10 w-full rounded-md border border-[#DCE1DD] bg-white pl-9 pr-3 text-sm text-[#374151] outline-none transition placeholder:text-[#9CA3AF] focus:border-[#16A34A] focus:ring-2 focus:ring-[#DCFCE7]"
+                        />
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-between gap-3 border-b border-gray-100 pb-2">
+                        <p className="text-sm font-semibold text-gray-900">
+                          Select Projects
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMemberFormError(null);
+                            setMemberForm((current) => ({
+                              ...current,
+                              projectIds:
+                                current.projectIds.length === projects.length
+                                  ? []
+                                  : projects.map((project) => project._id),
+                            }));
+                          }}
+                          className="text-xs font-semibold text-[#16A34A] transition hover:text-[#15803D]"
+                        >
+                          {memberForm.projectIds.length === projects.length
+                            ? "Clear all"
+                            : "Select all"}
+                        </button>
+                      </div>
+
+                      <div className="mt-2 max-h-[300px] space-y-1 overflow-y-auto pr-1">
+                        {filteredProjects.length ? (
+                          filteredProjects.map((project) => {
+                            const active = memberForm.projectIds.includes(project._id);
+                            const projectTitle = getProjectTitle(project);
+                            const projectLocation = getProjectLocation(project);
+
+                            return (
+                              <button
+                                key={project._id}
+                                type="button"
+                                onClick={() => toggleProject(project._id)}
+                                className={`flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition ${
+                                  active
+                                    ? "bg-[#D1EFDD] text-[#15803D]"
+                                    : "text-gray-700 hover:bg-gray-100"
+                                }`}
+                              >
+                                <span
+                                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+                                    active
+                                      ? "border-[#27AE60] bg-[#27AE60] text-white"
+                                      : "border-[#CFCFCF] bg-white text-transparent"
+                                  }`}
+                                >
+                                  <FiCheck className="h-3.5 w-3.5" />
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-sm font-semibold">
+                                    {projectTitle}
+                                  </span>
+                                  <span className="mt-0.5 block truncate text-xs text-gray-500">
+                                    {project.propertyCode
+                                      ? `Code: ${project.propertyCode}`
+                                      : project._id.slice(-8).toUpperCase()}
+                                    {projectLocation ? ` · ${projectLocation}` : ""}
+                                  </span>
+                                </span>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <p className="py-6 text-center text-sm text-gray-500">
+                            No matching projects
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center lg:justify-end">
                 <span className="inline-flex h-10 w-full items-center justify-center rounded-md bg-gray-100 px-4 text-sm font-semibold text-gray-500 sm:w-auto">
@@ -1172,59 +1545,11 @@ export default function BuilderRolesPage() {
                 </button>
               </div>
             </div>
-            <div className="max-h-[430px] overflow-y-auto">
-              {projects.length ? (
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {projects.map((project) => {
-                    const active = memberForm.projectIds.includes(project._id);
-                    const projectTitle = project.title || project.projectName || "Project";
-                    const projectLocation = [project.locality, project.city].filter(Boolean).join(", ");
-                    return (
-                      <button
-                        key={project._id}
-                        type="button"
-                        onClick={() => toggleProject(project._id)}
-                        className={`group flex min-h-[108px] w-full flex-col gap-3 rounded-xl border p-3 text-left text-sm transition sm:flex-row sm:items-start ${
-                          active
-                            ? "border-[#BFE6CB] bg-[#F4FCF6] text-gray-800 shadow-[0_8px_18px_rgba(39,174,96,0.08)]"
-                            : "border-[#E7E7E7] bg-white text-gray-700 hover:border-[#CFE3D6] hover:bg-[#FBFDFC]"
-                        }`}
-                      >
-                        <img
-                          src={project.heroImage || "/images/placeholder.svg"}
-                          alt={projectTitle}
-                          className="h-40 w-full rounded-lg object-cover sm:h-[82px] sm:w-[104px] sm:shrink-0"
-                        />
-                        <span className="min-w-0 flex-1 pt-0.5">
-                          <span className="inline-flex max-w-full rounded-full bg-[#F3F6F4] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#5F6F66] sm:text-[11px]">
-                            Code: {project.propertyCode || project._id.slice(-8).toUpperCase()}
-                          </span>
-                          <span className="mt-2 line-clamp-2 block text-[0.95rem] font-semibold leading-6 text-gray-900 sm:text-[0.98rem]">
-                            {projectTitle}
-                          </span>
-                          <span className="mt-1 block text-xs font-medium text-[#7B8A82]">
-                            {projectLocation || "Location unavailable"}
-                          </span>
-                        </span>
-                        <span
-                          className={`mt-1 flex h-6 w-6 shrink-0 items-center justify-center self-end rounded-md border transition sm:self-auto ${
-                            active
-                              ? "border-[#27AE60] bg-[#27AE60] text-white"
-                              : "border-[#CFCFCF] bg-white text-transparent group-hover:border-[#A9D5B6]"
-                          }`}
-                        >
-                          {active && <FiCheck className="h-3.5 w-3.5" />}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="py-8 text-center text-sm text-gray-500">
-                  No projects found
-                </p>
-              )}
-            </div>
+            {!projects.length && (
+              <p className="rounded-md border border-dashed border-[#DADADA] py-8 text-center text-sm text-gray-500">
+                No projects found
+              </p>
+            )}
           </div>
         </section>
       </div>     

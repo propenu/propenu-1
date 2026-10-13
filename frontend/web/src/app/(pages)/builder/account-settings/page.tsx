@@ -180,7 +180,7 @@ export default function BuilderAccountSettingsPage() {
   };
 
   if (profileQuery.isLoading) {
-    return <div className="py-20 text-center text-gray-500">Loading builder profile...</div>;
+    return <BuilderAccountSettingsSkeleton />;
   }
 
   if (profileQuery.isError || !profile) {
@@ -381,7 +381,7 @@ export default function BuilderAccountSettingsPage() {
         </div>
 
         {invoicesQuery.isLoading ? (
-          <div className="py-10 text-center text-sm text-gray-500">Loading invoices...</div>
+          <InvoicesSkeleton />
         ) : invoicesQuery.isError ? (
           <div className="rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
             Failed to load invoices.
@@ -445,6 +445,140 @@ export default function BuilderAccountSettingsPage() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function SkeletonBlock({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`block animate-pulse rounded-md bg-gray-200/80 ${className}`}
+    />
+  );
+}
+
+function BuilderAccountSettingsSkeleton() {
+  return (
+    <div className="space-y-6">
+      <section className="overflow-hidden rounded-lg border border-[#DDE8E1] bg-white shadow-sm">
+        <div className="border-b border-[#E6EFE9] bg-[#F4FAF6] px-4 py-5 sm:px-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-4">
+              <SkeletonBlock className="h-14 w-14 shrink-0 rounded-full" />
+              <div className="min-w-0">
+                <SkeletonBlock className="h-3 w-28" />
+                <SkeletonBlock className="mt-2 h-7 w-56" />
+                <SkeletonBlock className="mt-2 h-4 w-36" />
+              </div>
+            </div>
+            <SkeletonBlock className="h-10 w-32" />
+          </div>
+        </div>
+
+        <div className="grid gap-px bg-[#E6EFE9] md:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div key={index} className="bg-white px-4 py-4 sm:px-6">
+              <div className="flex items-center gap-3">
+                <SkeletonBlock className="h-9 w-9 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <SkeletonBlock className="h-3 w-20" />
+                  <SkeletonBlock className="mt-2 h-4 w-32" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <ProfileSectionSkeleton titleWidth="w-36" descriptionWidth="w-72" fields={2} />
+      <ProfileSectionSkeleton titleWidth="w-40" descriptionWidth="w-80" fields={6} hasAddress />
+
+      <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+        <div className="mb-5">
+          <SkeletonBlock className="h-5 w-24" />
+          <SkeletonBlock className="mt-2 h-4 w-80 max-w-full" />
+        </div>
+        <InvoicesSkeleton />
+      </section>
+    </div>
+  );
+}
+
+function ProfileSectionSkeleton({
+  titleWidth,
+  descriptionWidth,
+  fields,
+  hasAddress = false,
+}: {
+  titleWidth: string;
+  descriptionWidth: string;
+  fields: number;
+  hasAddress?: boolean;
+}) {
+  return (
+    <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <SkeletonBlock className={`h-5 ${titleWidth}`} />
+          <SkeletonBlock className={`mt-2 h-4 max-w-full ${descriptionWidth}`} />
+        </div>
+        <SkeletonBlock className="h-5 w-5" />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {Array.from({ length: fields }).map((_, index) => (
+          <div key={index}>
+            <SkeletonBlock className="h-3 w-24" />
+            <SkeletonBlock className="mt-2 h-6 w-full" />
+          </div>
+        ))}
+      </div>
+
+      {hasAddress ? (
+        <div className="mt-4">
+          <SkeletonBlock className="h-3 w-28" />
+          <SkeletonBlock className="mt-2 h-16 w-full" />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function InvoicesSkeleton() {
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full border-separate border-spacing-0">
+        <thead>
+          <tr className="bg-[#F4FAF6] text-left">
+            {Array.from({ length: 10 }).map((_, index) => (
+              <th key={index} className="px-4 py-4">
+                <SkeletonBlock className="h-4 w-24" />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: 5 }).map((_, rowIndex) => (
+            <tr key={rowIndex} className="border-b border-gray-100">
+              {Array.from({ length: 10 }).map((_, columnIndex) => (
+                <td key={columnIndex} className="px-4 py-4">
+                  <SkeletonBlock
+                    className={`h-4 ${
+                      columnIndex === 9
+                        ? "w-8"
+                        : columnIndex % 3 === 0
+                          ? "w-28"
+                          : columnIndex % 3 === 1
+                            ? "w-20"
+                            : "w-24"
+                    }`}
+                  />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

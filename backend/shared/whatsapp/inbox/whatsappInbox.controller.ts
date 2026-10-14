@@ -379,6 +379,7 @@ export async function patchConversation(req: AuthedRequest, res: Response) {
     }
 
     if (req.body?.inboxStatus) patch.inboxStatus = req.body.inboxStatus;
+    if (patch.inboxStatus === "resolved") patch.botPaused = false;
     if (typeof req.body?.profileName === "string") {
       patch.profileName = req.body.profileName;
     }

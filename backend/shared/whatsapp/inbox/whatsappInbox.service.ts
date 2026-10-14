@@ -700,7 +700,7 @@ async function handOffToAgent(waId: string) {
     update.assignedAgentRole = agent.roleLabel;
   }
   await WhatsAppConversation.updateOne({ waId }, { $set: update });
-  const text = "Thank you. Our team will reply in this chat. The assistant will stay quiet now.";
+  const text = "Thank you for contacting us. Our team will review your request and reply in this chat.";
   await sendInboxTextMessage(waId, text, {
     source: "agent_handoff",
     sessionTextOnly: true,

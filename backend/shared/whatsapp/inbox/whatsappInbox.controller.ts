@@ -17,8 +17,11 @@ import { WhatsAppConversation } from "./whatsappInbox.model";
 import { whatsappInboxBus } from "./whatsappInbox.events";
 import {
   canAssignInboxAgent,
+  canControlInboxAssistant,
   canViewAllInboxConversations,
+  isInboxBranchLead,
   listInboxAssignableRoles,
+  listReportingDescendantIds,
   resolveInboxAssignee,
   searchInboxAssignableAgents,
 } from "./whatsappInbox.assign";
@@ -49,14 +52,35 @@ async function assertCanAccessConversation(
   if (!conversation) {
     return { ok: false as const, status: 404, message: "Conversation not found" };
   }
-  if (String(conversation.assignedAgentId || "") !== actorId) {
+  const assignedId = String(conversation.assignedAgentId || "");
+  if (assignedId === actorId) return { ok: true as const };
+  if (
+    isInboxBranchLead(req.user?.roleName) &&
+    assignedId &&
+    (await listReportingDescendantIds(actorId)).includes(assignedId)
+  ) {
+    return { ok: true as const };
+  }
+  return {
+    ok: false as const,
+    status: 403,
+    message: "This chat is not assigned to you.",
+  };
+}
+
+async function assertCanControlAssistant(req: AuthedRequest, waIdRaw: string) {
+  if (!canControlInboxAssistant(req.user?.roleName)) {
     return {
       ok: false as const,
       status: 403,
-      message: "This chat is not assigned to you.",
+      message:
+        "Only the customer-care hierarchy can change the assistant for this chat.",
     };
   }
-  return { ok: true as const };
+  if (canViewAllInboxConversations(req.user?.roleName)) {
+    return { ok: true as const };
+  }
+  return assertCanAccessConversation(req, waIdRaw);
 }
 
 export async function handleInboxWebhook(req: Request, res: Response) {
@@ -76,11 +100,19 @@ export async function getConversations(req: AuthedRequest, res: Response) {
     const actorId = actorUserId(req);
     const seesAll = canViewAllInboxConversations(req.user?.roleName);
 
+    const teamIds =
+      !seesAll && actorId && isInboxBranchLead(req.user?.roleName)
+        ? [actorId, ...(await listReportingDescendantIds(actorId))]
+        : [];
     const conversations = await listConversations({
       q: String(req.query.q || ""),
       limit: Number(req.query.limit) || 50,
       includeCampaignLogs,
-      ...(seesAll || !actorId ? {} : { onlyAssignedTo: actorId }),
+      ...(seesAll || !actorId
+        ? {}
+        : teamIds.length
+          ? { assignedAgentIds: teamIds }
+          : { onlyAssignedTo: actorId }),
     });
     return res.json({
       success: true,
@@ -332,7 +364,19 @@ export async function patchConversation(req: AuthedRequest, res: Response) {
       assignedAgentName?: string;
       assignedAgentRole?: string;
       profileName?: string;
+      botPaused?: boolean;
     } = {};
+
+    if (typeof req.body?.botPaused === "boolean") {
+      const access = await assertCanControlAssistant(req, waId);
+      if (!access.ok) {
+        return res.status(access.status).json({
+          success: false,
+          message: access.message,
+        });
+      }
+      patch.botPaused = req.body.botPaused;
+    }
 
     if (req.body?.inboxStatus) patch.inboxStatus = req.body.inboxStatus;
     if (typeof req.body?.profileName === "string") {

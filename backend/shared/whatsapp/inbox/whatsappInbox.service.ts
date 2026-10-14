@@ -1082,6 +1082,8 @@ export async function listConversations(params?: {
   assignedAgentId?: string;
   /** Staff mode: only chats assigned to them (ignore unassigned) */
   onlyAssignedTo?: string;
+  /** Chats assigned to any of these staff ids (a lead and their reports). */
+  assignedAgentIds?: string[];
 }) {
   const limit = Math.min(Math.max(Number(params?.limit) || 50, 1), 200);
   const q = String(params?.q || "").trim();
@@ -1094,7 +1096,12 @@ export async function listConversations(params?: {
 
   const onlyAssignedTo = String(params?.onlyAssignedTo || "").trim();
   const assignedAgentId = String(params?.assignedAgentId || "").trim();
-  if (onlyAssignedTo) {
+  const assignedAgentIds = (params?.assignedAgentIds || [])
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  if (assignedAgentIds.length) {
+    filter.assignedAgentId = { $in: assignedAgentIds };
+  } else if (onlyAssignedTo) {
     filter.assignedAgentId = onlyAssignedTo;
   } else if (assignedAgentId) {
     filter.assignedAgentId = assignedAgentId;
@@ -2031,6 +2038,7 @@ export async function updateConversationMeta(
     assignedAgentName?: string;
     assignedAgentRole?: string;
     profileName?: string;
+    botPaused?: boolean;
   },
 ) {
   const waId = normalizeWaId(waIdRaw);
@@ -2049,6 +2057,9 @@ export async function updateConversationMeta(
   }
   if (typeof patch.profileName === "string") {
     $set.profileName = patch.profileName;
+  }
+  if (typeof patch.botPaused === "boolean") {
+    $set.botPaused = patch.botPaused;
   }
   if (!Object.keys($set).length) {
     throw new Error("No updates provided");

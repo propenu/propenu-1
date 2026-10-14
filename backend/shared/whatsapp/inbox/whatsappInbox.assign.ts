@@ -1,5 +1,6 @@
 import User from "../../../services/user-service/src/models/userModel";
 import Role from "../../../services/user-service/src/models/roleModel";
+import { filterUsersInReportingTree } from "../../../services/user-service/src/utils/reportingTree";
 
 export const normalizeInboxRole = (value = "") =>
   String(value || "")
@@ -132,8 +133,47 @@ export const formatInboxRoleLabel = (roleName?: string, label?: string) => {
     .join(" ");
 };
 
+/** Customer-care chain that may turn the assistant on or off for a chat. */
+export const INBOX_ASSISTANT_CONTROL_ROLES = new Set([
+  ...INBOX_ASSIGNER_ROLES,
+  "customer_care",
+  "customer_care_executive",
+  "customer_care_executives",
+  "relationship_manager",
+  "relationship_managers",
+  "customer_support_team_lead",
+  "customer_support_team_leads",
+  "team_lead",
+  "team_leads",
+]);
+
+/** Leads who cover their own chats and the people who report to them. */
+export const INBOX_BRANCH_LEAD_ROLES = new Set([
+  "customer_support_team_lead",
+  "customer_support_team_leads",
+  "team_lead",
+  "team_leads",
+  "relationship_manager",
+  "relationship_managers",
+]);
+
 export const canAssignInboxAgent = (roleName?: string) =>
   INBOX_ASSIGNER_ROLES.has(normalizeInboxRole(roleName));
+
+export const canControlInboxAssistant = (roleName?: string) =>
+  INBOX_ASSISTANT_CONTROL_ROLES.has(normalizeInboxRole(roleName));
+
+export const isInboxBranchLead = (roleName?: string) =>
+  INBOX_BRANCH_LEAD_ROLES.has(normalizeInboxRole(roleName));
+
+export async function listReportingDescendantIds(actorId: string) {
+  const actor = String(actorId || "").trim();
+  if (!actor) return [];
+  const users = await User.find({ isActive: { $ne: false } })
+    .select("_id managerId reportsTo")
+    .lean();
+  return filterUsersInReportingTree(users, actor).map((user) => String(user._id));
+}
 
 /** Heads see full inbox; other staff only see chats assigned to them. */
 export const canViewAllInboxConversations = (roleName?: string) =>

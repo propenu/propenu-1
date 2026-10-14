@@ -95,7 +95,7 @@ export async function handleInboxWebhook(req: Request, res: Response) {
 
 export async function getConversations(req: AuthedRequest, res: Response) {
   try {
-    const raw = String(req.query.includeCampaignLogs ?? "1").toLowerCase();
+    const raw = String(req.query.includeCampaignLogs ?? "0").toLowerCase();
     const includeCampaignLogs = !(raw === "0" || raw === "false");
     const actorId = actorUserId(req);
     const seesAll = canViewAllInboxConversations(req.user?.roleName);

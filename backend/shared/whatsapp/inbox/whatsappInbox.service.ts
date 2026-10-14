@@ -1336,7 +1336,11 @@ export async function getConversationMessages(
   }
 
   const limit = Math.min(Math.max(Number(params?.limit) || 100, 1), 300);
-  const query: Record<string, unknown> = { conversationId: conversation._id };
+  const query: Record<string, unknown> = {
+    conversationId: conversation._id,
+    wamid: { $not: /^log:/ },
+    "raw.fromLog": { $ne: true },
+  };
   if (params?.before) {
     query.createdAt = { $lt: new Date(params.before) };
   }

@@ -445,14 +445,14 @@ async function findUserByWhatsAppPhone(waId: string) {
         { phone: { $regex: `${last10}$` } },
       ],
     },
-    { projection: { phoneVerified: 1, name: 1 } },
+    { projection: { phoneVerified: 1, name: 1, city: 1, state: 1 } },
   );
 }
 
 async function findWhatsAppAccount(waId: string) {
   if (mongoose.connection.readyState !== 1) {
     console.error("WhatsApp welcome skipped the account lookup: database is not connected");
-    return { isNew: false, name: "" };
+    return { isNew: false, name: "", city: "", state: "" };
   }
   const user = await findUserByWhatsAppPhone(waId);
   const isNew = user?.phoneVerified !== true;
@@ -461,7 +461,62 @@ async function findWhatsAppAccount(waId: string) {
     const conversation = await WhatsAppConversation.findOne({ waId }).select("profileName").lean();
     name = String(conversation?.profileName || "").trim();
   }
-  return { isNew, name };
+  return {
+    isNew,
+    name,
+    city: String(user?.city || "").trim(),
+    state: String(user?.state || "").trim(),
+  };
+}
+
+function samePlaceName(left: string, right: string) {
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+async function popularHomeCities() {
+  const rows = await mongoose.connection.collection("locations").find({
+    isHome: true,
+    category: { $regex: /^popular$/i },
+  }).project({ city: 1, state: 1 }).sort({ city: 1 }).toArray();
+  return rows
+    .map((row) => ({
+      city: String(row.city || "").trim(),
+      state: String(row.state || "").trim(),
+    }))
+    .filter((row) => row.city);
+}
+
+async function cityOptionsForAccount(account: { isNew: boolean; city: string; state: string }) {
+  const popular = await popularHomeCities();
+  if (!popular.length) return ["Hyderabad", "Bangalore", "Mumbai", "Pune"];
+  if (account.isNew || !account.city) return popular.slice(0, 5).map((row) => row.city);
+
+  const state = account.state || popular.find((row) => samePlaceName(row.city, account.city))?.state || "";
+  const inArea = state ? popular.filter((row) => samePlaceName(row.state, state)) : [];
+  const ordered: string[] = [];
+  const push = (city: string) => {
+    if (city && !ordered.some((item) => samePlaceName(item, city))) ordered.push(city);
+  };
+  push(account.city);
+  inArea.forEach((row) => push(row.city));
+  popular.forEach((row) => {
+    if (ordered.length < 5) push(row.city);
+  });
+  return ordered.slice(0, 5);
+}
+
+async function cityChoiceFromMessage(message: string) {
+  const text = String(message || "").trim();
+  if (!text || text.length > 40) return null;
+  const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const row = await mongoose.connection.collection("locations").findOne({
+    city: { $regex: new RegExp(`^${escaped}$`, "i") },
+  });
+  if (!row?.city) return null;
+  return {
+    city: String(row.city).trim(),
+    state: String(row.state || "").trim(),
+  };
 }
 
 const NEW_USER_WELCOME = `👋 Welcome aboard!
@@ -543,7 +598,7 @@ const CHAT_OPENING_OPTIONS = [
 ];
 
 const CONTACT_AGENT_ID = "contact_agent";
-const CONTACT_AGENT_LABEL = "Please contact agent";
+const CONTACT_AGENT_LABEL = "Contact our team";
 const replyInFlight = new Set<string>();
 
 function isContactAgentChoice(text: string) {
@@ -554,6 +609,7 @@ function isContactAgentChoice(text: string) {
     .replace(/\s+/g, " ");
   return (
     normalized === CONTACT_AGENT_ID ||
+    normalized === "contact our team" ||
     normalized === "please contact agent" ||
     normalized === "contact agent" ||
     normalized === "contact our agent" ||
@@ -644,9 +700,7 @@ async function handOffToAgent(waId: string) {
     update.assignedAgentRole = agent.roleLabel;
   }
   await WhatsAppConversation.updateOne({ waId }, { $set: update });
-  const text = agent
-    ? `Thank you. ${agent.name} from our team will reply in this chat. The assistant will stay quiet now.`
-    : "Thank you. A Propenu agent will reply in this chat. The assistant will stay quiet now.";
+  const text = "Thank you. Our team will reply in this chat. The assistant will stay quiet now.";
   await sendInboxTextMessage(waId, text, {
     source: "agent_handoff",
     sessionTextOnly: true,
@@ -654,14 +708,14 @@ async function handOffToAgent(waId: string) {
   whatsappInboxBus.publish({ type: "conversation", waId });
 }
 
-async function sendContactAgentButton(waId: string) {
-  const body = "If you want help from our team, please contact an agent.";
-  if (await sentSameBodyRecently(waId, body)) return;
+async function sendContactAgentButton(waId: string, body?: string) {
+  const text = String(body || "If you want help from our team, contact our team.").trim();
+  if (await sentSameBodyRecently(waId, text)) return;
   const payload = {
     type: "interactive",
     interactive: {
       type: "button",
-      body: { text: body },
+      body: { text: text.slice(0, 1024) },
       action: {
         buttons: [
           {
@@ -673,10 +727,10 @@ async function sendContactAgentButton(waId: string) {
     },
   };
   try {
-    await sendInboxSessionPayload(waId, body, payload, "contact_agent_prompt");
+    await sendInboxSessionPayload(waId, text, payload, "contact_agent_prompt");
   } catch (err) {
     console.error("WhatsApp contact-agent button failed, sending session text:", err);
-    await sendInboxTextMessage(waId, `${body}\n\nReply: ${CONTACT_AGENT_LABEL}`, {
+    await sendInboxTextMessage(waId, `${text}\n\nReply: ${CONTACT_AGENT_LABEL}`, {
       source: "contact_agent_prompt",
       sessionTextOnly: true,
     });
@@ -722,9 +776,13 @@ async function sendWhatsAppOptionList(waId: string, body: string, options: strin
 
 async function askPropertyChatbot(waId: string, message: string) {
   const base = String(process.env.AI_SERVICE_URL || "http://127.0.0.1:4006").replace(/\/$/, "");
+  const chosenCity = await cityChoiceFromMessage(message);
+  const context: Record<string, string> = {};
+  if (chosenCity?.city) context.city = chosenCity.city;
+  if (chosenCity?.state) context.state = chosenCity.state;
   const response = await axios.post(
     `${base}/api/chatbot`,
-    { message },
+    { message, ...(Object.keys(context).length ? { context } : {}) },
     {
       headers: {
         "Content-Type": "application/json",
@@ -798,7 +856,10 @@ async function sendChatbotReply(waId: string, text: string) {
   const account = await findWhatsAppAccount(waId);
   const reply = await askPropertyChatbot(waId, text);
   const question = reply.question;
-  const options = withChatOptions(question, reply.options, account.isNew);
+  const questionOptions = /which city are you searching/i.test(question)
+    ? await cityOptionsForAccount(account)
+    : reply.options;
+  const options = withChatOptions(question, questionOptions, account.isNew);
   if (question && options.length) {
     const body = /what would you like to do/i.test(question)
       ? account.isNew
@@ -808,16 +869,19 @@ async function sendChatbotReply(waId: string, text: string) {
     await sendWhatsAppOptionList(waId, body, options, "chatbot_question");
     return;
   }
-  const body = propertyReplyText(reply.message, reply.properties);
-  if (body && !(await sentSameBodyRecently(waId, body))) {
-    await sendInboxTextMessage(waId, body, {
+  const propertyBody = propertyReplyText(reply.message, reply.properties);
+  if (reply.properties.length) {
+    const combined = [propertyBody, "If you want help from our team, contact our team."]
+      .filter(Boolean)
+      .join("\n\n");
+    await sendContactAgentButton(waId, combined);
+    return;
+  }
+  if (propertyBody && !(await sentSameBodyRecently(waId, propertyBody))) {
+    await sendInboxTextMessage(waId, propertyBody, {
       source: "chatbot_reply",
       sessionTextOnly: true,
     });
-  }
-  if (reply.properties.length) {
-    await sendContactAgentButton(waId);
-    return;
   }
   if (options.length) {
     await sendWhatsAppOptionList(waId, "Choose one", options, "chatbot_suggestions");

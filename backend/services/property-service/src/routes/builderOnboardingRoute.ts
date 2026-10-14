@@ -72,7 +72,13 @@ router.post(
 
 router.post(
   "/:id/builder/return-to-draft",
-  ...staffAuth,
+  authMiddleware,
+  requirePermission("project:create", [
+    ...BUILDER_ONBOARDING_STAFF_ROLES,
+    "customer_support_head",
+    "marketing_head",
+    "regional_manager",
+  ]),
   returnActiveProjectToDraft,
 );
 

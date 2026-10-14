@@ -1985,14 +1985,19 @@ export const BuilderOnboardingService = {
     const role = String(staff?.roleName || "")
       .trim()
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "_");
-    if (
-      role !== "super_admin" &&
-      role !== "admin" &&
-      role !== "business_development_head"
-    ) {
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+    const canMoveToDraft = new Set([
+      "super_admin",
+      "admin",
+      "business_development_head",
+      "customer_support_head",
+      "marketing_head",
+      "regional_manager",
+    ]);
+    if (!canMoveToDraft.has(role)) {
       const err: any = new Error(
-        "Only Super Admin, Admin, or Business Development Head can move an active project back to draft",
+        "Only Super Admin, a hierarchy head (BDH, CSH, Marketing Head), or Regional Manager can move an active project back to draft",
       );
       err.statusCode = 403;
       throw err;

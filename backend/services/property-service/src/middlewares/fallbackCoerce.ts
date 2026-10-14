@@ -5,6 +5,7 @@ export interface FallbackCoerceConfig {
   numberKeys?: string[];   // keys to coerce to numbers
   booleanKeys?: string[];  // keys to coerce to booleans ("true"/"false")
   trimKeys?: string[];     // keys to trim whitespace from strings
+  preserveEmptyKeys?: string[]; // keep "" so a cleared field is actually saved
 }
 
 /**
@@ -15,6 +16,7 @@ export function createFallbackCoerce(config: FallbackCoerceConfig = {}) {
   const numberSet = new Set(config.numberKeys ?? []);
   const booleanSet = new Set(config.booleanKeys ?? []);
   const trimSet = new Set(config.trimKeys ?? []);
+  const preserveEmptySet = new Set(config.preserveEmptyKeys ?? []);
 
   return function fallbackCoerce(req: Request, _res: Response, next: NextFunction) {
     if (!req.body) return next();
@@ -48,9 +50,10 @@ export function createFallbackCoerce(config: FallbackCoerceConfig = {}) {
       }
     }
 
-    // Convert empty string to undefined for all keys (optional but helpful)
+    // Convert empty string to undefined for all keys (optional but helpful).
+    // Listed keys stay "" so clearing launch/possession actually removes the saved value.
     for (const key of Object.keys(req.body)) {
-      if (req.body[key] === "") {
+      if (req.body[key] === "" && !preserveEmptySet.has(key)) {
         req.body[key] = undefined;
       }
     }
@@ -67,6 +70,7 @@ export const fallbackCoerceDefault = createFallbackCoerce({
   numberKeys: ["projectArea", "totalTowers", "totalUnits", "availableUnits", "priceFrom", "priceTo"],
   booleanKeys: ["isFeatured"],
   trimKeys: ["title", "slug"],
+  preserveEmptyKeys: ["launchDate", "possessionDate"],
 });
 
 export default fallbackCoerceDefault;

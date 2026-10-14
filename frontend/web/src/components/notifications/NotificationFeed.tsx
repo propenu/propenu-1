@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FiBell, FiFilter, FiSearch } from "react-icons/fi";
 import { toast } from "sonner";
@@ -155,6 +155,7 @@ const notificationSkeletonItems = Array.from({ length: 6 });
 const summarySkeletonItems = Array.from({ length: 5 });
 const filterSkeletonItems = Array.from({ length: 6 });
 const dateFilterSkeletonItems = Array.from({ length: 4 });
+const PAGE_SIZE = 10;
 
 function SkeletonBlock({ className }: { className: string }) {
   return (
@@ -346,9 +347,6 @@ const isLifecycleNotification = (type: NotificationType) =>
 const isPaymentNotification = (type: NotificationType) =>
   PAYMENT_NOTIFICATION_TYPES.includes(type);
 
-const shouldShowContactDetails = (type: NotificationType) =>
-  type === "contact_requested" || type === "brochure_downloaded";
-
 const getNotificationAccentClasses = (type: NotificationType) => {
   switch (type) {
     case "search_match":
@@ -489,12 +487,12 @@ const NotificationFeed = ({
   const [activeFilter, setActiveFilter] = useState<FilterType | "tickets">("all");
   const [activeDateFilter, setActiveDateFilter] = useState<DateRangeFilter>("all");
   const [searchValue, setSearchValue] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(
     "unsupported",
   );
   const [isPushEnabling, setIsPushEnabling] = useState(false);
-  const pageSize = 25;
 
   useEffect(() => {
     if (typeof window === "undefined" || !("Notification" in window)) {
@@ -541,7 +539,6 @@ const NotificationFeed = ({
 
     return sortedNotifications.filter((item) => {
       const userName = item.user?.name || "";
-      const userPhone = item.user?.phone || "";
       const userCode = getVisibleContactValue(item.user?.userCode, ["no code"]);
       const projectTitle = item.project?.title || "";
       const message = item.message || "";
@@ -559,7 +556,6 @@ const NotificationFeed = ({
       const matchesSearch =
         !query ||
         userName.toLowerCase().includes(query) ||
-        userPhone.toLowerCase().includes(query) ||
         userCode.toLowerCase().includes(query) ||
         projectTitle.toLowerCase().includes(query) ||
         message.toLowerCase().includes(query);
@@ -568,22 +564,43 @@ const NotificationFeed = ({
     });
   }, [activeDateFilter, activeFilter, searchValue, sortedNotifications]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredNotifications.length / pageSize));
-
-  const paginatedNotifications = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return filteredNotifications.slice(startIndex, startIndex + pageSize);
-  }, [currentPage, filteredNotifications]);
-
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(1);
-    }
-  }, [currentPage, totalPages]);
+  const visibleItems = useMemo(
+    () => filteredNotifications.slice(0, visibleCount),
+    [filteredNotifications, visibleCount],
+  );
+  const hasMore = visibleCount < filteredNotifications.length;
 
   useEffect(() => {
-    setCurrentPage(1);
+    setVisibleCount(PAGE_SIZE);
   }, [activeFilter, activeDateFilter, searchValue]);
+
+  useEffect(() => {
+    if (!hasMore || typeof IntersectionObserver === "undefined") {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisibleCount((count) =>
+            Math.min(count + PAGE_SIZE, filteredNotifications.length),
+          );
+        }
+      },
+      { rootMargin: "160px 0px" },
+    );
+
+    const loadMoreElement = loadMoreRef.current;
+    if (loadMoreElement) {
+      observer.observe(loadMoreElement);
+    }
+
+    return () => observer.disconnect();
+  }, [filteredNotifications.length, hasMore]);
+
+  const loadMoreNotifications = () => {
+    setVisibleCount((count) => Math.min(count + PAGE_SIZE, filteredNotifications.length));
+  };
 
   const openNotification = (item: NotificationItem) => {
     const href = getNotificationHref(item);
@@ -820,7 +837,7 @@ const NotificationFeed = ({
                 <input
                   value={searchValue}
                   onChange={(event) => setSearchValue(event.target.value)}
-                  placeholder="Search user, phone, code, property..."
+                  placeholder="Search user, code, property..."
                   className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-700 outline-none transition focus:border-[#26ad5f] sm:rounded-xl sm:py-2.5 sm:pl-10 sm:pr-4"
                 />
               </div>
@@ -828,7 +845,7 @@ const NotificationFeed = ({
               <div className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-center text-xs text-gray-500 sm:justify-start sm:rounded-xl sm:px-4 sm:py-2.5 sm:text-sm">
                 <FiFilter className="h-4 w-4" />
                 <span>
-                  {filteredNotifications.length} shown - Page {currentPage} of {totalPages}
+                  {visibleItems.length} shown - {filteredNotifications.length} total
                 </span>
               </div>
             </div>
@@ -836,10 +853,8 @@ const NotificationFeed = ({
         </div>
 
         <div className="divide-y divide-gray-100">
-          {paginatedNotifications.map((item, index) => {
+          {visibleItems.map((item, index) => {
             const href = getNotificationHref(item);
-            const showContactDetails = shouldShowContactDetails(item.type);
-            const userEmail = getVisibleContactValue(item.user?.email, ["no email"]);
             const userCode = getVisibleContactValue(item.user?.userCode, ["no code"]);
 
             return (
@@ -875,15 +890,7 @@ const NotificationFeed = ({
                       {item.project?.title || "Untitled Project"}
                     </span>
                     <span>{item.user?.name || "You"}</span>
-                    {showContactDetails && userEmail ? (
-                      <span className="min-w-0 truncate">
-                        {userEmail}
-                      </span>
-                    ) : null}
-                    {showContactDetails && item.user?.phone ? (
-                      <span>{item.user.phone}</span>
-                    ) : null}
-                    {showContactDetails && userCode ? (
+                    {userCode ? (
                       <span>{userCode}</span>
                     ) : null}
                   </div>
@@ -905,47 +912,36 @@ const NotificationFeed = ({
         {filteredNotifications.length > 0 ? (
           <div className="flex flex-col gap-3 border-t border-gray-100 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
             <p className="text-xs text-gray-500 sm:text-sm">
-              Showing {(currentPage - 1) * pageSize + 1} to{" "}
-              {Math.min(currentPage * pageSize, filteredNotifications.length)} of{" "}
+              Showing 1 to{" "}
+              {Math.min(visibleCount, filteredNotifications.length)} of{" "}
               {filteredNotifications.length} notifications
             </p>
 
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              <button
-                type="button"
-                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className="rounded-md border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-[#F6FBF8] disabled:cursor-not-allowed disabled:opacity-50 sm:rounded-lg sm:px-3 sm:py-2 sm:text-sm"
-              >
-                Previous
-              </button>
-
-              {Array.from({ length: totalPages }, (_, index) => index + 1)
-                .slice(Math.max(0, currentPage - 3), Math.max(0, currentPage - 3) + 5)
-                .map((page) => (
+            <div ref={loadMoreRef} className="flex flex-wrap items-center gap-2">
+              {hasMore ? (
+                <>
+                  <span className="text-xs text-gray-500 sm:text-sm">
+                    Loading more notifications...
+                  </span>
                   <button
-                    key={page}
                     type="button"
-                    onClick={() => setCurrentPage(page)}
-                    className={`min-w-8 rounded-md px-2.5 py-1.5 text-xs font-medium transition sm:min-w-10 sm:rounded-lg sm:px-3 sm:py-2 sm:text-sm ${
-                      currentPage === page
-                        ? "bg-[#26ad5f] text-white"
-                        : "border border-gray-200 text-gray-600 hover:bg-[#F6FBF8]"
-                    }`}
+                    onClick={loadMoreNotifications}
+                    className="rounded-md border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-[#F6FBF8] sm:rounded-lg sm:px-3 sm:py-2 sm:text-sm"
                   >
-                    {page}
+                    Load more
                   </button>
-                ))}
-
-              <button
-                type="button"
-                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className="rounded-md border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-[#F6FBF8] disabled:cursor-not-allowed disabled:opacity-50 sm:rounded-lg sm:px-3 sm:py-2 sm:text-sm"
-              >
-                Next
-              </button>
+                </>
+              ) : (
+                <span className="text-xs text-gray-500 sm:text-sm">
+                  All notifications loaded
+                </span>
+              )}
             </div>
+          </div>
+        ) : null}
+        {!filteredNotifications.length ? (
+          <div className="border-t border-gray-100 px-3 py-8 text-center text-sm text-gray-500 sm:px-5">
+            No notifications match your filters.
           </div>
         ) : null}
       </div>

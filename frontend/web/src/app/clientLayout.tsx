@@ -424,12 +424,12 @@ function ClientProvidersContent({
                 : "fixed bottom-[164px] right-4 z-[61] sm:bottom-[100px] sm:right-6 lg:right-8"
             }
           >
-            <HomeMateChatbot
+            {/* <HomeMateChatbot
               isOpen={isChatOpen}
               onOpen={() => setIsChatOpen(true)}
               onClose={() => setIsChatOpen(false)}
               account={user?.user || null}
-            />
+            /> */}
           </div>
         )}
         <Toaster

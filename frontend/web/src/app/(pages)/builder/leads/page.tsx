@@ -1301,7 +1301,7 @@ export default function BuilderLeadsPage(): JSX.Element {
               onChange={handleImportCSV}
             />
 
-            <button
+            {/* <button
               onClick={handleImportClick}
               disabled={importLeadsMutation.isPending}
               aria-describedby={
@@ -1315,7 +1315,7 @@ export default function BuilderLeadsPage(): JSX.Element {
             >
               {importLeadsMutation.isPending ? "Importing" : "Import"}
               <FiUploadCloud className="w-4 h-4" />
-            </button>
+            </button> */}
           </div>
 
           <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">

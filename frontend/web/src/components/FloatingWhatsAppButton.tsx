@@ -3,10 +3,16 @@
 import { useEffect, useState } from "react";
 
 const SUPPORT_PHONE = "+919182334233";
+const DEFAULT_PREFILL_MESSAGE = "Hello Propenu, I would like to inquire about property listings and services.";
 const MOBILE_MENU_STATE_EVENT = "propenu:mobile-menu-state";
 
+interface FloatingWhatsAppButtonProps {
+  message?: string;
+}
 
-export default function FloatingWhatsAppButton() {
+export default function FloatingWhatsAppButton({
+  message = DEFAULT_PREFILL_MESSAGE,
+}: FloatingWhatsAppButtonProps = {}) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const phone = SUPPORT_PHONE.replace(/\D/g, "");
 
@@ -25,9 +31,13 @@ export default function FloatingWhatsAppButton() {
 
   if (isMobileMenuOpen) return null;
 
+  const whatsappUrl = `https://wa.me/${phone}${
+    message ? `?text=${encodeURIComponent(message)}` : ""
+  }`;
+
   return (
     <a
-      href={`https://wa.me/${phone}?`}
+      href={whatsappUrl}
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Chat with Propenu on WhatsApp"

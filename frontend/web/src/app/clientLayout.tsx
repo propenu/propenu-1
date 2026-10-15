@@ -23,6 +23,8 @@ const HIDE_LAYOUT_ROUTES = [
   "/postproperty",
   "/builder/onboard",
   "/builder/invite",
+  "/login",
+  "/register",
 ];
 
 const NOTIFICATION_QUERY_KEYS = new Set([
@@ -415,7 +417,9 @@ function ClientProvidersContent({
             isDialogOpen={hasOpenDialog}
           />
         )}
-        <FloatingWhatsAppButton />
+        {!(pathname?.startsWith("/login") || pathname?.startsWith("/register")) && (
+          <FloatingWhatsAppButton />
+        )}
         {!isMobileMenuOpen && (
           <div
             className={
@@ -439,7 +443,11 @@ function ClientProvidersContent({
           duration={3000}
         />
         <div className="hidden lg:block">
-          {!hideLayout ? <Footer /> : <FooterLegalBar />}
+          {pathname?.startsWith("/login") || pathname?.startsWith("/register") ? null : !hideLayout ? (
+            <Footer />
+          ) : (
+            <FooterLegalBar />
+          )}
         </div>
         {process.env.NODE_ENV === "development" && (
           <ReactQueryDevtools initialIsOpen={false} />

@@ -13,11 +13,6 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
-        source: "/register",
-        destination: "/?auth=register&redirect=/",
-        permanent: false,
-      },
-      {
         source: "/search/filter",
         destination: "/properties?focus=filters",
         permanent: false,
@@ -106,7 +101,7 @@ const nextConfig: NextConfig = {
         pathname: "/**",
       },
     ],
-      unoptimized: true,
+    unoptimized: true,
   },
 };
 

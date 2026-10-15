@@ -336,17 +336,17 @@ function RegisterFormContent() {
 
   return (
     <div className="flex min-h-screen w-full bg-white font-['Poppins',sans-serif]">
-      {/* Left 70% Column: Hero Showcase */}
+      {/* Left 50% Column: Hero Showcase */}
       <AuthHeroSection />
 
-      {/* Right 30% Column: Register Screen */}
-      <div className="flex w-full lg:w-[30%] lg:flex-[0_0_30%] min-h-screen flex-col justify-between p-6 sm:p-8 xl:p-10 bg-white shadow-2xl shadow-gray-200/50 z-20 overflow-y-auto">
+      {/* Right 50% Column: Register Screen */}
+      <div className="flex w-full lg:w-[50%] lg:flex-[0_0_50%] min-h-screen flex-col justify-between p-6 sm:p-8 xl:p-12 bg-white shadow-2xl shadow-gray-200/50 z-20 overflow-y-auto">
         <div />
 
         {/* Center Register Content */}
-        <div className="my-auto w-full max-w-[360px] mx-auto py-2">
+        <div className="my-auto w-full max-w-[420px] mx-auto py-2">
           {/* Brand Logo Centered */}
-          <div className="flex justify-center mb-5">
+          <div className="flex justify-center mb-6">
             <Link
               href="/"
               className="inline-flex items-center justify-center gap-2.5 transition-opacity hover:opacity-85"
@@ -356,10 +356,10 @@ function RegisterFormContent() {
                 <img
                   src={logoUrl}
                   alt="Propenu Logo"
-                  className="h-9 sm:h-10 max-w-[170px] object-contain"
+                  className="h-12 max-w-[170px] object-contain"
                 />
               ) : isLogoLoading ? (
-                <div className="h-9 w-28 animate-pulse rounded-md bg-gray-100" />
+                <div className="h-12 w-36 animate-pulse rounded-md bg-gray-100" />
               ) : (
                 <div className="flex items-center gap-2 text-[#27AE60]">
                   <span className="flex h-7 w-7 items-center justify-center">
@@ -395,15 +395,15 @@ function RegisterFormContent() {
           <div className="space-y-4">
             {/* Header Titles */}
             <div>
-              <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 border border-emerald-100/80">
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 border border-emerald-100/80">
                 <MdOutlineWhatsapp className="h-3.5 w-3.5 text-[#27AE60]" />
-                <span>Verified WhatsApp Sign Up</span>
+                <span>WhatsApp Secure Sign Up</span>
               </div>
 
-              <h2 className="mt-2.5 text-2xl xl:text-3xl font-bold tracking-tight text-gray-900">
+              <h2 className="mt-2 text-xl sm:text-2xl font-bold tracking-tight text-gray-900">
                 Create Account
               </h2>
-              <p className="mt-1 text-xs text-gray-500 leading-relaxed">
+              <p className="mt-1 text-xs text-gray-500 font-normal leading-normal">
                 Join verified homeowners, buyers, and developers across India.
               </p>
             </div>

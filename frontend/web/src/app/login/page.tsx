@@ -250,15 +250,15 @@ function LoginFormContent() {
 
   return (
     <div className="flex min-h-screen w-full bg-white font-['Poppins',sans-serif]">
-      {/* Left 70% Column: Hero Showcase */}
+      {/* Left 50% Column: Hero Showcase */}
       <AuthHeroSection />
 
-      {/* Right 30% Column: Login Screen */}
-      <div className="flex w-full lg:w-[30%] lg:flex-[0_0_30%] min-h-screen flex-col justify-between p-6 sm:p-8 xl:p-10 bg-white shadow-2xl shadow-gray-200/50 z-20">
+      {/* Right 50% Column: Login Screen */}
+      <div className="flex w-full lg:w-[50%] lg:flex-[0_0_50%] min-h-screen flex-col justify-between p-6 sm:p-8 xl:p-12 bg-white shadow-2xl shadow-gray-200/50 z-20">
         <div />
 
         {/* Center Auth Content */}
-        <div className="my-auto w-full max-w-[360px] mx-auto py-2">
+        <div className="my-auto w-full max-w-[420px] mx-auto py-2">
           {/* Brand Logo Centered */}
           <div className="flex justify-center mb-6">
             <Link
@@ -270,10 +270,10 @@ function LoginFormContent() {
                 <img
                   src={logoUrl}
                   alt="Propenu Logo"
-                  className="h-14 sm:h-14 max-w-[170px] object-contain"
+                  className="h-12 max-w-[170px] object-contain"
                 />
               ) : isLogoLoading ? (
-                <div className="h-16 w-40 animate-pulse rounded-md bg-gray-100" />
+                <div className="h-12 w-36 animate-pulse rounded-md bg-gray-100" />
               ) : (
                 <div className="flex items-center gap-2 text-[#27AE60]">
                   <span className="flex h-7 w-7 items-center justify-center">
@@ -309,8 +309,8 @@ function LoginFormContent() {
           <div className="space-y-4">
             {/* Header Titles */}
             <div>
-              <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 border border-emerald-100">
-                <MdOutlineWhatsapp className="h-3 w-3 text-[#27AE60]" />
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 border border-emerald-100/80">
+                <MdOutlineWhatsapp className="h-3.5 w-3.5 text-[#27AE60]" />
                 <span>WhatsApp Secure Login</span>
               </div>
 

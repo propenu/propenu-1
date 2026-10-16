@@ -2,6 +2,8 @@ import { Request, Response } from "express";
 import { AuthRequest } from "../middlewares/authMiddleware";
 import { FeaturePropertyService } from "../services/featurePropertiesServices";
 import { BuilderOnboardingService } from "../services/builderOnboardingService";
+import FeaturedProject from "../models/featurePropertiesModel";
+import { sendPendingProjectApprovalEmail } from "../utils/projectPendingApprovalEmail";
 import { ZodError } from "zod";
 import mongoose from "mongoose";
 
@@ -281,6 +283,21 @@ export const submitProjectForApproval = async (
       projectId,
       asStaff(req.user),
     );
+
+    if (data.approvalStatus === "pending" && req.user?.id) {
+      const project = await FeaturedProject.findById(projectId)
+        .select("title slug city locality approvalStatus")
+        .lean();
+      void sendPendingProjectApprovalEmail({
+        project,
+        posterId: req.user.id,
+        posterName: req.user.name,
+        posterRole: req.user.roleName,
+      }).catch((error) => {
+        console.error("Pending project approval email failed:", error);
+      });
+    }
+
     return res.status(200).json({ success: true, data });
   } catch (err: any) {
     return sendError(res, err);

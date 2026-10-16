@@ -14,6 +14,7 @@ import mongoose from "mongoose";
 import { readOwnerUserId } from "../utils/ownerUserFilter";
 import BuilderMember from "../models/builderMemberModel";
 import { projectRequiresApprovalOnCreate } from "../utils/projectApprovalPolicy";
+import { sendPendingProjectApprovalEmail } from "../utils/projectPendingApprovalEmail";
 import {
   getDeletedProject,
   listDeletedProjects,
@@ -143,6 +144,21 @@ export const createFeatureProperties = async (req: Request, res: Response) => {
       files,
       (req as AuthRequest).user,
     );
+
+    if (
+      String((created as any)?.approvalStatus || payload.approvalStatus) ===
+        "pending" &&
+      authUser?.id
+    ) {
+      void sendPendingProjectApprovalEmail({
+        project: created,
+        posterId: authUser.id,
+        posterName: authUser.name,
+        posterRole: roleName,
+      }).catch((error) => {
+        console.error("Pending project approval email failed:", error);
+      });
+    }
 
     return res.status(201).json({ data: created });
   } catch (err: any) {

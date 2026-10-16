@@ -31,7 +31,7 @@ import {
   shouldSendHighTimeSpentPush,
 } from "../services/pushNotificationService";
 import { generateToken, verifyToken } from "../utils/jwt";
-import { sendLeadImportSummaryWhatsApp, sendOtpWhatsApp } from "../utils/whatsapp";
+import { sendLeadImportSummaryWhatsApp, sendOtpWhatsApp, LeadImportAudience } from "../utils/whatsapp";
 import {
   consumeVerifiedLeadPhone,
   generateLeadOtp,
@@ -40,6 +40,15 @@ import {
   verifyLeadOtp,
 } from "../utils/leadOtp";
 import { buildLeadPropertySnapshot } from "../utils/leadPropertySnapshot";
+import {
+  archiveLeadById,
+  archiveProjectLeads,
+  listDeletedImportedLeads,
+  listDeletedLeads,
+  purgeAllDeletedLeads,
+  purgeDeletedLead,
+  resolveLeadActor,
+} from "../services/deletedLeadArchive.service";
 
 
 const DEFAULT_VISIBLE_LEAD_LIMIT = 5;
@@ -976,7 +985,38 @@ export const updateLeadStatusController = async (
 export const getLeadsController = async (req: Request, res: Response) => {
   try {
     const leads = await getLeads(req.query);
-    res.json({ success: true, data: leads });
+    const projectId = String(req.query.projectId || "");
+    if (!projectId || !Types.ObjectId.isValid(projectId)) {
+      return res.json({ success: true, data: leads });
+    }
+
+    const imported = await PublicLead.find({ projectId })
+      .sort({ createdAt: -1 })
+      .lean();
+    const seenPhones = new Set(
+      (leads as any[]).map((lead) => String(lead?.phone || "")),
+    );
+    const extra = imported.filter(
+      (lead) => !seenPhones.has(String(lead?.phone || "")),
+    );
+    const leadsWithBatch = [...extra, ...(leads as any[])].map((lead) => ({
+      ...lead,
+      importBatchId: leadImportBatchKey(lead?.importedBy) || null,
+    }));
+    const pageResult = pageLeadRows(leadsWithBatch, req.query as Record<string, unknown>);
+    if (pageResult.paged) {
+      return res.json({
+        success: true,
+        data: pageResult.rows,
+        count: pageResult.count,
+        page: pageResult.page,
+        limit: pageResult.limit,
+        pages: pageResult.pages,
+      });
+    }
+    const deletedImports = await listDeletedImportedLeads(projectId);
+    const importBatches = buildLeadImportBatches(leadsWithBatch, deletedImports);
+    res.json({ success: true, data: leadsWithBatch, importBatches });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message });
   }
@@ -1972,6 +2012,100 @@ export const trackPropertyViewDurationController = async (
 };
 
 
+const leadImportBatchKey = (importedBy: any) => {
+  const at = importedBy?.at ? new Date(importedBy.at) : null;
+  if (!at || Number.isNaN(at.getTime())) return "";
+  const person = String(importedBy.userId || importedBy.name || "unknown");
+  return `${person}|${at.toISOString()}`;
+};
+
+const buildLeadImportBatches = (liveLeads: any[], deletedLeads: any[]) => {
+  const groups = new Map<string, {
+    id: string;
+    name: string;
+    roleName: string;
+    at: string;
+    addedCount: number;
+    deletedCount: number;
+  }>();
+
+  const add = (lead: any, deleted: boolean) => {
+    if (String(lead?.source || "") !== "imported") return;
+    const id = leadImportBatchKey(lead?.importedBy);
+    if (!id) return;
+    const current = groups.get(id) || {
+      id,
+      name: String(lead.importedBy?.name || "Unknown"),
+      roleName: String(lead.importedBy?.roleName || ""),
+      at: new Date(lead.importedBy.at).toISOString(),
+      addedCount: 0,
+      deletedCount: 0,
+    };
+    current.addedCount += 1;
+    if (deleted) current.deletedCount += 1;
+    groups.set(id, current);
+  };
+
+  liveLeads.forEach((lead) => add(lead, false));
+  deletedLeads.forEach((lead) => add(lead, true));
+
+  return [...groups.values()].sort(
+    (a, b) => new Date(b.at).getTime() - new Date(a.at).getTime(),
+  );
+};
+
+const LEAD_PAGE_SIZE = 20;
+
+const pageLeadRows = (rows: any[], query: Record<string, unknown>) => {
+  const q = String(query.q || "").trim().toLowerCase();
+  const filtered = q
+    ? rows.filter((lead) =>
+        [
+          lead?.name,
+          lead?.phone,
+          lead?.email,
+          lead?.status,
+          lead?.remarks,
+          lead?.purchaseTimeline,
+          lead?.budgetRange,
+          lead?.sourceCreatedAt,
+        ]
+          .map((value) => String(value || "").toLowerCase())
+          .join(" ")
+          .includes(q),
+      )
+    : rows;
+  const requestedPage = Number(query.page);
+  const requestedLimit = Number(query.limit);
+  const shouldPage = requestedPage > 0 && requestedLimit > 0;
+  if (!shouldPage) {
+    return {
+      paged: false as const,
+      rows: filtered,
+      count: filtered.length,
+      page: 1,
+      limit: filtered.length,
+      pages: 1,
+    };
+  }
+
+  const sorted = [...filtered].sort(
+    (a, b) => new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime(),
+  );
+  const limit = Math.min(LEAD_PAGE_SIZE, Math.max(1, Math.floor(requestedLimit)));
+  const pages = Math.max(1, Math.ceil(sorted.length / limit) || 1);
+  const page = Math.min(pages, Math.max(1, Math.floor(requestedPage)));
+  const start = (page - 1) * limit;
+  return {
+    paged: true as const,
+    rows: sorted.slice(start, start + limit),
+    count: sorted.length,
+    page,
+    limit,
+    pages,
+  };
+};
+
 export const getProjectLeadsController = async (
   req: Request,
   res: Response
@@ -1995,17 +2129,37 @@ export const getProjectLeadsController = async (
     const leads = await getCombinedProjectLeads(query);
     const visibleLeadLimit = getVisibleLeadLimitForPromotion(project?.promotion);
     const maskedLeads = maskLeadsForPromotion(leads, project?.promotion);
-    const header = buildProjectLeadsHeader(maskedLeads);
-    const columns = buildProjectLeadColumns(maskedLeads);
+    const leadsWithBatch = maskedLeads.map((lead: any) => ({
+      ...lead,
+      importBatchId: leadImportBatchKey(lead?.importedBy) || null,
+    }));
+    const pageResult = pageLeadRows(leadsWithBatch, req.query as Record<string, unknown>);
+    if (pageResult.paged) {
+      return res.json({
+        success: true,
+        count: pageResult.count,
+        page: pageResult.page,
+        limit: pageResult.limit,
+        pages: pageResult.pages,
+        promotionType: project?.promotion?.type || "normal",
+        visibleLeadLimit,
+        data: pageResult.rows,
+      });
+    }
+    const deletedImports = await listDeletedImportedLeads(projectId);
+    const importBatches = buildLeadImportBatches(leadsWithBatch, deletedImports);
+    const header = buildProjectLeadsHeader(leadsWithBatch);
+    const columns = buildProjectLeadColumns(leadsWithBatch);
 
     res.json({
       success: true,
-      count: maskedLeads.length,
+      count: leadsWithBatch.length,
       promotionType: project?.promotion?.type || "normal",
       visibleLeadLimit,
       header,
       columns,
-      data: maskedLeads,
+      importBatches,
+      data: leadsWithBatch,
     });
 
   } catch (err: any) {
@@ -2052,7 +2206,92 @@ export const updateProjectLeadStatusController = async (
   }
 };
 
-export const deleteLeadController = async (req: Request, res: Response) => {
+const isSuperAdminActor = (req: AuthRequest) =>
+  String(req.user?.roleName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_") === "super_admin";
+
+export const listDeletedLeadsController = async (
+  req: AuthRequest,
+  res: Response,
+) => {
+  try {
+    if (!isSuperAdminActor(req)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only Super Admin can view deleted leads",
+      });
+    }
+
+    const page = typeof req.query.page === "string" ? Number(req.query.page) : 1;
+    const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 12;
+    const q = typeof req.query.q === "string" ? req.query.q : "";
+    const from = typeof req.query.from === "string" ? req.query.from : "";
+    const to = typeof req.query.to === "string" ? req.query.to : "";
+    const deletionType =
+      typeof req.query.deletionType === "string" ? req.query.deletionType : "";
+    const scope = typeof req.query.scope === "string" ? req.query.scope : "";
+    const result = await listDeletedLeads({ page, limit, q, from, to, deletionType, scope });
+    return res.json(result);
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to load deleted leads",
+    });
+  }
+};
+
+export const purgeDeletedLeadController = async (
+  req: AuthRequest,
+  res: Response,
+) => {
+  try {
+    if (!isSuperAdminActor(req)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only Super Admin can permanently delete archived leads",
+      });
+    }
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ success: false, message: "Missing id" });
+    }
+    const removed = await purgeDeletedLead(id);
+    if (!removed) {
+      return res.status(404).json({ success: false, message: "Deleted lead not found" });
+    }
+    return res.json({ success: true, id: removed._id });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to permanently delete the lead",
+    });
+  }
+};
+
+export const purgeAllDeletedLeadsController = async (
+  req: AuthRequest,
+  res: Response,
+) => {
+  try {
+    if (!isSuperAdminActor(req)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only Super Admin can permanently delete archived leads",
+      });
+    }
+    const result = await purgeAllDeletedLeads();
+    return res.json({ success: true, data: result });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to permanently delete archived leads",
+    });
+  }
+};
+
+export const deleteLeadController = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -2063,6 +2302,8 @@ export const deleteLeadController = async (req: Request, res: Response) => {
       });
     }
 
+    const actor = await resolveLeadActor(req);
+    await archiveLeadById(id, actor, "single");
     await deleteLeadService(id);
 
     res.json({
@@ -2085,7 +2326,7 @@ export const deleteLeadController = async (req: Request, res: Response) => {
 };
 
 export const deleteProjectLeadsController = async (
-  req: Request,
+  req: AuthRequest,
   res: Response
 ) => {
   try {
@@ -2098,6 +2339,8 @@ export const deleteProjectLeadsController = async (
       });
     }
 
+    const actor = await resolveLeadActor(req);
+    await archiveProjectLeads(projectId, actor);
     const result = await deleteProjectLeadsService(projectId);
 
     res.json({
@@ -2146,6 +2389,36 @@ export const downloadLeadsCSVController = async (
   }
 };
 
+const resolveLeadImportAudience = async (
+  ownerId: string | undefined,
+  fallback: LeadImportAudience,
+): Promise<LeadImportAudience> => {
+  if (!ownerId || !Types.ObjectId.isValid(ownerId)) return fallback;
+  const owner = await User.findById(ownerId)
+    .select("roleId")
+    .populate("roleId", "name label")
+    .lean();
+  const role = String(
+    (owner as any)?.roleId?.name || (owner as any)?.roleId?.label || "",
+  ).toLowerCase();
+  if (role.includes("builder")) return "builder";
+  if (role.includes("agent")) return "agent";
+  if (!role) return fallback;
+  return "user";
+};
+
+const PROPERTY_IMPORT_TARGETS: Record<string, { model: any; propertyType: string }> = {
+  residential: { model: Residential, propertyType: "residentials" },
+  residentials: { model: Residential, propertyType: "residentials" },
+  commercial: { model: Commercial, propertyType: "commercials" },
+  commercials: { model: Commercial, propertyType: "commercials" },
+  land: { model: LandPlot, propertyType: "landplots" },
+  landplot: { model: LandPlot, propertyType: "landplots" },
+  landplots: { model: LandPlot, propertyType: "landplots" },
+  agricultural: { model: Agricultural, propertyType: "agriculturals" },
+  agriculturals: { model: Agricultural, propertyType: "agriculturals" },
+};
+
 export const importProjectLeadsCSVController = async (
   req: AuthRequest,
   res: Response
@@ -2172,7 +2445,7 @@ export const importProjectLeadsCSVController = async (
     }
 
     const project = await FeaturedProject.findById(projectId)
-      .select("createdBy title projectName buildingName propertyCode state city locality slug heroImage gallery price priceFrom priceTo listingType promotion status")
+      .select("createdBy title projectName buildingName propertyCode state city locality slug heroImage gallery price priceFrom priceTo listingType promotion status builderOnboarding")
       .populate("createdBy", "name phone email")
       .lean();
 
@@ -2314,24 +2587,37 @@ export const importProjectLeadsCSVController = async (
       propertySnapshot: buildLeadPropertySnapshot(project, "featuredprojects"),
     }));
 
-    const importedLeads = leadsToInsert.length
-      ? await PublicLead.insertMany(leadsToInsert, { ordered: false })
+    const importer = await User.findById(userId).select("name email phone").lean();
+    const importedBy = {
+      userId,
+      name: String((importer as any)?.name || req.user?.name || ""),
+      email: String((importer as any)?.email || req.user?.email || ""),
+      phone: String((importer as any)?.phone || ""),
+      roleName: String(req.user?.roleName || ""),
+      at: new Date(),
+    };
+    const leadsWithImporter = leadsToInsert.map((row) => ({
+      ...row,
+      importedBy,
+    }));
+    const importedLeads = leadsWithImporter.length
+      ? await PublicLead.insertMany(leadsWithImporter, { ordered: false })
       : [];
-    const ownerPhone =
-      typeof project.createdBy === "object"
-        ? String((project.createdBy as any)?.phone || "")
-        : "";
-    const ownerId =
-      typeof project.createdBy === "object"
-        ? String((project.createdBy as any)?._id || "")
-        : String(project.createdBy || "");
-    const importerId = String(userId || "");
-    const importSource = String(req.body?.source || req.query?.source || "csv")
-      .trim()
-      .toLowerCase();
-    const isAutomaticImport = ["meta", "facebook", "integration", "system", "auto", "automatic"].includes(importSource);
-    const shouldNotifyOwner = importedLeads.length > 0 && (isAutomaticImport || importerId !== ownerId);
     const projectRecord = project as any;
+    const builderUser =
+      projectRecord.createdBy && typeof projectRecord.createdBy === "object"
+        ? projectRecord.createdBy
+        : null;
+    const builderSnapshot = projectRecord.builderOnboarding?.builderSnapshot || {};
+    const ownerPhone = String(
+      builderUser?.phone ||
+        builderSnapshot.phone ||
+        projectRecord.builderOnboarding?.invitePhone ||
+        "",
+    ).trim();
+    const ownerId = builderUser?._id
+      ? String(builderUser._id)
+      : String(projectRecord.createdBy || "");
     const projectTitle =
       projectRecord.title ||
       projectRecord.projectName ||
@@ -2343,12 +2629,45 @@ export const importProjectLeadsCSVController = async (
       reason: "",
     };
 
-    if (shouldNotifyOwner && ownerPhone) {
+    if (importedLeads.length && ownerId) {
+      const leadLabel =
+        importedLeads.length === 1
+          ? `${importedLeads[0].name} was added as a lead`
+          : `${importedLeads.length} leads were imported`;
+
+      notifyOwnerAndAdmins({
+        type: "contact_requested",
+        title: importedLeads.length === 1 ? "New Project Lead" : "New Project Leads",
+        body: `${leadLabel} for ${projectTitle}.`,
+        actorUserId: String(userId || ""),
+        ownerId,
+        projectId,
+        propertyType: "featuredprojects",
+        metadata: {
+          projectTitle,
+          slug: projectRecord.slug || "",
+          listingKind: "project",
+          category: "featuredproject",
+          promotionType: projectRecord.promotion?.type || "",
+          source: "imported",
+          importedCount: importedLeads.length,
+          userName: importedLeads[0]?.name || "",
+          userPhone: importedLeads[0]?.phone || "",
+          userEmail: importedLeads[0]?.email || "",
+        },
+      }).catch((err) =>
+        console.error("Error sending imported lead notification:", err),
+      );
+    }
+
+    if (importedLeads.length && ownerPhone) {
       whatsappNotification.attempted = true;
+      const audience = await resolveLeadImportAudience(ownerId, "builder");
       const whatsappResult = await sendLeadImportSummaryWhatsApp(ownerPhone, {
-        projectTitle,
+        listingTitle: projectTitle,
+        audience,
         importedCount: importedLeads.length,
-        skippedCount: rows.length - importedLeads.length,
+        skippedCount: Math.max(0, rows.length - importedLeads.length),
         leads: importedLeads.map((lead: any) => ({
           name: lead.name,
           phone: lead.phone,
@@ -2360,9 +2679,289 @@ export const importProjectLeadsCSVController = async (
         sent: Boolean(whatsappResult),
         reason: whatsappResult ? "sent" : "send_failed",
       };
-    } else if (importedLeads.length && importerId === ownerId && !isAutomaticImport) {
-      whatsappNotification.reason = "importer_is_project_owner";
-    } else if (!ownerPhone) {
+    } else if (!ownerPhone && importedLeads.length) {
+      whatsappNotification.reason = "owner_phone_missing";
+    } else if (!importedLeads.length) {
+      whatsappNotification.reason = "no_new_imported_leads";
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Leads imported successfully",
+      totalRows: rows.length,
+      imported: leadsToInsert.length,
+      skipped: rows.length - leadsToInsert.length,
+      whatsappNotification,
+      errors,
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      message: err.message || "Failed to import leads",
+    });
+  }
+};
+
+export const importPropertyLeadsCSVController = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    const { propertyType: propertyTypeParam, propertyId } = req.params;
+    const file = req.file;
+    const userId = req.user?.id;
+    const target = PROPERTY_IMPORT_TARGETS[String(propertyTypeParam || "").toLowerCase()];
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    if (!target) {
+      return res.status(400).json({ success: false, message: "Invalid property type" });
+    }
+
+    if (!propertyId || !Types.ObjectId.isValid(propertyId)) {
+      return res.status(400).json({ success: false, message: "Invalid propertyId" });
+    }
+
+    if (!file) {
+      return res.status(400).json({ success: false, message: "CSV file is required" });
+    }
+
+    const property = await target.model
+      .findById(propertyId)
+      .populate("createdBy", "name phone email")
+      .lean();
+
+    if (!property) {
+      return res.status(404).json({ success: false, message: "Property not found" });
+    }
+
+    interface CsvRow {
+      [key: string]: string;
+    }
+
+    interface NormalizedLeadRow {
+      projectId: string;
+      name: string;
+      phone: string;
+      email?: string;
+      message?: string;
+      source: "imported";
+      extraFields: Record<string, string>;
+      sourceCreatedAt?: string;
+      purchaseTimeline?: string;
+      budgetRange?: string;
+      status: string;
+    }
+
+    interface LeadImportError {
+      row: number;
+      message: string;
+    }
+
+    interface LeadPhoneRecord {
+      phone: string;
+    }
+
+    const rows = parseLeadImportRows(file);
+    const errors: LeadImportError[] = [];
+    const allowedStatuses = new Set<string>(LEAD_STATUSES);
+    const seenPhones = new Set<string>();
+
+    const normalizedRows = rows.flatMap(
+      (row: CsvRow, index: number): NormalizedLeadRow[] => {
+        const rowNumber = index + 2;
+        const normalizedRow = Object.entries(row).reduce<Record<string, string>>(
+          (result, [header, value]) => {
+            result[normalizeCsvHeader(header)] = value?.trim() ?? "";
+            return result;
+          },
+          {}
+        );
+        const name = normalizedRow.name?.trim();
+        const phone = normalizedRow.phone?.trim();
+        const email = normalizedRow.email?.trim();
+        const message = normalizedRow.message?.trim();
+        const status = normalizeLeadStatus(normalizedRow.status) || "new_lead";
+        const sourceCreatedAt = normalizedRow.sourceCreatedAt?.trim();
+        const purchaseTimeline = normalizedRow.purchaseTimeline?.trim();
+        const budgetRange = normalizedRow.budgetRange?.trim();
+
+        if (!name || name.length < 2) {
+          errors.push({ row: rowNumber, message: "Name is required" });
+          return [];
+        }
+
+        if (!phone || phone.length < 6) {
+          errors.push({ row: rowNumber, message: "Phone is required" });
+          return [];
+        }
+
+        if (!allowedStatuses.has(status)) {
+          errors.push({ row: rowNumber, message: "Invalid status" });
+          return [];
+        }
+
+        if (seenPhones.has(phone)) {
+          errors.push({ row: rowNumber, message: "Duplicate phone in CSV" });
+          return [];
+        }
+
+        seenPhones.add(phone);
+
+        return [
+          {
+            projectId: propertyId,
+            name,
+            phone,
+            email: email || "",
+            message: message || "",
+            source: "imported",
+            extraFields: row,
+            sourceCreatedAt: sourceCreatedAt || "",
+            purchaseTimeline: purchaseTimeline || "",
+            budgetRange: budgetRange || "",
+            status,
+          },
+        ];
+      }
+    );
+
+    if (!normalizedRows.length) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid leads found in CSV",
+        totalRows: rows.length,
+        imported: 0,
+        skipped: rows.length,
+        errors,
+      });
+    }
+
+    const importedPhones = normalizedRows.map((row: NormalizedLeadRow) => row.phone);
+    const [existingPublicLeads, existingPropertyLeads]: [LeadPhoneRecord[], LeadPhoneRecord[]] =
+      await Promise.all([
+        PublicLead.find({
+          projectId: propertyId,
+          phone: { $in: importedPhones },
+        })
+          .select("phone")
+          .lean(),
+        Lead.find({
+          projectId: propertyId,
+          phone: { $in: importedPhones },
+        })
+          .select("phone")
+          .lean(),
+      ]);
+
+    const existingPhones = new Set([
+      ...existingPublicLeads.map((lead) => lead.phone),
+      ...existingPropertyLeads.map((lead) => lead.phone),
+    ]);
+    const propertyRecord = property as any;
+    const ownerUser =
+      propertyRecord.createdBy && typeof propertyRecord.createdBy === "object"
+        ? propertyRecord.createdBy
+        : null;
+    const ownerId = ownerUser?._id
+      ? String(ownerUser._id)
+      : String(propertyRecord.createdBy || "");
+    const leadsToInsert = normalizedRows.filter((row: NormalizedLeadRow) => {
+      if (!existingPhones.has(row.phone)) return true;
+      errors.push({ row: 0, message: `Skipped existing phone ${row.phone}` });
+      return false;
+    }).map((row: NormalizedLeadRow) => ({
+      ...row,
+      ownerId: ownerId || undefined,
+      propertyType: target.propertyType,
+      propertyModel: target.model.modelName,
+      propertySnapshot: buildLeadPropertySnapshot(property, target.propertyType),
+      listingType: ["sale", "rent", "lease"].includes(String(propertyRecord.listingType || ""))
+        ? propertyRecord.listingType
+        : undefined,
+    }));
+
+    const importer = await User.findById(userId).select("name email phone").lean();
+    const importedBy = {
+      userId,
+      name: String((importer as any)?.name || req.user?.name || ""),
+      email: String((importer as any)?.email || req.user?.email || ""),
+      phone: String((importer as any)?.phone || ""),
+      roleName: String(req.user?.roleName || ""),
+      at: new Date(),
+    };
+    const leadsWithImporter = leadsToInsert.map((row) => ({
+      ...row,
+      importedBy,
+    }));
+    const importedLeads = leadsWithImporter.length
+      ? await PublicLead.insertMany(leadsWithImporter, { ordered: false })
+      : [];
+    const ownerPhone = String(ownerUser?.phone || "").trim();
+    const listingTitle =
+      propertyRecord.title ||
+      propertyRecord.projectName ||
+      propertyRecord.buildingName ||
+      propertyRecord.propertySnapshot?.title ||
+      "your property";
+    let whatsappNotification = {
+      attempted: false,
+      sent: false,
+      reason: "",
+    };
+
+    if (importedLeads.length && ownerId) {
+      const leadLabel =
+        importedLeads.length === 1
+          ? `${importedLeads[0].name} was added as a lead`
+          : `${importedLeads.length} leads were imported`;
+
+      notifyOwnerAndAdmins({
+        type: "contact_requested",
+        title: importedLeads.length === 1 ? "New Property Lead" : "New Property Leads",
+        body: `${leadLabel} for ${listingTitle}.`,
+        actorUserId: String(userId || ""),
+        ownerId,
+        projectId: propertyId,
+        propertyType: target.propertyType,
+        metadata: {
+          projectTitle: listingTitle,
+          slug: propertyRecord.slug || "",
+          listingKind: "property",
+          category: target.propertyType,
+          source: "imported",
+          importedCount: importedLeads.length,
+          userName: importedLeads[0]?.name || "",
+          userPhone: importedLeads[0]?.phone || "",
+          userEmail: importedLeads[0]?.email || "",
+        },
+      }).catch((err) =>
+        console.error("Error sending imported property lead notification:", err),
+      );
+    }
+
+    if (importedLeads.length && ownerPhone) {
+      whatsappNotification.attempted = true;
+      const audience = await resolveLeadImportAudience(ownerId, "user");
+      const whatsappResult = await sendLeadImportSummaryWhatsApp(ownerPhone, {
+        listingTitle,
+        audience,
+        importedCount: importedLeads.length,
+        skippedCount: Math.max(0, rows.length - importedLeads.length),
+        leads: importedLeads.map((lead: any) => ({
+          name: lead.name,
+          phone: lead.phone,
+        })),
+      });
+
+      whatsappNotification = {
+        attempted: true,
+        sent: Boolean(whatsappResult),
+        reason: whatsappResult ? "sent" : "send_failed",
+      };
+    } else if (!ownerPhone && importedLeads.length) {
       whatsappNotification.reason = "owner_phone_missing";
     } else if (!importedLeads.length) {
       whatsappNotification.reason = "no_new_imported_leads";

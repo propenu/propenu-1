@@ -31,6 +31,14 @@ export interface IPublicLead extends Document {
   message?: string;
   remarks?: string;
   source?: "site" | "imported";
+  importedBy?: {
+    userId?: mongoose.Types.ObjectId;
+    name?: string;
+    email?: string;
+    phone?: string;
+    roleName?: string;
+    at?: Date;
+  };
   extraFields?: Record<string, string>;
   sourceCreatedAt?: Date;
   purchaseTimeline?: string;
@@ -85,6 +93,14 @@ const PublicLeadSchema = new Schema<IPublicLead>(
       enum: ["site", "imported"],
       default: "site",
       index: true,
+    },
+    importedBy: {
+      userId: { type: Schema.Types.ObjectId, ref: "User" },
+      name: { type: String, default: "" },
+      email: { type: String, default: "" },
+      phone: { type: String, default: "" },
+      roleName: { type: String, default: "" },
+      at: { type: Date },
     },
     extraFields: {
       type: Map,

@@ -420,10 +420,13 @@ export function isWhatsAppGreeting(text: string) {
 }
 
 export function buildRegistrationPrompt(frontendBase?: string) {
-  const base = String(frontendBase || process.env.FRONTEND_URL || "https://propenu.com")
+  const configured = String(frontendBase || process.env.FRONTEND_URL || "https://propenu.com")
     .trim()
     .replace(/\/$/, "");
-  const link = `${base}/?auth=register&redirect=%2F`;
+  const base = /^https?:\/\/(www\.)?propenu\.com$/i.test(configured)
+    ? "https://propenu.com"
+    : configured || "https://propenu.com";
+  const link = `${base}/register`;
   return `Your Propenu registration is incomplete. Please finish your account here:\n${link}`;
 }
 
@@ -554,7 +557,9 @@ function newUserChoiceContent(choice: NewUserChoice) {
   if (choice === "create_account") {
     return {
       text: "Create your Propenu account to save properties, contact owners, and finish registration.",
-      url: `${base}/?auth=register&redirect=%2F`,
+      url: /^https?:\/\/(www\.)?propenu\.com$/i.test(base)
+        ? "https://propenu.com/register"
+        : `${base}/register`,
     };
   }
   if (choice === "buy_property") {

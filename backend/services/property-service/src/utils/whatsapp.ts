@@ -16,21 +16,40 @@ export const LEAD_WHATSAPP_PARAMETER_ORDER = [
 
 export const LEAD_IMPORT_WHATSAPP_TEMPLATE_BODY = `Your Propenu account has been updated.
 
-Project: {{1}}
+{{1}}
 {{2}}
 {{3}}
 
 {{4}}
 
-Open your Propenu dashboard to review the latest lead import:
-https://propenu.com/builder/leads`;
+Open your Propenu dashboard to review the latest lead import: {{5}}
+Regards,
+*Propenu Team*`;
 
 export const LEAD_IMPORT_WHATSAPP_PARAMETER_ORDER = [
-  "{{1}} projectTitle",
+  "{{1}} listingLine",
   "{{2}} importedLine",
   "{{3}} skippedLine",
   "{{4}} leadSummary",
+  "{{5}} dashboardUrl",
 ] as const;
+
+export type LeadImportAudience = "builder" | "agent" | "user";
+
+const leadImportDashboardUrl = (audience: LeadImportAudience) => {
+  const base = "https://propenu.com";
+  if (audience === "builder") return `${base}/builder/leads`;
+  if (audience === "agent") return `${base}/agent/leads`;
+  return `${base}/my-properties`;
+};
+
+const DEFAULT_COUNTRY_CODE = process.env.WHATSAPP_DEFAULT_COUNTRY_CODE || "91";
+
+const toWhatsAppRecipient = (phone: string) => {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (digits.length === 10) return `${DEFAULT_COUNTRY_CODE}${digits}`;
+  return digits;
+};
 
 const sendWhatsAppTemplate = async ({
   phone,
@@ -45,7 +64,7 @@ const sendWhatsAppTemplate = async ({
 }) => {
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_TOKEN;
-  const cleanPhone = phone.replace(/\D/g, "");
+  const cleanPhone = toWhatsAppRecipient(phone);
 
   if (!cleanPhone) {
     return null;
@@ -146,8 +165,9 @@ const pluralize = (count: number, singular: string, plural = `${singular}s`) =>
   `${count} ${count === 1 ? singular : plural}`;
 
 const maskPhoneForImportSummary = (phone?: string) => {
-  const value = String(phone || "").replace(/\D/g, "");
+  let value = String(phone || "").replace(/\D/g, "");
   if (!value) return "-";
+  if (value.length === 10) value = `${DEFAULT_COUNTRY_CODE}${value}`;
   if (value.length <= 4) return "*".repeat(value.length);
   return `${value.slice(0, 2)}${"*".repeat(Math.max(4, value.length - 4))}${value.slice(-2)}`;
 };
@@ -158,7 +178,9 @@ const buildLeadImportSummary = (
   if (!leads.length) return "No new leads were added.";
 
   if (leads.length > 5) {
-    return `${pluralize(leads.length, "lead")} added in this CSV upload.`;
+    return leads.length === 1
+      ? "1 new lead is ready to review."
+      : `${leads.length} new leads are ready to review.`;
   }
 
   const leadDetails = leads
@@ -172,7 +194,8 @@ const buildLeadImportSummary = (
 };
 
 export async function sendLeadImportSummaryWhatsApp(phone: string, params: {
-  projectTitle: string;
+  listingTitle: string;
+  audience: LeadImportAudience;
   importedCount: number;
   skippedCount: number;
   leads: Array<{ name?: string; phone?: string }>;
@@ -184,23 +207,22 @@ export async function sendLeadImportSummaryWhatsApp(phone: string, params: {
       process.env.WHATSAPP_LEAD_IMPORT_TEMPLATE_LANGUAGE ||
       process.env.WHATSAPP_TEMPLATE_LANGUAGE ||
       "en";
+    const title = String(params.listingTitle || "").trim() || "your listing";
+    const listingLine =
+      params.audience === "builder" ? `Project: ${title}` : `Property: ${title}`;
     const importedLine = `${pluralize(
       params.importedCount,
       "lead",
     )} added successfully.`;
-    const skippedLine =
-      params.skippedCount > 0
-        ? `${pluralize(
-            params.skippedCount,
-            "row",
-          )} skipped due to duplicate or invalid details.`
-        : "No rows skipped.";
+    const skippedLine = "Leads are ready.";
     const leadSummary = buildLeadImportSummary(params.leads);
+    const dashboardUrl = leadImportDashboardUrl(params.audience);
     const parameters = [
-      params.projectTitle || "your project",
+      listingLine,
       importedLine,
       skippedLine,
       leadSummary,
+      dashboardUrl,
     ];
 
     console.log("[WhatsApp Lead Import] Sending import summary", {
@@ -208,9 +230,10 @@ export async function sendLeadImportSummaryWhatsApp(phone: string, params: {
       templateName,
       language,
       templateBody: LEAD_IMPORT_WHATSAPP_TEMPLATE_BODY,
-      projectTitle: parameters[0],
+      listingLine,
       importedLine,
       skippedLine,
+      dashboardUrl,
       leadCountInMessage: params.leads.length,
     });
 

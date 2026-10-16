@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from "multer";
-import { assignLeadController, checkLeadController, checkPublicProjectLeadController, createLeadController, createPublicLeadController, createPublicPropertyLeadController, deleteLeadController, deleteProjectLeadsController, downloadLeadsCSVController, exportAdminLeadsController, getAdminLeadsController, getLeadByIdController, getLeadsController, getMyContactedProperties, getProjectLeadsController, importProjectLeadsCSVController, importPropertyLeadsCSVController, listDeletedLeadsController, purgeAllDeletedLeadsController, purgeDeletedLeadController, requestPublicProjectLeadOtpController, requestPublicPropertyLeadOtpController, trackProjectBrochureDownloadController, trackProjectViewDurationController, trackPropertyViewDurationController, updatePublicLeadIntentionController, updateLeadStatusController, updateProjectLeadStatusController, verifyPublicProjectLeadOtpController, verifyPublicPropertyLeadOtpController } from "../controller/leadController"
+import { assignLeadController, checkLeadController, checkPublicProjectLeadController, createLeadController, createPublicLeadController, createPublicPropertyLeadController, deleteLeadController, deleteProjectLeadsController, downloadLeadsCSVController, exportAdminLeadsController, getAdminLeadsController, getLeadByIdController, getLeadContactVisibilityController, getLeadsController, listLeadContactVisibilityHistoryController, updateLeadContactVisibilityController, getMyContactedProperties, getProjectLeadsController, importProjectLeadsCSVController, importPropertyLeadsCSVController, listDeletedLeadsController, purgeAllDeletedLeadsController, purgeDeletedLeadController, requestPublicProjectLeadOtpController, requestPublicPropertyLeadOtpController, trackProjectBrochureDownloadController, trackProjectViewDurationController, trackPropertyViewDurationController, updatePublicLeadIntentionController, updateLeadStatusController, updateProjectLeadStatusController, verifyPublicProjectLeadOtpController, verifyPublicPropertyLeadOtpController } from "../controller/leadController"
 import { LeadCreateSchema } from '../zod/leadZod';
 import { validateBody } from '../middlewares/validate';
 import { authMiddleware } from '../middlewares/authMiddleware';
@@ -107,6 +107,18 @@ router.get(
   getAdminLeadsController,
 );
 router.get("/admin/export", authMiddleware, requirePermission("lead:export"), exportAdminLeadsController);
+router.get(
+  "/admin/contact-visibility",
+  authMiddleware,
+  requirePermission("lead:view"),
+  getLeadContactVisibilityController,
+);
+router.patch("/admin/contact-visibility", authMiddleware, updateLeadContactVisibilityController);
+router.get(
+  "/admin/contact-visibility/history",
+  authMiddleware,
+  listLeadContactVisibilityHistoryController,
+);
 router.get("/deleted", authMiddleware, listDeletedLeadsController);
 router.delete("/deleted", authMiddleware, purgeAllDeletedLeadsController);
 router.delete("/deleted/:id", authMiddleware, purgeDeletedLeadController);

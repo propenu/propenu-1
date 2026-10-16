@@ -49,6 +49,12 @@ import {
   purgeDeletedLead,
   resolveLeadActor,
 } from "../services/deletedLeadArchive.service";
+import {
+  getLeadContactVisibility,
+  isLeadContactVisibleToStaff,
+  listLeadContactVisibilityHistory,
+  setLeadContactVisibility,
+} from "../services/leadContactVisibility.service";
 
 
 const DEFAULT_VISIBLE_LEAD_LIMIT = 5;
@@ -1022,9 +1028,100 @@ export const getLeadsController = async (req: Request, res: Response) => {
   }
 };
 
+const LEAD_CONTACT_HEAD_ROLES = new Set(["super_admin", "admin", "ceo"]);
+
+const normalizedActorRole = (req: Request) =>
+  String((req as AuthRequest).user?.roleName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+const isLeadContactHead = (req: Request) => {
+  const role = normalizedActorRole(req);
+  return LEAD_CONTACT_HEAD_ROLES.has(role) || role.endsWith("_head");
+};
+
+const canSeeLeadContacts = async (req: Request) =>
+  isLeadContactHead(req) || (await isLeadContactVisibleToStaff());
+
+export const getLeadContactVisibilityController = async (req: Request, res: Response) => {
+  try {
+    const setting = await getLeadContactVisibility();
+    const isHead = isLeadContactHead(req);
+    return res.json({
+      success: true,
+      data: {
+        ...setting,
+        canManage: normalizedActorRole(req) === "super_admin",
+        canSeeContacts: isHead || setting.enabled,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateLeadContactVisibilityController = async (
+  req: AuthRequest,
+  res: Response,
+) => {
+  try {
+    if (normalizedActorRole(req) !== "super_admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Only Super Admin can change lead contact visibility",
+      });
+    }
+    if (typeof req.body?.enabled !== "boolean") {
+      return res.status(400).json({ success: false, message: "enabled must be true or false" });
+    }
+    const actor = await resolveLeadActor(req);
+    const setting = await setLeadContactVisibility(req.body.enabled, actor);
+    return res.json({ success: true, data: { ...setting, canManage: true, canSeeContacts: true } });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const listLeadContactVisibilityHistoryController = async (
+  req: AuthRequest,
+  res: Response,
+) => {
+  try {
+    if (normalizedActorRole(req) !== "super_admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Only Super Admin can view this history",
+      });
+    }
+    const result = await listLeadContactVisibilityHistory(req.query.page);
+    return res.json({ success: true, ...result });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const maskAdminLeadContacts = (lead: any) => ({
+  ...lead,
+  phone: maskPhone(lead?.phone),
+  email: maskEmail(lead?.email),
+  contactMasked: true,
+  submissions: Array.isArray(lead?.submissions)
+    ? lead.submissions.map((row: any) => ({
+        ...row,
+        phone: maskPhone(row?.phone),
+        email: maskEmail(row?.email),
+      }))
+    : lead?.submissions,
+});
+
 export const getAdminLeadsController = async (req: Request, res: Response) => {
   try {
     const data = await getAdminLeadDashboard(req.query);
+    if (!(await canSeeLeadContacts(req)) && Array.isArray(data?.leads)) {
+      data.leads = data.leads.map(maskAdminLeadContacts);
+    }
     res.json({ success: true, data });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message });
@@ -1034,7 +1131,10 @@ export const getAdminLeadsController = async (req: Request, res: Response) => {
 export const exportAdminLeadsController = async (req: Request, res: Response) => {
   try {
     const data = await getAdminLeadDashboard(req.query, true);
-    const rows = data.leads.map((lead: any) => ({
+    const leads = (await canSeeLeadContacts(req))
+      ? data.leads
+      : data.leads.map(maskAdminLeadContacts);
+    const rows = leads.map((lead: any) => ({
       "Lead Name": lead.name,
       Phone: lead.phone,
       Email: lead.email,
@@ -2632,7 +2732,7 @@ export const importProjectLeadsCSVController = async (
     if (importedLeads.length && ownerId) {
       const leadLabel =
         importedLeads.length === 1
-          ? `${importedLeads[0].name} was added as a lead`
+          ? `${importedLeads[0]?.name || "A lead"} was added as a lead`
           : `${importedLeads.length} leads were imported`;
 
       notifyOwnerAndAdmins({
@@ -2915,7 +3015,7 @@ export const importPropertyLeadsCSVController = async (
     if (importedLeads.length && ownerId) {
       const leadLabel =
         importedLeads.length === 1
-          ? `${importedLeads[0].name} was added as a lead`
+          ? `${importedLeads[0]?.name || "A lead"} was added as a lead`
           : `${importedLeads.length} leads were imported`;
 
       notifyOwnerAndAdmins({

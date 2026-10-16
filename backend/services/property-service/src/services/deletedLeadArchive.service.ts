@@ -7,12 +7,12 @@ import FeaturedProject from "../models/featurePropertiesModel";
 import { AuthRequest } from "../middlewares/authMiddleware";
 
 export type LeadActor = {
-  userId?: string;
+  userId?: string | undefined;
   name: string;
   email: string;
   phone: string;
   roleName: string;
-  at?: Date;
+  at?: Date | undefined;
 };
 
 const escapeRegex = (value: string) =>
@@ -221,7 +221,7 @@ export async function listDeletedLeads(options?: {
 
 export async function purgeDeletedLead(id: string) {
   if (!Types.ObjectId.isValid(id)) return null;
-  return DeletedLead.findByIdAndDelete(id).lean();
+  return DeletedLead.findByIdAndDelete(id).lean<{ _id: Types.ObjectId }>();
 }
 
 export async function purgeAllDeletedLeads() {

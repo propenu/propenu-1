@@ -136,6 +136,12 @@ app.use(
   proxy("USER", USER_SERVICE_URL, { proxyTimeout: 0, timeout: 0 }),
 );
 
+// Long-lived SSE: access switch changes (deleted pages, lead contacts)
+app.use(
+  "/api/properties/deleted-listings/access/stream",
+  proxy("PROPERTY", PROPERTY_SERVICE_URL, { proxyTimeout: 0, timeout: 0 }),
+);
+
 // Meta webhook (Bizrow-compatible path → user-service)
 app.use("/api/conversation-flow", proxy("USER", USER_SERVICE_URL));
 

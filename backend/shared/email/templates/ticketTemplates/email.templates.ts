@@ -486,6 +486,81 @@ export const ticketAssignedTemplate = ({
   </div>
 `;
 
+type TicketHandlerAssignedTemplateParams = {
+  ticketId: string;
+  handlerName: string;
+  requesterName: string;
+  assignedBy?: string;
+  category?: string;
+  subject: string;
+  description?: string;
+  priority?: string;
+  dueOn?: Date;
+  ticketUrl?: string;
+};
+
+export const ticketHandlerAssignedSubject = (ticketId: string, subject: string) =>
+  `New ticket assigned to you - [${ticketId}] ${subject}`;
+
+export const ticketHandlerAssignedTemplate = ({
+  ticketId,
+  handlerName,
+  requesterName,
+  assignedBy,
+  category,
+  subject,
+  description,
+  priority,
+  dueOn,
+  ticketUrl,
+}: TicketHandlerAssignedTemplateParams) => `
+  <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;padding:24px;background:#f6f8fb;">
+    <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:28px;">
+      <p style="margin:0 0 18px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#1d4ed8;font-weight:700;">
+        Propenu Ticket Desk
+      </p>
+
+      <h2 style="margin:0 0 18px;font-size:24px;line-height:1.35;color:#111827;">
+        A ticket has been assigned to you
+      </h2>
+
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#374151;">
+        Hi <strong>${escapeHtml(handlerName)}</strong>,
+      </p>
+
+      <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#374151;">
+        <strong>${escapeHtml(assignedBy || requesterName)}</strong> has assigned you a ticket that needs your action.
+      </p>
+
+      <div style="margin:0 0 22px;padding:14px 18px;border-radius:12px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;">
+        <strong>Ticket ID:</strong> [${escapeHtml(ticketId)}]
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;">
+        ${detailRow("Subject", subject)}
+        ${detailRow("Raised For", requesterName)}
+        ${detailRow("Category", category)}
+        ${detailRow("Priority", priority)}
+        ${detailRow("Due On", dueOn ? formatDateTime(dueOn) : undefined)}
+        ${detailRow("Description", description)}
+      </table>
+
+      ${
+        ticketUrl
+          ? `<p style="margin:24px 0 0;">
+        <a href="${escapeHtml(ticketUrl)}" style="display:inline-block;padding:12px 22px;border-radius:10px;background:#27AE60;color:#ffffff;font-weight:700;text-decoration:none;">Open ticket</a>
+      </p>`
+          : ""
+      }
+
+      <p style="margin:24px 0 0;font-size:14px;line-height:1.7;color:#374151;">
+        Regards,<br />
+        <strong>Propenu Support Team</strong>
+      </p>
+    </div>
+  </div>
+`;
+
 export const ticketUnderReviewSubject = (ticketId: string) =>
   `Ticket Under Review - [${ticketId}]`;
 

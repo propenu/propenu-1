@@ -21,6 +21,7 @@ import {
   projectFromDeletedArchive,
   purgeDeletedProjectArchive,
 } from "../services/deletedProjectArchive.service";
+import { canViewDeletedArea } from "../services/deletedAccess.service";
 
 const getBuilderProjectScope = async (req: AuthRequest) => {
   if (!req.user?.id) {
@@ -716,11 +717,11 @@ export const getFeaturedLocationOptions = async (
 const isSuperAdmin = (req: AuthRequest) =>
   normalizeActorRole(req.user?.roleName) === "super_admin";
 
-/** Deleted-project archive — Super Admin only. */
+/** Deleted-project archive: view follows deleted access; purge is Super Admin only. */
 export const getDeletedProjects = async (req: AuthRequest, res: Response) => {
   try {
-    if (!isSuperAdmin(req)) {
-      return res.status(403).json({ error: "Only Super Admin can view deleted projects" });
+    if (!(await canViewDeletedArea(req, "projects"))) {
+      return res.status(403).json({ error: "You do not have access to deleted projects" });
     }
     const page = typeof req.query.page === "string" ? Number(req.query.page) : 1;
     const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 12;
@@ -754,8 +755,8 @@ export const purgeDeletedProject = async (req: AuthRequest, res: Response) => {
 
 export const getDeletedProjectById = async (req: AuthRequest, res: Response) => {
   try {
-    if (!isSuperAdmin(req)) {
-      return res.status(403).json({ error: "Only Super Admin can view deleted projects" });
+    if (!(await canViewDeletedArea(req, "projects"))) {
+      return res.status(403).json({ error: "You do not have access to deleted projects" });
     }
     const { id } = req.params;
     if (!id) return res.status(400).json({ error: "Missing id" });

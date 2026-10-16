@@ -10,6 +10,10 @@ import {
   canApproveProjectByHierarchy,
   normalizeProjectRole,
 } from "./projectApprovalPolicy";
+import { openProjectApprovalTicket } from "../services/projectApprovalTicket.service";
+
+const adminTicketsUrl = () =>
+  `${String(process.env.ADMIN_DASHBOARD_URL || "https://admin.propenu.com").replace(/\/+$/, "")}/tickets`;
 
 type ApprovingHead = {
   id: string;
@@ -206,7 +210,26 @@ export const sendPendingProjectApprovalEmail = async ({
   }
 
   const title = String(project?.title || "a project").trim() || "a project";
-  const poster = String(posterName || "A staff member").trim() || "A staff member";
+  const posterUser = await User.findById(posterId).select("name email").lean();
+  const poster =
+    String(posterName || (posterUser as any)?.name || "A staff member").trim() || "A staff member";
+  const posterEmail = String((posterUser as any)?.email || "").trim().toLowerCase();
+
+  const ticket = await openProjectApprovalTicket({
+    project,
+    poster: {
+      id: String(posterId),
+      name: poster,
+      ...(posterEmail ? { email: posterEmail } : {}),
+      roleName: String(posterRole || ""),
+    },
+    head: { id: head.id, name: head.name, email: head.email, roleName: head.roleName },
+  }).catch((error) => {
+    console.error("[project-approval-ticket] create failed:", error);
+    return null;
+  });
+  const ticketLabel = ticket?.ticketCode ? `#${ticket.ticketCode}` : "";
+
   const location = projectLocation(project);
   const link = projectPageUrl(project);
   const safeTitle = escapeHtml(title);
@@ -214,6 +237,9 @@ export const sendPendingProjectApprovalEmail = async ({
   const safeRole = escapeHtml(roleLabel(posterRole || ""));
   const safeLocation = escapeHtml(location);
   const safeHead = escapeHtml(head.name);
+  const ticketLine = ticketLabel
+    ? `<p style="margin:0 0 14px 0;font-size:15px;line-height:24px;color:#374151;">Ticket: <b>${escapeHtml(ticketLabel)}</b> (assigned to you)</p>`
+    : "";
 
   const html = emailLayout(
     `
@@ -226,22 +252,54 @@ export const sendPendingProjectApprovalEmail = async ({
       <p style="margin:0 0 14px 0;font-size:15px;line-height:24px;color:#374151;">
         <b>${safePoster}</b> (${safeRole}) posted <b>${safeTitle}</b> in <b>${safeLocation}</b>.
       </p>
+      ${ticketLine}
       <p style="margin:0 0 22px 0;font-size:15px;line-height:24px;color:#374151;">
         Status: <b>Approval pending</b>. Please review this project and approve it.
       </p>
       ${ctaButton("Open project", link)}
+      ${ticketLabel ? `<div style="height:10px;"></div>${ctaButton("Open ticket", adminTicketsUrl())}` : ""}
     `,
     buildUnsubscribeUrl(head.email),
   );
 
   await sendEmail({
     to: head.email,
-    subject: `Approval needed: ${title}`,
+    subject: `Approval needed: ${title}${ticketLabel ? ` (${ticketLabel})` : ""}`,
     html,
   });
 
+  if (posterEmail && posterEmail !== head.email) {
+    const posterHtml = emailLayout(
+      `
+        <h2 style="margin:0 0 16px 0;font-size:22px;line-height:30px;color:#111827;">
+          Waiting for approval
+        </h2>
+        <p style="margin:0 0 14px 0;font-size:15px;line-height:24px;color:#374151;">
+          Hi <b>${safePoster}</b>,
+        </p>
+        <p style="margin:0 0 14px 0;font-size:15px;line-height:24px;color:#374151;">
+          Your project <b>${safeTitle}</b> in <b>${safeLocation}</b> has been submitted and is waiting for approval.
+        </p>
+        ${
+          ticketLabel
+            ? `<p style="margin:0 0 14px 0;font-size:15px;line-height:24px;color:#374151;">Ticket: <b>${escapeHtml(ticketLabel)}</b></p>`
+            : ""
+        }
+        <p style="margin:0 0 22px 0;font-size:15px;line-height:24px;color:#374151;">
+          Approver: <b>${safeHead}</b> (${escapeHtml(roleLabel(head.roleName))}). You will get an email as soon as it is approved or rejected.
+        </p>
+      `,
+      buildUnsubscribeUrl(posterEmail),
+    );
+    await sendEmail({
+      to: posterEmail,
+      subject: `Waiting for approval: ${title}${ticketLabel ? ` (${ticketLabel})` : ""}`,
+      html: posterHtml,
+    }).catch((error) => console.error("[project-approval-email] poster email failed:", error));
+  }
+
   console.log(
-    `[project-approval-email] Sent to ${head.email} (${head.roleName}) for ${title}`,
+    `[project-approval-email] Sent to ${head.email} (${head.roleName}) for ${title}${ticketLabel ? ` ticket ${ticketLabel}` : ""}`,
   );
-  return { sent: true, to: head.email };
+  return { sent: true, to: head.email, ticket };
 };

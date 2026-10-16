@@ -436,6 +436,11 @@ const FeaturePropertySchema = new Schema<IFeaturedProjectDocument>(
       type: String,
     },
 
+    approvalTicket: {
+      ticketId: { type: String },
+      ticketCode: { type: String },
+    },
+
     lastPromotionType: {
       type: String,
       enum: ["normal", "featured", "prime", "sponsored"],

@@ -6,6 +6,14 @@ import { canApproveProjectByHierarchy } from "../utils/projectApprovalPolicy";
 import { BuilderOnboardingService } from "../services/builderOnboardingService";
 import { notifySearchMatchesForListing } from "../services/searchMatchNotificationService";
 import { notifyLifecycleEvent } from "../services/lifecycleNotificationService";
+import { finishProjectApprovalTicket } from "../services/projectApprovalTicket.service";
+
+const approvalActor = (req: AuthRequest) => ({
+  id: String(req.user?.id || ""),
+  name: String(req.user?.name || "Approver"),
+  ...(req.user?.email ? { email: String(req.user.email) } : {}),
+  ...(req.user?.roleName ? { roleName: String(req.user.roleName) } : {}),
+});
 
 const resolveCreatorMeta = (project: any) => {
   const createdBy = project?.createdBy;
@@ -111,6 +119,11 @@ export const approveProject = async (req: AuthRequest, res: Response) => {
     project.approvedAt = new Date();
 
     await project.save();
+    void finishProjectApprovalTicket({
+      project,
+      approved: true,
+      actor: approvalActor(req),
+    }).catch((error) => console.error("[project-approval-ticket] resolve failed:", error));
     void notifyLifecycleEvent({
       type: "project_approved",
       listing: project,
@@ -192,6 +205,12 @@ export const rejectProject = async (req: AuthRequest, res: Response) => {
     project.rejectedReason = reason || "Rejected by manager";
 
     await project.save();
+    void finishProjectApprovalTicket({
+      project,
+      approved: false,
+      actor: approvalActor(req),
+      reason: project.rejectedReason,
+    }).catch((error) => console.error("[project-approval-ticket] close failed:", error));
     void notifyLifecycleEvent({
       type: "project_rejected",
       listing: project,

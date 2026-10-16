@@ -11,6 +11,7 @@ import {
   ListingCategory,
 } from "../services/deletedPropertyArchive.service";
 import { permanentlyDeleteListing } from "../services/listingDeletion.service";
+import { canViewDeletedArea } from "../services/deletedAccess.service";
 
 const PERMANENT_DELETE_ROLES = new Set([
   "super_admin",
@@ -77,8 +78,8 @@ function permanentHandler(category: ListingCategory) {
 
 export const getDeletedProperties = async (req: AuthRequest, res: Response) => {
   try {
-    if (!isSuperAdmin(req)) {
-      return res.status(403).json({ error: "Only Super Admin can view deleted properties" });
+    if (!(await canViewDeletedArea(req, "properties"))) {
+      return res.status(403).json({ error: "You do not have access to deleted properties" });
     }
     const page = typeof req.query.page === "string" ? Number(req.query.page) : 1;
     const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 12;
@@ -96,8 +97,8 @@ export const getDeletedProperties = async (req: AuthRequest, res: Response) => {
 
 export const getDeletedPropertyListing = async (req: AuthRequest, res: Response) => {
   try {
-    if (!isSuperAdmin(req)) {
-      return res.status(403).json({ error: "Only Super Admin can view deleted properties" });
+    if (!(await canViewDeletedArea(req, "properties"))) {
+      return res.status(403).json({ error: "You do not have access to deleted properties" });
     }
     const category = String(req.params.category || "");
     const propertyId = String(req.params.propertyId || "");

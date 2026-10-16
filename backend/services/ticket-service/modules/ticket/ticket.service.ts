@@ -27,6 +27,8 @@ import {
   ticketEscalatedTemplate,
   ticketAssignedSubject,
   ticketAssignedTemplate,
+  ticketHandlerAssignedSubject,
+  ticketHandlerAssignedTemplate,
   ticketCancelledSubject,
   ticketCancelledTemplate,
   ticketClosedSubject,
@@ -177,7 +179,7 @@ const buildTicketTemplateBase = (
     projectName?: string;
   };
 
-  if (ticket.category) base.category = ticket.category;
+  if (ticket.category) base.category = toTitleCase(ticket.category);
   if (typeof metadata.propertyCode === "string") base.propertyId = metadata.propertyCode;
   else if (ticket.propertyId) base.propertyId = ticket.propertyId;
   if (typeof metadata.propertyTitle === "string") base.propertyTitle = metadata.propertyTitle;
@@ -254,6 +256,70 @@ const getStatusPushType = (status: TicketStatus): TicketPushType => {
   return "ticket_status_changed";
 };
 
+const ticketModule = (ticket: { metadata?: unknown }) =>
+  (ticket.metadata as { module?: string } | undefined)?.module;
+
+/** Access requests are raised by property-service, which sends its own access emails (only "resolved" also goes out from here). */
+const isAccessRequestTicket = (ticket: { metadata?: unknown }) =>
+  ticketModule(ticket) === "access_request";
+
+/** Project approval tickets: property-service sends the raised/assigned emails; resolved and closed go out from here. */
+const isProjectApprovalTicket = (ticket: { metadata?: unknown }) =>
+  ticketModule(ticket) === "project_approval";
+
+const isServiceManagedTicket = (ticket: { metadata?: unknown }) =>
+  isAccessRequestTicket(ticket) || isProjectApprovalTicket(ticket);
+
+const skipRequesterStatusEmail = (ticket: { metadata?: unknown }, status: TicketStatus) => {
+  if (isAccessRequestTicket(ticket)) return status !== "resolved";
+  if (isProjectApprovalTicket(ticket)) return status !== "resolved" && status !== "closed";
+  return false;
+};
+
+const ADMIN_TICKETS_URL = `${(process.env.ADMIN_DASHBOARD_URL || "https://admin.propenu.com").replace(/\/+$/, "")}/tickets`;
+
+const sendHandlerAssignedEmail = async (
+  ticket: {
+    _id: unknown;
+    ticketCode?: string;
+    title: string;
+    description?: string;
+    category?: string;
+    priority?: string;
+    dueAt?: Date;
+    requester: { name: string; email?: string };
+    assignedTo?: TicketActor;
+    metadata?: unknown;
+  },
+  assignedBy?: string,
+) => {
+  const handlerEmail = String(ticket.assignedTo?.email || "").trim().toLowerCase();
+  if (!handlerEmail || isServiceManagedTicket(ticket)) return;
+  if (handlerEmail === String(ticket.requester.email || "").trim().toLowerCase()) return;
+
+  const ticketId = displayTicketId(ticket);
+  try {
+    await sendEmail({
+      to: handlerEmail,
+      subject: ticketHandlerAssignedSubject(ticketId, ticket.title),
+      html: ticketHandlerAssignedTemplate({
+        ticketId,
+        handlerName: ticket.assignedTo?.name || "there",
+        requesterName: ticket.requester.name,
+        ...(assignedBy ? { assignedBy } : {}),
+        ...(ticket.category ? { category: toTitleCase(ticket.category) } : {}),
+        subject: ticket.title,
+        ...(ticket.description ? { description: ticket.description } : {}),
+        ...(ticket.priority ? { priority: toTitleCase(ticket.priority) } : {}),
+        ...(ticket.dueAt ? { dueOn: new Date(ticket.dueAt) } : {}),
+        ticketUrl: ADMIN_TICKETS_URL,
+      }),
+    });
+  } catch (error) {
+    console.error("ticket handler email failed:", error);
+  }
+};
+
 export class TicketService {
   private static displayTicketId(ticket: { _id: unknown; ticketCode?: string }) {
     return displayTicketId(ticket);
@@ -266,9 +332,15 @@ export class TicketService {
       input.metadata?.module === "relationship_manager" &&
       input.assignedTo?.role === "relationship_manager";
 
-    const department = isRelationshipManagerTicket
-      ? "relationship-manager"
-      : "customer-care";
+    const isAccessRequest = isAccessRequestTicket(input);
+    const isServiceManaged = isServiceManagedTicket(input);
+    const department = isAccessRequest
+      ? "access-control"
+      : isProjectApprovalTicket(input)
+        ? "project-approval"
+        : isRelationshipManagerTicket
+        ? "relationship-manager"
+        : "customer-care";
 
     let assignedTo = input.assignedTo;
     let autoAssigned = false;
@@ -356,7 +428,7 @@ export class TicketService {
       activities,
     });
 
-    if (ticket.requester.email) {
+    if (ticket.requester.email && !isServiceManaged) {
       const templateParams: Parameters<typeof ticketRaisedTemplate>[0] = {
         ...buildTicketTemplateBase(ticket),
         submittedOn: ticket.createdAt,
@@ -388,6 +460,12 @@ export class TicketService {
         console.error("ticket auto-assignment email failed:", error);
       }
     }
+
+    const createdByName = (ticket.metadata as { createdByName?: unknown } | undefined)?.createdByName;
+    await sendHandlerAssignedEmail(
+      ticket,
+      typeof createdByName === "string" && createdByName.trim() ? createdByName.trim() : undefined,
+    );
 
     await Promise.all([
       ticket.requester.userId
@@ -904,7 +982,7 @@ export class TicketService {
     const ticket = await TicketRepository.updateById(id, update);
     if (!ticket) return null;
 
-    if (ticket.requester.email) {
+    if (ticket.requester.email && !skipRequesterStatusEmail(ticket, status)) {
       let handledBySpecificTemplate = false;
 
       if (status === "under_review") {
@@ -1210,6 +1288,10 @@ export class TicketService {
       } catch (error) {
         console.error("ticket assignment email failed:", error);
       }
+    }
+
+    if (nextAssigneeId !== previousAssigneeId || !nextAssigneeId) {
+      await sendHandlerAssignedEmail(ticket, actor?.name);
     }
 
     await Promise.all([

@@ -3,11 +3,14 @@ import rateLimit from "express-rate-limit";
 const commonOptions = {
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req: any) =>
-    req.path === "/health" ||
-    String(req.originalUrl || req.url || "").includes(
-      "/whatsapp/inbox/stream",
-    ),
+  skip: (req: any) => {
+    const url = String(req.originalUrl || req.url || "");
+    return (
+      req.path === "/health" ||
+      url.includes("/whatsapp/inbox/stream") ||
+      url.includes("/deleted-listings/access/stream")
+    );
+  },
   handler: (req: any, res: any, _next: any, options: any) => {
     const resetTime = req.rateLimit?.resetTime?.getTime?.();
     const retryAfter = resetTime

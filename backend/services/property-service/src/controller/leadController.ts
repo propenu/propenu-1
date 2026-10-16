@@ -50,11 +50,12 @@ import {
   resolveLeadActor,
 } from "../services/deletedLeadArchive.service";
 import {
-  getLeadContactVisibility,
-  isLeadContactVisibleToStaff,
-  listLeadContactVisibilityHistory,
-  setLeadContactVisibility,
-} from "../services/leadContactVisibility.service";
+  lastDeletedAccessChanges,
+  listDeletedAccessHistory,
+  resolveDeletedAccess,
+  setHeadsDeletedAccess,
+  setTeamDeletedAccess,
+} from "../services/deletedAccess.service";
 
 
 const DEFAULT_VISIBLE_LEAD_LIMIT = 5;
@@ -1028,35 +1029,38 @@ export const getLeadsController = async (req: Request, res: Response) => {
   }
 };
 
-const LEAD_CONTACT_HEAD_ROLES = new Set(["super_admin", "admin", "ceo"]);
+/**
+ * Super Admin always sees contacts. Heads see them once Super Admin turns sharing on;
+ * staff only when a head above them has also turned it on for their team.
+ */
+const canSeeLeadContacts = async (req: Request) =>
+  (await resolveDeletedAccess(req as AuthRequest)).leadContacts.view;
 
-const normalizedActorRole = (req: Request) =>
-  String((req as AuthRequest).user?.roleName || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-
-const isLeadContactHead = (req: Request) => {
-  const role = normalizedActorRole(req);
-  return LEAD_CONTACT_HEAD_ROLES.has(role) || role.endsWith("_head");
+const leadContactSetting = async (req: AuthRequest) => {
+  const access = await resolveDeletedAccess(req);
+  const area = access.leadContacts;
+  const isSuperAdmin = access.level === "super_admin";
+  const isHead = access.level === "head";
+  const last = isSuperAdmin
+    ? await lastDeletedAccessChanges("heads")
+    : isHead
+      ? await lastDeletedAccessChanges("team", String(req.user?.id || ""))
+      : {};
+  return {
+    level: access.level,
+    enabled: isSuperAdmin ? area.headsEnabled : area.teamEnabled,
+    headsEnabled: area.headsEnabled,
+    canManage: isSuperAdmin || (isHead && area.canManageTeam),
+    isHead,
+    canSeeContacts: area.view,
+    updatedBy: (last as any).leadContacts?.updatedBy || null,
+    updatedAt: (last as any).leadContacts?.updatedAt || null,
+  };
 };
 
-const canSeeLeadContacts = async (req: Request) =>
-  isLeadContactHead(req) || (await isLeadContactVisibleToStaff());
-
-export const getLeadContactVisibilityController = async (req: Request, res: Response) => {
+export const getLeadContactVisibilityController = async (req: AuthRequest, res: Response) => {
   try {
-    const setting = await getLeadContactVisibility();
-    const isHead = isLeadContactHead(req);
-    return res.json({
-      success: true,
-      data: {
-        ...setting,
-        canManage: normalizedActorRole(req) === "super_admin",
-        canSeeContacts: isHead || setting.enabled,
-      },
-    });
+    return res.json({ success: true, data: await leadContactSetting(req) });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -1067,18 +1071,30 @@ export const updateLeadContactVisibilityController = async (
   res: Response,
 ) => {
   try {
-    if (normalizedActorRole(req) !== "super_admin") {
-      return res.status(403).json({
-        success: false,
-        message: "Only Super Admin can change lead contact visibility",
-      });
-    }
     if (typeof req.body?.enabled !== "boolean") {
       return res.status(400).json({ success: false, message: "enabled must be true or false" });
     }
+    const access = await resolveDeletedAccess(req);
     const actor = await resolveLeadActor(req);
-    const setting = await setLeadContactVisibility(req.body.enabled, actor);
-    return res.json({ success: true, data: { ...setting, canManage: true, canSeeContacts: true } });
+    if (access.level === "super_admin") {
+      await setHeadsDeletedAccess("leadContacts", req.body.enabled, actor);
+    } else if (access.level === "head" && access.leadContacts.canManageTeam) {
+      await setTeamDeletedAccess(
+        "leadContacts",
+        String(req.user?.id || ""),
+        req.body.enabled,
+        actor,
+      );
+    } else {
+      return res.status(403).json({
+        success: false,
+        message:
+          access.level === "head"
+            ? "Super Admin has not enabled contact sharing for heads"
+            : "Only Super Admin or a head can change lead contact visibility",
+      });
+    }
+    return res.json({ success: true, data: await leadContactSetting(req) });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -1089,13 +1105,18 @@ export const listLeadContactVisibilityHistoryController = async (
   res: Response,
 ) => {
   try {
-    if (normalizedActorRole(req) !== "super_admin") {
+    const access = await resolveDeletedAccess(req);
+    if (access.level === "staff") {
       return res.status(403).json({
         success: false,
-        message: "Only Super Admin can view this history",
+        message: "Only Super Admin or a head can view this history",
       });
     }
-    const result = await listLeadContactVisibilityHistory(req.query.page);
+    const result = await listDeletedAccessHistory(
+      req.query.page,
+      access.level === "head" ? String(req.user?.id || "") : undefined,
+      ["leadContacts"],
+    );
     return res.json({ success: true, ...result });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
@@ -2317,11 +2338,22 @@ export const listDeletedLeadsController = async (
   res: Response,
 ) => {
   try {
+    const scope =
+      typeof req.query.scope === "string" ? req.query.scope.trim().toLowerCase() : "";
     if (!isSuperAdminActor(req)) {
-      return res.status(403).json({
-        success: false,
-        message: "Only Super Admin can view deleted leads",
-      });
+      const access = await resolveDeletedAccess(req);
+      const allowed =
+        scope === "property"
+          ? access.propertyLeads.view
+          : scope === "project"
+            ? access.projectLeads.view
+            : false;
+      if (!allowed) {
+        return res.status(403).json({
+          success: false,
+          message: "You do not have access to these deleted leads",
+        });
+      }
     }
 
     const page = typeof req.query.page === "string" ? Number(req.query.page) : 1;
@@ -2331,8 +2363,10 @@ export const listDeletedLeadsController = async (
     const to = typeof req.query.to === "string" ? req.query.to : "";
     const deletionType =
       typeof req.query.deletionType === "string" ? req.query.deletionType : "";
-    const scope = typeof req.query.scope === "string" ? req.query.scope : "";
     const result = await listDeletedLeads({ page, limit, q, from, to, deletionType, scope });
+    if (!(await canSeeLeadContacts(req))) {
+      result.items = result.items.map(maskAdminLeadContacts);
+    }
     return res.json(result);
   } catch (error: any) {
     return res.status(500).json({

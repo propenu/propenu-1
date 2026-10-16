@@ -323,5 +323,7 @@ export interface IFeaturedProject {
 
   rejectedReason?: string;
 
+  approvalTicket?: { ticketId?: string; ticketCode?: string };
+
   lastPromotionType?: PromotionType;
 }

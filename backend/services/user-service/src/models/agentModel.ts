@@ -21,6 +21,7 @@ const AgentSchema = new Schema<Agent>(
     slug: {
       type: String,
       unique: true,
+      sparse: true,
       lowercase: true,
       trim: true,
     },

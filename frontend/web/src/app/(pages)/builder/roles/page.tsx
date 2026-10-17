@@ -1440,10 +1440,10 @@ export default function BuilderRolesPage() {
 
                   {projectDropdownOpen && (
                     <div
-                      className="absolute left-0 top-[calc(100%+8px)] z-60 w-full min-w-[280px] overflow-hidden rounded-xl border border-gray-200 bg-white p-3 shadow-lg sm:min-w-[420px] lg:right-0 lg:left-auto"
+                      className="absolute left-0 top-[calc(100%+8px)] z-60 w-full min-w-[280px] sm:min-w-[420px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-gray-200 bg-white p-3 shadow-lg"
                       onClick={(event) => event.stopPropagation()}
                     >
-                      <div className="pointer-events-none absolute -top-2 right-6 hidden lg:block">
+                      <div className="pointer-events-none absolute -top-2 left-6">
                         <div className="h-3 w-3 rotate-45 border-l border-t border-gray-200 bg-white" />
                       </div>
                       <div className="relative">

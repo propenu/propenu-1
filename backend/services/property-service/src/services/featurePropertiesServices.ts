@@ -23,7 +23,7 @@ import {
 } from "../utils/agentSubmission";
 import { applyOwnerUserFilter, ownerListLimit } from "../utils/ownerUserFilter";
 import { getPrimeDisplayMode } from "../siteBranding/siteBranding.service";
-import { promotionHasStartedMatch } from "./promotionService";
+import { buildCoverageMatch, promotionHasStartedMatch } from "./promotionService";
 import {
   archiveDeletedProject,
   archiveEventFromActor,
@@ -315,6 +315,13 @@ function buildPromotionTypeMatch(types: string[]) {
     conditions.push({ "promotion.type": { $in: explicitTypes } });
   }
 
+  if (explicitTypes.includes("sponsored")) {
+    conditions.push({
+      "promotion.type": { $in: ["prime", "featured"] },
+      "promotion.sponsoredEnabled": true,
+    });
+  }
+
   if (normalizedTypes.includes("normal")) {
     conditions.push(
       { "promotion.type": "normal" },
@@ -354,6 +361,16 @@ async function countPromotionTypes(filter: any) {
       counts[key as keyof ReturnType<typeof emptyPromotionCounts>] = item.count;
     }
   }
+
+  counts.sponsored += await FeaturedProject.countDocuments({
+    $and: [
+      filter,
+      {
+        "promotion.type": { $in: ["prime", "featured"] },
+        "promotion.sponsoredEnabled": true,
+      },
+    ],
+  });
 
   return counts;
 }
@@ -727,8 +744,36 @@ function exactFieldMatch(field: string, values: string[]) {
   };
 }
 
+const NO_MAIN_COVERAGE = {
+  $or: [
+    { "promotion.mainCoverage": { $exists: false } },
+    { "promotion.mainCoverage": null },
+    { "promotion.mainCoverage": {} },
+  ],
+};
+
+/**
+ * Prime / Top Selling placement by location: a promotion with its own coverage
+ * shows where that coverage points; otherwise it shows at the project's own location.
+ */
+function placementLocationMatch(
+  ownLocation: any[],
+  target: {
+    state?: string | undefined;
+    city?: string | undefined;
+    localities?: string[] | undefined;
+  },
+) {
+  const coverage = buildCoverageMatch("promotion.mainCoverage", target);
+  const own = ownLocation.length ? { $and: ownLocation } : {};
+  if (!coverage) return own;
+  return {
+    $or: [{ $and: [NO_MAIN_COVERAGE, ...ownLocation] }, coverage],
+  };
+}
+
 function buildDiscoveryFilters(options?: {
-  locality?: string;
+  locality?: string | undefined;
   minPrice?: number;
   maxPrice?: number;
   bhk?: string;
@@ -1098,6 +1143,7 @@ function hideUnstartedPromotion<T extends Record<string, any>>(item: T): T {
       ...item.promotion,
       type: "normal",
       priority: 0,
+      sponsoredEnabled: false,
     },
   };
 }
@@ -2137,7 +2183,12 @@ export const FeaturePropertyService = {
     if (locality) {
       const items = await findFeatured({
         ...baseFilter,
-        locality: exactCaseInsensitive(locality),
+        $and: [
+          placementLocationMatch(
+            [{ locality: exactCaseInsensitive(locality) }],
+            city && state ? { state, city, localities: [locality] } : {},
+          ),
+        ],
       });
 
       if (items.length > 0) {
@@ -2153,7 +2204,12 @@ export const FeaturePropertyService = {
     if (city) {
       const items = await findFeatured({
         ...baseFilter,
-        city: exactCaseInsensitive(city),
+        $and: [
+          placementLocationMatch(
+            [{ city: exactCaseInsensitive(city) }],
+            state ? { state, city } : {},
+          ),
+        ],
       });
 
       if (items.length > 0) {
@@ -2165,7 +2221,9 @@ export const FeaturePropertyService = {
     if (state) {
       const items = await findFeatured({
         ...baseFilter,
-        state: exactCaseInsensitive(state),
+        $and: [
+          placementLocationMatch([{ state: exactCaseInsensitive(state) }], { state }),
+        ],
       });
 
       if (items.length > 0) {
@@ -2340,8 +2398,34 @@ export const FeaturePropertyService = {
     const makeRegex = (value?: string) =>
       value ? { $regex: `^${value.trim()}$`, $options: "i" } : undefined;
 
-    if (options?.city) filter.city = makeRegex(options.city);
-    if (options?.state) filter.state = makeRegex(options.state);
+    const placementType = String(options?.type || "").trim().toLowerCase();
+    const isOwnerScoped = Boolean(
+      (options as any)?.ownerUserId ||
+        (options as any)?.createdBy ||
+        (options as any)?.postedBy,
+    );
+    const useMainCoverage =
+      (placementType === "prime" || placementType === "featured") &&
+      !isOwnerScoped &&
+      Boolean(options?.state || options?.city);
+
+    if (useMainCoverage) {
+      const ownLocation: any[] = [];
+      if (options?.city) ownLocation.push({ city: makeRegex(options.city) });
+      if (options?.state) ownLocation.push({ state: makeRegex(options.state) });
+      const localities = splitFilterValues(options?.locality);
+      if (localities.length) ownLocation.push(exactFieldMatch("locality", localities));
+      andFilters.push(
+        placementLocationMatch(ownLocation, {
+          state: options?.state,
+          city: options?.city,
+          localities,
+        }),
+      );
+    } else {
+      if (options?.city) filter.city = makeRegex(options.city);
+      if (options?.state) filter.state = makeRegex(options.state);
+    }
 
     const category = String(options?.categoryType || "").trim().toLowerCase();
     if (
@@ -2457,7 +2541,9 @@ export const FeaturePropertyService = {
           ...(filter.$and ? { $and: [...filter.$and] } : {}),
         }
       : null;
-    const discoveryFilters = buildDiscoveryFilters(options);
+    const discoveryFilters = buildDiscoveryFilters(
+      useMainCoverage ? { ...options, locality: undefined } : options,
+    );
     if (discoveryFilters.length) {
       filter.$and = [...(filter.$and || []), ...discoveryFilters];
     }
@@ -2545,9 +2631,16 @@ export const FeaturePropertyService = {
     if (state || city || locality) {
       const localityFilter = {
         ...baseFilter,
-        ...(state && { state: makeRegex(state) }),
-        ...(city && { city: makeRegex(city) }),
-        ...(locality && { locality: makeRegex(locality) }),
+        $and: [
+          placementLocationMatch(
+            [
+              ...(state ? [{ state: makeRegex(state) }] : []),
+              ...(city ? [{ city: makeRegex(city) }] : []),
+              ...(locality ? [{ locality: makeRegex(locality) }] : []),
+            ],
+            { state, city, localities: locality ? [locality] : [] },
+          ),
+        ],
       };
 
       //checking
@@ -2572,8 +2665,15 @@ export const FeaturePropertyService = {
     if (state || city) {
       const cityFilter = {
         ...baseFilter,
-        ...(state && { state: makeRegex(state) }),
-        ...(city && { city: makeRegex(city) }),
+        $and: [
+          placementLocationMatch(
+            [
+              ...(state ? [{ state: makeRegex(state) }] : []),
+              ...(city ? [{ city: makeRegex(city) }] : []),
+            ],
+            { state, city },
+          ),
+        ],
       };
 
       const cityItems = await FeaturedProject.find(cityFilter)
@@ -2595,7 +2695,7 @@ export const FeaturePropertyService = {
     if (state) {
       const stateFilter = {
         ...baseFilter,
-        state: makeRegex(state),
+        $and: [placementLocationMatch([{ state: makeRegex(state) }], { state })],
       };
 
       const stateItems = await FeaturedProject.find(stateFilter)

@@ -1,6 +1,8 @@
 import FeaturedProject from "../models/featurePropertiesModel";
 import { CATEGORY_MODELS } from "../controller/listingPromotionController";
 import { notifyLifecycleEvent } from "../services/lifecycleNotificationService";
+import { buildNormalPromotion, describePromotion } from "../services/promotionService";
+import { syncAllPlanPromotions } from "../services/planPromotionService";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const PROMOTED_TYPES = ["featured", "sponsored", "prime"];
@@ -39,23 +41,21 @@ async function resetExpiredOnModel(
       fromType: previousPromotion.type || "normal",
       toType: "normal",
       source: "system",
-      reason: "Promotion expired automatically",
+      reason:
+        previousPromotion.source === "subscription" && previousPromotion.plan?.invoiceId
+          ? `Builder plan ${previousPromotion.plan.title || ""} ended (${describePromotion(previousPromotion)})`.replace(/\s+/g, " ")
+          : `Promotion expired automatically (${describePromotion(previousPromotion)})`,
       startedAt: now,
       endedAt: null,
       expiresAt: null,
+      sponsoredEnabled: false,
       metadata: {
         previousPriority: previousPromotion.priority ?? 0,
         newPriority: 0,
       },
     });
 
-    docAny.promotion = {
-      type: "normal",
-      priority: 0,
-      source: "manual",
-      startDate: now,
-      visibleLeadLimit: 0,
-    };
+    docAny.promotion = buildNormalPromotion(now);
     docAny.markModified?.("promotion");
 
     await doc.save();
@@ -159,10 +159,25 @@ export async function processListingExpiries() {
   return { expiring, expired };
 }
 
+const PLAN_SYNC_MS = 5 * 60 * 1000;
+
+function runPlanSync() {
+  syncAllPlanPromotions()
+    .then((processed) => {
+      if (processed) console.log(`Synced builder plan promotions for ${processed} projects`);
+    })
+    .catch((error) => {
+      console.error("Builder plan promotion sync failed:", error);
+    });
+}
+
 export function startPromotionExpiryJob() {
-  resetExpiredPromotions().catch((error) => {
-    console.error("Promotion expiry cleanup failed:", error);
-  });
+  resetExpiredPromotions()
+    .catch((error) => {
+      console.error("Promotion expiry cleanup failed:", error);
+    })
+    .finally(runPlanSync);
+  setInterval(runPlanSync, PLAN_SYNC_MS);
   processListingExpiries().catch((error) => {
     console.error("Listing expiry cleanup failed:", error);
   });

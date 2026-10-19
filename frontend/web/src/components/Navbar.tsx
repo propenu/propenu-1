@@ -90,7 +90,11 @@ const Navbar = () => {
   const isBuilder = user?.user?.roleName === "builder";
   const isAuthenticated = Boolean(user?.user);
   const mobileUserOptions = user ? getOptionsForRole(user?.user?.roleName) : [];
-  const { selectedCity, locations, selectCity } = useCity();
+  const { selectedCity: storedCity, locations, selectCity } = useCity();
+  const [hasMounted, setHasMounted] = useState(false);
+  useEffect(() => setHasMounted(true), []);
+  // Stored city comes from localStorage, so it must not affect the server-matching first render.
+  const selectedCity = hasMounted ? storedCity : null;
   const hideMobileNavSearchRow = pathname.startsWith("/properties");
   const notificationRoute = isBuilder
     ? "/builder/notifications"

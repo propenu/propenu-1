@@ -8,8 +8,10 @@ import Role from "../models/roleModel";
 import { uploadToS3 } from "../utils/s3Upload";
 import { verifyAndConsumeOtpWithReason } from "../utils/saveOtpRedis";
 import { decodeUnsubscribeToken } from "../utils/unsubscribeToken";
+import { PLATFORM_END_USER_ROLE_NAMES } from "../utils/roleHierarchy";
 import {
   getActiveDeviceTokenRowsForUsers,
+  importLegacyUserTokens,
   upsertDeviceToken,
 } from "../../../../shared/notifications/deviceTokens";
 
@@ -270,6 +272,13 @@ export const sendCustomNotification = async (req: Request, res: Response) => {
       }
 
       query.roleId = roleDoc._id;
+    } else {
+      const platformRoles = await Role.find({
+        name: { $in: [...PLATFORM_END_USER_ROLE_NAMES] },
+      })
+        .select("_id")
+        .lean();
+      query.roleId = { $in: platformRoles.map((r) => r._id) };
     }
 
     // ✅ Location filters
@@ -280,7 +289,7 @@ export const sendCustomNotification = async (req: Request, res: Response) => {
     console.log("🔍 Final Query:", query);
 
     // ✅ Fetch users
-    const users: HydratedDocument<IUser>[] = await User.find(query);
+    const users = await User.find(query).select("_id fcmToken").lean();
 
     if (!users.length) {
       return res.status(404).json({
@@ -291,7 +300,19 @@ export const sendCustomNotification = async (req: Request, res: Response) => {
     }
 
     const recipientUserIds = users.map((u) => u._id);
-    const tokenUserMap = await getActiveDeviceTokenRowsForUsers(recipientUserIds);
+    const deviceRows = await getActiveDeviceTokenRowsForUsers(recipientUserIds, {
+      ignoreActivityWindow: true,
+    });
+    const legacyRows = await importLegacyUserTokens(
+      users.map((u) => ({ userId: u._id, token: u.fcmToken })),
+    );
+    const tokenUserMap = [...deviceRows, ...legacyRows];
+
+    console.log("📣 Campaign targeting:", {
+      matchedUsers: users.length,
+      deviceTokens: deviceRows.length,
+      legacyTokens: legacyRows.length,
+    });
 
     if (!tokenUserMap.length) {
       return res.status(404).json({
@@ -324,14 +345,24 @@ export const sendCustomNotification = async (req: Request, res: Response) => {
     const failedUsers: any[] = [];
     const successUsers: any[] = [];
 
-    response?.failedTokens?.forEach((failedToken: string) => {
-      const user = tokenUserMap.find((t) => t.token === failedToken);
-      if (user) failedUsers.push(user.userId);
+    const failedTokenSet = new Set(response.failedTokens || []);
+    const successUserKeys = new Set<string>();
+    const failedUserKeys = new Set<string>();
+
+    tokenUserMap.forEach((t) => {
+      const key = String(t.userId);
+      if (failedTokenSet.has(t.token)) failedUserKeys.add(key);
+      else successUserKeys.add(key);
     });
 
     tokenUserMap.forEach((t) => {
-      if (!response.failedTokens.includes(t.token)) {
+      const key = String(t.userId);
+      if (successUserKeys.has(key)) {
         successUsers.push(t.userId);
+        successUserKeys.delete(key);
+      } else if (failedUserKeys.has(key)) {
+        failedUsers.push(t.userId);
+        failedUserKeys.delete(key);
       }
     });
 

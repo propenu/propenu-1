@@ -13,6 +13,13 @@ import fallbackCoerceDefault from "../middlewares/fallbackCoerce";
 import { authMiddleware } from "../middlewares/authMiddleware";
 import { requirePermission } from "../middlewares/requirePermission";
 import { expirePromotion, promoteProperty, renewPromotion, resetPromotion } from "../controller/promotionController";
+import {
+  getPlanStatus,
+  setPromotionMode,
+  startFromPlan,
+  syncAllPlans,
+  syncProjectPlan,
+} from "../controller/planPromotionController";
 import { uploadMedia } from "../middlewares/multer";
 import builderOnboardingRoute from "./builderOnboardingRoute";
 
@@ -69,6 +76,13 @@ router.post("/",  uploadMedia, parseJsonFields(jsonKeys), authMiddleware, requir
 ]), fallbackCoerceDefault, validateBody(CreateFeaturePropertySchema),
   createFeatureProperties
 );
+
+// Builder plan delivery (Automatic / Start from plan / Direct)
+router.post("/plan-sync", authMiddleware, syncAllPlans);
+router.get("/:id/plan-status", authMiddleware, getPlanStatus);
+router.patch("/:id/promotion-mode", authMiddleware, setPromotionMode);
+router.post("/:id/promote-from-plan", authMiddleware, startFromPlan);
+router.post("/:id/plan-sync", authMiddleware, syncProjectPlan);
 
 // Promotion lifecycle MUST stay before generic PATCH /:id
 router.patch("/:id/promote", authMiddleware, promoteProperty);

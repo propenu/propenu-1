@@ -41,6 +41,68 @@ function toNumberOrUndefined(value: unknown) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const PLACEMENT_LABEL: Record<string, string> = {
+  prime: "Prime",
+  featured: "Top Selling",
+};
+
+export function buildPlanSnapshot(plan: any) {
+  const doc = typeof plan?.toObject === "function" ? plan.toObject() : plan || {};
+  return {
+    planId: doc._id,
+    code: doc.code,
+    title: doc.title,
+    durationDays: Number(doc.durationDays) || 30,
+    mainPlacement: doc.mainPlacement || "none",
+    sponsoredEnabled: Boolean(doc.sponsoredEnabled),
+    locationRule: doc.locationRule || "project_city",
+    mainCoverage: doc.mainCoverage || {},
+    sponsoredSameAsMain: doc.sponsoredSameAsMain !== false,
+    sponsoredAd: doc.sponsoredAd || {},
+    visibleLeadLimit: Number(doc.visibleLeadLimit) || 0,
+    startMode: doc.startMode === "team" ? "team" : "auto",
+  };
+}
+
+export function describePlanPackage(snapshot: {
+  mainPlacement?: string;
+  sponsoredEnabled?: boolean;
+}) {
+  const main = PLACEMENT_LABEL[snapshot.mainPlacement || ""];
+  if (main) return snapshot.sponsoredEnabled ? `${main} + Sponsored` : main;
+  return snapshot.sponsoredEnabled ? "Sponsored" : "Listing only";
+}
+
+function readDeliveryMode(value: unknown, fallback: "auto" | "team") {
+  return value === "auto" || value === "team" ? value : fallback;
+}
+
+/** A new paid period for a project that is still covered starts when the current one ends. */
+async function resolveRenewalWindow(params: {
+  propertyId: string;
+  durationDays: number;
+  requestedStart: Date;
+  excludeId?: string;
+}) {
+  const filter: Record<string, unknown> = {
+    propertyId: params.propertyId,
+    paymentStatus: "paid",
+    endDate: { $gt: params.requestedStart },
+    promotionStatus: { $ne: "cancelled" },
+  };
+  if (params.excludeId) filter._id = { $ne: params.excludeId };
+
+  const current = await BuilderInvoice.findOne(filter).sort({ endDate: -1 }).lean();
+  const startDate = current?.endDate ? new Date(current.endDate) : params.requestedStart;
+  return {
+    renewalOf: current?._id ?? null,
+    startDate,
+    endDate: new Date(startDate.getTime() + params.durationDays * DAY_MS),
+  };
+}
+
 async function resolveInvoiceDependencies(params: {
   userId?: string;
   propertyId?: string;
@@ -242,6 +304,14 @@ export async function createBuilderInvoice(req: AuthRequest, res: Response) {
       });
     }
 
+    const planSnapshot = buildPlanSnapshot(resolved.planDoc);
+    const requestedStart = req.body.startDate ? new Date(req.body.startDate) : new Date();
+    const window = await resolveRenewalWindow({
+      propertyId: String(resolved.propertyDoc._id),
+      durationDays: planSnapshot.durationDays,
+      requestedStart: Number.isNaN(requestedStart.getTime()) ? new Date() : requestedStart,
+    });
+
     const payload = {
       ...req.body,
       userId: String(resolved.targetUser._id),
@@ -251,7 +321,15 @@ export async function createBuilderInvoice(req: AuthRequest, res: Response) {
       projectCode: req.body.projectCode || (resolved.propertyDoc as any).propertyCode,
       servicePlanId: String(resolved.planDoc._id),
       servicePlanName: req.body.servicePlanName || resolved.planDoc.title,
-      serviceType: req.body.serviceType || resolved.planDoc.promotionType,
+      serviceType: describePlanPackage(planSnapshot),
+      planSnapshot,
+      deliveryMode: readDeliveryMode(req.body.deliveryMode, planSnapshot.startMode as "auto" | "team"),
+      startDate: window.startDate,
+      endDate: window.endDate,
+      timePeriod: req.body.timePeriod || `${planSnapshot.durationDays} days`,
+      renewalOf: window.renewalOf,
+      promotionStatus: req.body.paymentStatus === "paid" ? "not_started" : "waiting_payment",
+      promotionNote: undefined,
       subtotalAmount:
         toNumberOrUndefined(req.body.subtotalAmount) ??
         toNumberOrUndefined(req.body.totalAmount) ??
@@ -331,8 +409,40 @@ export async function updateBuilderInvoice(req: AuthRequest, res: Response) {
       });
     }
 
+    const {
+      planSnapshot: _ignoredSnapshot,
+      promotionStatus: _ignoredStatus,
+      promotionStartedAt: _ignoredStarted,
+      promotionEndedAt: _ignoredEnded,
+      renewalOf: _ignoredRenewal,
+      ...body
+    } = req.body || {};
+    const planChanged = String((invoice as any).servicePlanId) !== String(resolved.planDoc._id);
+    const snapshot =
+      planChanged || !(invoice as any).planSnapshot
+        ? buildPlanSnapshot(resolved.planDoc)
+        : (invoice as any).planSnapshot;
+    const previousStatus = (invoice as any).paymentStatus;
+    const nextPaymentStatus = body.paymentStatus ?? previousStatus;
+    const currentPromotionStatus = (invoice as any).promotionStatus || "not_started";
+    const nextPromotionStatus =
+      nextPaymentStatus !== "paid"
+        ? currentPromotionStatus === "running" || currentPromotionStatus === "scheduled"
+          ? currentPromotionStatus
+          : "waiting_payment"
+        : currentPromotionStatus === "waiting_payment"
+          ? "not_started"
+          : currentPromotionStatus;
+
     Object.assign(invoice, {
-      ...req.body,
+      ...body,
+      planSnapshot: snapshot,
+      serviceType: describePlanPackage(snapshot),
+      deliveryMode: readDeliveryMode(
+        body.deliveryMode,
+        ((invoice as any).deliveryMode || snapshot.startMode || "auto") as "auto" | "team",
+      ),
+      promotionStatus: nextPromotionStatus,
       userId: String(resolved.targetUser._id),
       builderDetails: buildBuilderDetails(resolved.targetUser),
       propertyId: String(resolved.propertyDoc._id),
@@ -343,7 +453,6 @@ export async function updateBuilderInvoice(req: AuthRequest, res: Response) {
         (resolved.propertyDoc as any).propertyCode,
       servicePlanId: String(resolved.planDoc._id),
       servicePlanName: req.body.servicePlanName ?? (invoice as any).servicePlanName ?? resolved.planDoc.title,
-      serviceType: req.body.serviceType ?? (invoice as any).serviceType ?? resolved.planDoc.promotionType,
       subtotalAmount:
         toNumberOrUndefined(req.body.subtotalAmount) ??
         (invoice as any).subtotalAmount ??

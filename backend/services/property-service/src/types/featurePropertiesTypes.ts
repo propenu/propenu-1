@@ -13,6 +13,9 @@ export interface IPromotionHistory {
   startedAt?: Date;
   endedAt?: Date | null;
   expiresAt?: Date | null;
+  sponsoredEnabled?: boolean;
+  mainCoverage?: Record<string, Record<string, string[]>>;
+  sponsoredAd?: Record<string, Record<string, string[]>>;
   metadata?: {
     previousPriority?: number;
     newPriority?: number;
@@ -326,4 +329,6 @@ export interface IFeaturedProject {
   approvalTicket?: { ticketId?: string; ticketCode?: string };
 
   lastPromotionType?: PromotionType;
+
+  promotionMode?: "auto" | "plan" | "manual" | null;
 }

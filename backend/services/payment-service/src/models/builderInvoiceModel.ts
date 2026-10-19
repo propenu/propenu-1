@@ -197,12 +197,53 @@ const BuilderInvoiceSchema = new Schema(
       type: String,
       trim: true,
     },
+
+    /** Paid invoice this one extends; its period starts where that one ends. */
+    renewalOf: {
+      type: Types.ObjectId,
+      ref: "BuilderInvoice",
+      default: null,
+    },
+
+    /** Promotion package as sold; later plan edits don't change this invoice. */
+    planSnapshot: {
+      type: Schema.Types.Mixed,
+      default: undefined,
+    },
+
+    /** auto: starts when paid · team: waits for "Start from plan" on the project card. */
+    deliveryMode: {
+      type: String,
+      enum: ["auto", "team"],
+      default: "auto",
+    },
+
+    /** Maintained by the property service's plan promotion sync. */
+    promotionStatus: {
+      type: String,
+      enum: [
+        "not_started",
+        "waiting_payment",
+        "waiting_approval",
+        "waiting_team",
+        "scheduled",
+        "running",
+        "ended",
+        "cancelled",
+      ],
+      default: "not_started",
+      index: true,
+    },
+    promotionNote: { type: String, trim: true },
+    promotionStartedAt: { type: Date },
+    promotionEndedAt: { type: Date },
   },
   { timestamps: true },
 );
 
 BuilderInvoiceSchema.index({ userId: 1, invoiceDate: -1 });
 BuilderInvoiceSchema.index({ propertyId: 1, servicePlanId: 1 });
+BuilderInvoiceSchema.index({ propertyId: 1, paymentStatus: 1, endDate: -1 });
 
 export const BuilderInvoice = mongoose.model(
   "BuilderInvoice",

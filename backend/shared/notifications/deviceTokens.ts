@@ -129,6 +129,7 @@ export const getActiveDeviceTokensForUsers = async (
 
 export const getActiveDeviceTokenRowsForUsers = async (
   userIds: Array<string | Types.ObjectId>,
+  { ignoreActivityWindow = false }: { ignoreActivityWindow?: boolean } = {},
 ): Promise<ActiveDeviceTokenRow[]> => {
   const objectIds = toObjectIds(userIds);
   if (!objectIds.length) return [];
@@ -136,12 +137,15 @@ export const getActiveDeviceTokenRowsForUsers = async (
   const db = mongoose.connection.db;
   if (!db) return [];
 
-  const activeDeviceTokenQuery = getActiveDeviceTokenQuery();
+  // Broadcasts target every registered device; FCM rejects dead tokens and they get deactivated.
+  const tokenQuery = ignoreActivityWindow
+    ? { token: { $nin: [null, ""] }, isActive: { $ne: false } }
+    : getActiveDeviceTokenQuery();
   const deviceRows = await db
     .collection("devicetokens")
     .find({
       userId: { $in: objectIds },
-      ...activeDeviceTokenQuery,
+      ...tokenQuery,
     })
     .project({ userId: 1, token: 1, platform: 1 })
     .toArray();
@@ -275,6 +279,59 @@ export const upsertDeviceToken = async ({
     platform: normalizedPlatform,
     deviceId: normalizedDeviceId,
   };
+};
+
+export const importLegacyUserTokens = async (
+  legacyRows: Array<{ userId: string | Types.ObjectId; token?: string | null | undefined }>,
+): Promise<ActiveDeviceTokenRow[]> => {
+  const db = mongoose.connection.db;
+  if (!db) return [];
+
+  const byToken = new Map<string, Types.ObjectId>();
+  legacyRows.forEach(({ userId, token }) => {
+    const trimmed = String(token || "").trim();
+    if (!trimmed || !Types.ObjectId.isValid(String(userId))) return;
+    byToken.set(trimmed, new Types.ObjectId(String(userId)));
+  });
+  if (!byToken.size) return [];
+
+  const collection = db.collection("devicetokens");
+  const existing = await collection
+    .find({ token: { $in: Array.from(byToken.keys()) } })
+    .project({ token: 1 })
+    .toArray();
+  const existingTokens = new Set(existing.map((row) => String(row.token || "").trim()));
+
+  const now = new Date();
+  const newRows: ActiveDeviceTokenRow[] = [];
+  byToken.forEach((userId, token) => {
+    if (!existingTokens.has(token)) newRows.push({ userId, token, platform: "unknown" });
+  });
+  if (!newRows.length) return [];
+
+  await collection.bulkWrite(
+    newRows.map((row) => ({
+      updateOne: {
+        filter: { token: row.token },
+        update: {
+          $setOnInsert: {
+            userId: row.userId,
+            token: row.token,
+            platform: row.platform,
+            deviceId: null,
+            isActive: true,
+            lastSeenAt: now,
+            createdAt: now,
+            updatedAt: now,
+          },
+        },
+        upsert: true,
+      },
+    })),
+    { ordered: false },
+  );
+
+  return newRows;
 };
 
 export const deactivateDeviceTokens = async (tokens: string[]) => {

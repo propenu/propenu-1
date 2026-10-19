@@ -187,6 +187,29 @@ export interface IPromotion {
    * { [state]: { [city]: string[] localities } }
    */
   sponsoredAd?: Record<string, Record<string, string[]>>;
+  /** Prime / Top Selling placement coverage. Empty = the project's own location. */
+  mainCoverage?: Record<string, Record<string, string[]>>;
+  /** Sponsored add-on on top of a Prime / Top Selling promotion; shares start and expiry. */
+  sponsoredEnabled?: boolean;
+  sponsoredSameAsMain?: boolean;
+  promotedBy?: {
+    userId?: Types.ObjectId | undefined;
+    name?: string | undefined;
+    email?: string | undefined;
+    roleName?: string | undefined;
+    at?: Date | undefined;
+  };
+  /** auto: started by the plan sync · plan: one-button start from a plan · manual: set directly. */
+  deliveryMode?: "auto" | "plan" | "manual" | undefined;
+  /** Builder plan invoice that pays for this promotion (source "subscription"). */
+  plan?: {
+    invoiceId?: Types.ObjectId | undefined;
+    invoiceNumber?: string | undefined;
+    planId?: Types.ObjectId | undefined;
+    code?: string | undefined;
+    title?: string | undefined;
+    locationRule?: string | undefined;
+  } | undefined;
   features?: {
     emailPromotion?: boolean;
     whatsappPromotion?: boolean;
@@ -245,6 +268,44 @@ export const PromotionSchema = new Schema(
       default: {},
     },
 
+    mainCoverage: {
+      type: Schema.Types.Mixed,
+      default: {},
+    },
+
+    sponsoredEnabled: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    sponsoredSameAsMain: {
+      type: Boolean,
+      default: false,
+    },
+
+    promotedBy: {
+      userId: { type: Schema.Types.ObjectId, ref: "User" },
+      name: String,
+      email: String,
+      roleName: String,
+      at: Date,
+    },
+
+    deliveryMode: {
+      type: String,
+      enum: ["auto", "plan", "manual"],
+    },
+
+    plan: {
+      invoiceId: { type: Schema.Types.ObjectId, index: true },
+      invoiceNumber: String,
+      planId: Schema.Types.ObjectId,
+      code: String,
+      title: String,
+      locationRule: String,
+    },
+
     features: {
       emailPromotion: { type: Boolean, default: false },
       whatsappPromotion: { type: Boolean, default: false },
@@ -281,6 +342,9 @@ export const PromotionHistorySchema = new Schema(
     startedAt: { type: Date },
     endedAt: { type: Date, default: null },
     expiresAt: { type: Date, default: null },
+    sponsoredEnabled: { type: Boolean, default: false },
+    mainCoverage: { type: Schema.Types.Mixed, default: undefined },
+    sponsoredAd: { type: Schema.Types.Mixed, default: undefined },
     metadata: {
       previousPriority: { type: Number },
       newPriority: { type: Number },

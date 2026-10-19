@@ -3,7 +3,11 @@ import Commercial from "../../models/commercialModel";
 import FeaturedProject from "../../models/featurePropertiesModel";
 import LandPlot from "../../models/landModel";
 import Residential from "../../models/residentialModel";
-import { promotionHasStartedMatch } from "../../services/promotionService";
+import {
+  buildCoverageMatch,
+  promotionHasStartedMatch,
+  sponsoredSlotMatch,
+} from "../../services/promotionService";
 
 function attachType(data: any[], type: string) {
   return data.map((item) => withSponsoredDisplayFields(item, type));
@@ -33,58 +37,7 @@ function buildSponsoredAdTargetFilter(filters: any) {
 
   if (!state || !city) return undefined;
 
-  const cityTargetExpr = {
-    $let: {
-      vars: {
-        stateTarget: {
-          $getField: {
-            field: state,
-            input: "$promotion.sponsoredAd",
-          },
-        },
-      },
-      in: {
-        $getField: {
-          field: city,
-          input: "$$stateTarget",
-        },
-      },
-    },
-  };
-
-  if (localities.length === 0) {
-    return {
-      $expr: {
-        $isArray: cityTargetExpr,
-      },
-    };
-  }
-
-  return {
-    $expr: {
-      $let: {
-        vars: {
-          cityTarget: cityTargetExpr,
-        },
-        in: {
-          $and: [
-            { $isArray: "$$cityTarget" },
-            {
-              $or: [
-                { $eq: [{ $size: "$$cityTarget" }, 0] },
-                {
-                  $gt: [
-                    { $size: { $setIntersection: ["$$cityTarget", localities] } },
-                    0,
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      },
-    },
-  };
+  return buildCoverageMatch("promotion.sponsoredAd", { state, city, localities });
 }
 
 function readObjectName(value: unknown) {
@@ -177,8 +130,8 @@ function buildBaseSponsoredFilter(filters: any) {
   const now = new Date();
   const filter: any = {
     status: "active",
-    "promotion.type": "sponsored",
     $and: [
+      sponsoredSlotMatch(),
       {
         $or: [
           { "promotion.boostExpiry": { $gt: now } },

@@ -7,6 +7,10 @@ const PRIORITY: Record<PromotionType, number> = {
   prime: 3,
 };
 
+export function promotionPriority(type: string) {
+  return PRIORITY[type as PromotionType] ?? 0;
+}
+
 /** Normalize nested sponsoredAd: { state: { city: string[] } } */
 export function normalizeSponsoredAd(
   raw: unknown,
@@ -44,6 +48,122 @@ export function normalizeSponsoredAd(
   return out;
 }
 
+export type CoverageMap = Record<string, Record<string, string[]>>;
+
+export function isCoverageEmpty(map: unknown) {
+  return !map || typeof map !== "object" || Object.keys(map as object).length === 0;
+}
+
+export function cloneCoverage(map: CoverageMap | undefined): CoverageMap {
+  return normalizeSponsoredAd(map ? JSON.parse(JSON.stringify(map)) : {});
+}
+
+/**
+ * Mongo filter: the coverage map at `path` ({ state: { city: localities[] } })
+ * covers the requested state / city / localities. An empty locality list means
+ * the whole city. Returns undefined when no location was requested.
+ */
+export function buildCoverageMatch(
+  path: string,
+  target: {
+    state?: string | undefined;
+    city?: string | undefined;
+    localities?: string[] | undefined;
+  },
+) {
+  const state = String(target.state || "").trim();
+  const city = String(target.city || "").trim();
+  const localities = (target.localities || []).map((l) => l.trim()).filter(Boolean);
+
+  if (!state) return undefined;
+
+  const stateExpr = { $getField: { field: state, input: `$${path}` } };
+
+  if (!city) {
+    return { $expr: { $eq: [{ $type: stateExpr }, "object"] } };
+  }
+
+  const cityExpr = {
+    $let: {
+      vars: { stateTarget: stateExpr },
+      in: { $getField: { field: city, input: "$$stateTarget" } },
+    },
+  };
+
+  if (localities.length === 0) {
+    return { $expr: { $isArray: cityExpr } };
+  }
+
+  return {
+    $expr: {
+      $let: {
+        vars: { cityTarget: cityExpr },
+        in: {
+          $and: [
+            { $isArray: "$$cityTarget" },
+            {
+              $or: [
+                { $eq: [{ $size: "$$cityTarget" }, 0] },
+                {
+                  $gt: [
+                    { $size: { $setIntersection: ["$$cityTarget", localities] } },
+                    0,
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
+/** Matches projects whose Sponsored slot is live: Sponsored-only or a Prime / Top Selling with the add-on. */
+export function sponsoredSlotMatch() {
+  return {
+    $or: [
+      { "promotion.type": "sponsored" },
+      {
+        "promotion.type": { $in: ["prime", "featured"] },
+        "promotion.sponsoredEnabled": true,
+      },
+    ],
+  };
+}
+
+export function buildNormalPromotion(now = new Date()) {
+  return {
+    type: "normal" as const,
+    priority: 0,
+    source: "manual" as const,
+    startDate: now,
+    visibleLeadLimit: 0,
+    mainCoverage: {},
+    sponsoredEnabled: false,
+    sponsoredSameAsMain: false,
+    sponsoredAd: {},
+  };
+}
+
+const TYPE_LABEL: Record<PromotionType, string> = {
+  normal: "normal",
+  featured: "top selling",
+  sponsored: "sponsored",
+  prime: "prime",
+};
+
+export function describePromotion(promotion: {
+  type?: string;
+  sponsoredEnabled?: boolean;
+}) {
+  const type = (promotion?.type || "normal") as PromotionType;
+  const base = TYPE_LABEL[type] || type;
+  return promotion?.sponsoredEnabled && (type === "prime" || type === "featured")
+    ? `${base} + sponsored`
+    : base;
+}
+
 /** Public boosted slots ignore a promotion whose start is still in the future. */
 export function promotionHasStartedMatch(now = new Date()) {
   return {
@@ -62,7 +182,10 @@ export function buildManualPromotion(type: PromotionType) {
     source: "manual" as const,
     startDate: new Date(),
     boostExpiry: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
-    sponsoredAd: {} as Record<string, Record<string, string[]>>,
+    sponsoredAd: {} as CoverageMap,
+    mainCoverage: {} as CoverageMap,
+    sponsoredEnabled: false,
+    sponsoredSameAsMain: false,
   };
 }
 

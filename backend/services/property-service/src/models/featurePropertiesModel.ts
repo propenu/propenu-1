@@ -221,6 +221,9 @@ const PromotionHistorySchema = new Schema(
     startedAt: { type: Date },
     endedAt: { type: Date, default: null },
     expiresAt: { type: Date, default: null },
+    sponsoredEnabled: { type: Boolean, default: false },
+    mainCoverage: { type: Schema.Types.Mixed, default: undefined },
+    sponsoredAd: { type: Schema.Types.Mixed, default: undefined },
     metadata: {
       previousPriority: { type: Number },
       newPriority: { type: Number },
@@ -444,6 +447,17 @@ const FeaturePropertySchema = new Schema<IFeaturedProjectDocument>(
     lastPromotionType: {
       type: String,
       enum: ["normal", "featured", "prime", "sponsored"],
+    },
+
+    /**
+     * Project card "Promote" choice. auto: paid builder plans start / renew / end on their own ·
+     * plan: started with the one-button "Start from plan" · manual: team runs promotions directly.
+     * Unset: follows the invoice's delivery mode.
+     */
+    promotionMode: {
+      type: String,
+      enum: ["auto", "plan", "manual"],
+      default: null,
     },
 
     postedBy: {

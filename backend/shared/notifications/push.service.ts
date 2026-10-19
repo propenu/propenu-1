@@ -14,7 +14,13 @@ export type BulkNotificationResult = {
   successCount: number;
   failureCount: number;
   failedTokens: string[];
+  invalidTokens?: string[];
 };
+
+const PERMANENT_TOKEN_ERROR_CODES = new Set([
+  "messaging/registration-token-not-registered",
+  "messaging/invalid-registration-token",
+]);
 
 type PushData = Record<string, string>;
 type PushPlatform = ActiveDeviceTokenRow["platform"];
@@ -94,6 +100,7 @@ const mergeResult = (
   successCount: current.successCount + next.successCount,
   failureCount: current.failureCount + next.failureCount,
   failedTokens: [...current.failedTokens, ...next.failedTokens],
+  invalidTokens: [...(current.invalidTokens || []), ...(next.invalidTokens || [])],
 });
 
 const sendMulticastChunks = async (
@@ -126,11 +133,15 @@ const sendMulticastChunks = async (
       messageFactory(tokenChunk),
     );
     const failedTokens: string[] = [];
+    const invalidTokens: string[] = [];
 
     response.responses.forEach((resp, index) => {
       const token = tokenChunk[index];
       if (!resp.success && token) {
         failedTokens.push(token);
+        if (resp.error?.code && PERMANENT_TOKEN_ERROR_CODES.has(resp.error.code)) {
+          invalidTokens.push(token);
+        }
         console.error("Push token failed:", token, resp.error?.code, resp.error?.message);
       }
     });
@@ -139,6 +150,7 @@ const sendMulticastChunks = async (
       successCount: response.successCount,
       failureCount: response.failureCount,
       failedTokens,
+      invalidTokens,
     });
   }
 
@@ -328,8 +340,8 @@ export const sendPlatformPush = async ({
     result = mergeResult(result, unknownResult);
   }
 
-  if (result.failedTokens.length) {
-    void deactivateDeviceTokens(result.failedTokens).catch((err) =>
+  if (result.invalidTokens?.length) {
+    void deactivateDeviceTokens(result.invalidTokens).catch((err) =>
       console.warn("Failed to deactivate invalid device tokens:", err),
     );
   }

@@ -219,35 +219,52 @@ const validatePhoneNumber = (phone?: string) => {
 };
 
 const createInitialAgentProfile = async (userId: mongoose.Types.ObjectId) => {
-  return Agent.findOneAndUpdate(
-    { user: userId },
-    {
-      $setOnInsert: {
-        user: userId,
-        name: "",
-        bio: "",
-        agencyName: "",
-        licenseNumber: "",
-        locality: "",
-        city: "",
-        experienceYears: 0,
-        dealsClosed: 0,
-        areasServed: [],
-        languages: [],
-        avatar: null,
-        coverImage: null,
-        rera: {
-          reraAgentId: "",
-          isVerified: false,
-        },
-        stats: {
-          totalProperties: 0,
-          publishedCount: 0,
-        },
+  const existing = await Agent.findOne({ user: userId });
+  if (existing) return existing;
+
+  const userDoc = await User.findById(userId).select("name").lean();
+  const userName = userDoc?.name?.trim() || "";
+  const cleanSlug = userName
+    ? userName
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/^-+|-+$/g, "")
+    : "";
+  const initialSlug = cleanSlug
+    ? `${cleanSlug}-${userId.toString().slice(-6)}`
+    : `agent-${userId}`;
+
+  try {
+    return await Agent.create({
+      user: userId,
+      slug: initialSlug,
+      name: userName,
+      bio: "",
+      agencyName: "",
+      licenseNumber: "",
+      locality: "",
+      city: "",
+      experienceYears: 0,
+      dealsClosed: 0,
+      areasServed: [],
+      languages: [],
+      avatar: null,
+      coverImage: null,
+      rera: {
+        reraAgentId: "",
+        isVerified: false,
       },
-    },
-    { new: true, upsert: true, setDefaultsOnInsert: true },
-  );
+      stats: {
+        totalProperties: 0,
+        publishedCount: 0,
+      },
+    });
+  } catch (error: any) {
+    const fallback = await Agent.findOne({ user: userId });
+    if (fallback) return fallback;
+    throw error;
+  }
 };
 
 const getDummyLoginConfig = () => ({

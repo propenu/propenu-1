@@ -120,10 +120,18 @@ function isLeadReadyUser(user?: any) {
   return hasVerifiedPhone && hasName && hasRole && builderNeedsCompany;
 }
 
-function isPlanRestrictionError(statusCode?: number, message?: string) {
+function isPlanRestrictionError(statusCode?: number, message?: string, code?: string) {
   const lowerMessage = String(message || "").toLowerCase();
+  const lowerCode = String(code || "").toLowerCase();
+
+  const hasPlanRestrictionCode =
+    lowerCode === "contact_limit_reached" ||
+    lowerCode === "plan_limit_reached" ||
+    lowerCode === "subscription_required" ||
+    lowerCode === "plan_required";
 
   const hasPlanRestrictionMessage =
+    lowerMessage.includes("limit") ||
     lowerMessage.includes("plan required") ||
     lowerMessage.includes("subscription required") ||
     lowerMessage.includes("upgrade your plan") ||
@@ -133,12 +141,19 @@ function isPlanRestrictionError(statusCode?: number, message?: string) {
     lowerMessage.includes("purchase a plan") ||
     lowerMessage.includes("purchase a buyer plan") ||
     lowerMessage.includes("subscribe to a plan") ||
+    lowerMessage.includes("subscribe to contact") ||
+    lowerMessage.includes("contact owners") ||
     lowerMessage.includes("active plan") ||
     lowerMessage.includes("membership required") ||
     lowerMessage.includes("plan limit") ||
     lowerMessage.includes("owner contacts");
 
-  return statusCode === 402 || hasPlanRestrictionMessage;
+  return (
+    statusCode === 402 ||
+    ((statusCode === 403 || statusCode === 400) && (hasPlanRestrictionCode || hasPlanRestrictionMessage)) ||
+    hasPlanRestrictionCode ||
+    hasPlanRestrictionMessage
+  );
 }
 
 function isAgentListing(value?: string) {
@@ -240,6 +255,7 @@ export default function ContactOwnerButton({
   const resolvedListingType = normalizeListingType(listingType);
 
   const redirectToPlan = () => {
+    setShowContactModal(false);
     if (resolvedListingType === "rent") {
       router.push("/plans/pricing/rent-view");
       return;
@@ -396,20 +412,22 @@ export default function ContactOwnerButton({
 
   const handleLeadError = (error: any) => {
     const statusCode = error?.response?.status;
+    const apiCode = error?.response?.data?.code;
     const apiMessage =
       error?.response?.data?.message ||
+      error?.response?.data?.error ||
       error?.message ||
       "Failed to contact owner";
     const currentRole = String(user?.roleName || user?.role || "").toLowerCase();
     const isBuilderUser = currentRole === "builder";
     const isContactingAgent = isAgentListing(listingSource);
 
-    if (isContactingAgent && isPlanRestrictionError(statusCode, apiMessage)) {
+    if (isContactingAgent && isPlanRestrictionError(statusCode, apiMessage, apiCode)) {
       toast.error("Unable to submit your contact request. Please try again.");
       return;
     }
 
-    if (!isBuilderUser && isPlanRestrictionError(statusCode, apiMessage)) {
+    if (!isBuilderUser && isPlanRestrictionError(statusCode, apiMessage, apiCode)) {
       toast.error(apiMessage);
       redirectToPlan();
       return;
@@ -609,11 +627,20 @@ export default function ContactOwnerButton({
       setContactLeadOtp("");
       setContactLeadOtpError("");
     } catch (error: any) {
+      const statusCode = error?.response?.status;
+      const apiCode = error?.response?.data?.code;
       const message =
         error?.response?.data?.message ||
         error?.response?.data?.error ||
         error?.message ||
         "OTP verification failed";
+
+      if (isPlanRestrictionError(statusCode, message, apiCode)) {
+        toast.error(message);
+        redirectToPlan();
+        return;
+      }
+
       setContactLeadOtpError(message);
       toast.error(message);
     } finally {
@@ -660,14 +687,18 @@ export default function ContactOwnerButton({
       setContactLeadOtp("");
       setContactLeadOtpError("");
 
-      await submitLead(
-        {
-          name: form.name.trim(),
-          phone: form.phone,
-          email: form.email.trim() || undefined,
-        },
-        authenticatedUser,
-      );
+      try {
+        await submitLead(
+          {
+            name: form.name.trim(),
+            phone: form.phone,
+            email: form.email.trim() || undefined,
+          },
+          authenticatedUser,
+        );
+      } catch (err) {
+        // Handled in handleLeadError
+      }
       return;
     }
 

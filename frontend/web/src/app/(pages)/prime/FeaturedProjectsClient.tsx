@@ -14,6 +14,7 @@ import {
   getHomeSectionCacheKey,
   setHomeSectionCache,
 } from "@/utilies/homeSectionCache";
+import HomeSectionSkeleton from "@/components/HomeSectionSkeleton";
 import { useShortlist } from "@/hooks/useShortlist";
 import { GoHeart, GoHeartFill } from "react-icons/go";
 import { IoMdShareAlt } from "react-icons/io";
@@ -110,9 +111,9 @@ function PrimeProjectCard({
       onClick={openProject}
       onKeyDown={handleCardKeyDown}
       style={cardWidth ? { width: `${cardWidth}px` } : undefined}
-      className="shrink-0 w-[90%] sm:w-[calc(50%-0.5rem)] lg:w-[calc(50%-0.5rem)] card snap-start group cursor-pointer"
+      className="shrink-0 min-w-0 w-[90%] sm:w-[calc(50%-0.5rem)] lg:w-[calc(50%-0.5rem)] card snap-start group cursor-pointer"
     >
-      <div className="relative block overflow-hidden rounded-t-md h-40 sm:h-[50px] md:h-[200px] lg:h-[220px]">
+      <div className="relative block overflow-hidden rounded-t-md h-40 sm:h-[180px] md:h-[200px] lg:h-[220px]">
         <Image
           src={project.heroImage ?? "/images/placeholder.svg"}
           alt={project.title}
@@ -195,11 +196,9 @@ function PrimeProjectCard({
 export default function FeaturedProjectsClient() {
   const sliderRef = useRef<HTMLDivElement | null>(null);
   const transitionFrameRef = useRef<number | null>(null);
-  const [isSliderPaused, setIsSliderPaused] = useState(false);
-  const [cardWidth, setCardWidth] = useState<number>();
-  const [cardsPerView, setCardsPerView] = useState(2);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isTransitionEnabled, setIsTransitionEnabled] = useState(true);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const isSliderPaused = isHovered || isFocused;
   const { selectedCity } = useCity();
   const cacheKey = getHomeSectionCacheKey("featured-projects", {
     state: selectedCity?.state,
@@ -213,6 +212,13 @@ export default function FeaturedProjectsClient() {
   const [displayMode, setDisplayMode] = useState<PrimeDisplayMode>(
     () => cachedSection?.displayMode ?? "ranked",
   );
+  const [cardWidth, setCardWidth] = useState<number>();
+  const [cardsPerView, setCardsPerView] = useState(2);
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    const cachedCount = cachedSection?.items?.length ?? 0;
+    return cachedCount > 2 ? cachedCount : 0;
+  });
+  const [isTransitionEnabled, setIsTransitionEnabled] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
@@ -313,14 +319,19 @@ export default function FeaturedProjectsClient() {
     }
 
     const updateCardWidth = () => {
-      const width = slider.clientWidth;
+      const computedStyle = window.getComputedStyle(slider);
+      const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
+      const paddingRight = parseFloat(computedStyle.paddingRight) || 0;
+      const usableWidth = slider.clientWidth - paddingLeft - paddingRight;
+      if (usableWidth <= 0) return;
+
       const gap = 16;
-      const nextCardsPerView = width < 640 ? 1 : 2;
+      const nextCardsPerView = usableWidth < 640 ? 1 : 2;
       setCardsPerView(nextCardsPerView);
       setCardWidth(
         nextCardsPerView === 1
-          ? Math.floor(width * 0.9)
-          : Math.floor((width - gap) / 2),
+          ? Math.floor(usableWidth * 0.9)
+          : Math.floor((usableWidth - gap) / 2),
       );
     };
 
@@ -356,7 +367,7 @@ export default function FeaturedProjectsClient() {
     const intervalId = window.setInterval(() => {
       setIsTransitionEnabled(true);
       setCurrentIndex((value) => value + cardsPerView);
-    }, 3000);
+    }, 6000);
 
     return () => window.clearInterval(intervalId);
   }, [cardsPerView, hasMoreThanTwo, isSliderPaused, loading]);
@@ -389,7 +400,7 @@ export default function FeaturedProjectsClient() {
 
   const hasItems = displayItems.length > 0;
 
-  if (!hasItems) {
+  if (!loading && !hasItems) {
     return null;
   }
 
@@ -416,9 +427,19 @@ export default function FeaturedProjectsClient() {
       </div>
 
       {/* Slider area — own relative wrapper so arrow top-1/2 is scoped here */}
-      <div className="relative">
+      <div
+        className="relative"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setIsFocused(false);
+          }
+        }}
+      >
         {/* Left arrow */}
-        {!loading && hasItems && canScrollLeft && (
+        {!loading && hasItems && cardWidth && canScrollLeft && (
           <button
             type="button"
             aria-label="Scroll left"
@@ -430,7 +451,7 @@ export default function FeaturedProjectsClient() {
         )}
 
         {/* Right arrow */}
-        {!loading && hasItems && canScrollRight && (
+        {!loading && hasItems && cardWidth && canScrollRight && (
           <button
             type="button"
             aria-label="Scroll right"
@@ -442,15 +463,15 @@ export default function FeaturedProjectsClient() {
         )}
 
         {/* Scrollable Row */}
-        {!loading && hasItems ? (
-          <div
-            ref={sliderRef}
-            onMouseEnter={() => setIsSliderPaused(true)}
-            onMouseLeave={() => setIsSliderPaused(false)}
-            onFocus={() => setIsSliderPaused(true)}
-            onBlur={() => setIsSliderPaused(false)}
-            className="overflow-hidden px-1 py-2"
-          >
+        <div
+          ref={sliderRef}
+          className="overflow-hidden px-1 py-2"
+        >
+          {loading || !cardWidth ? (
+            <div className="flex gap-4">
+              <HomeSectionSkeleton variant="prime" count={cardsPerView} />
+            </div>
+          ) : hasItems ? (
             <div
               onTransitionEnd={normalizeLoopIndex}
               className={`flex w-max gap-4 ${
@@ -467,8 +488,8 @@ export default function FeaturedProjectsClient() {
                 />
               ))}
             </div>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
     </div>
   );

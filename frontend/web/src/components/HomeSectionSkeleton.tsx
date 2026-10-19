@@ -21,7 +21,7 @@ export default function HomeSectionSkeleton({
             key={`prime-skeleton-${index}`}
             className="w-[90%] shrink-0 rounded-xl border border-gray-100 bg-white sm:w-[calc(50%-0.5rem)] lg:w-[calc(50%-0.5rem)]"
           >
-            <div className={`${baseBlock} h-40 rounded-b-none sm:h-[50px] md:h-[200px] lg:h-[220px]`} />
+            <div className={`${baseBlock} h-40 rounded-b-none sm:h-[180px] md:h-[200px] lg:h-[220px]`} />
             <div className="flex items-center justify-between gap-3 p-3">
               <div className={`${baseBlock} h-16 w-16 rounded-md sm:h-20 sm:w-20`} />
               <div className="flex min-w-0 grow flex-col gap-2">

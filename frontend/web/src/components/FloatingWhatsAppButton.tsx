@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 const SUPPORT_PHONE = "+919182334233";
-const DEFAULT_PREFILL_MESSAGE = "Hello Propenu, I would like to inquire about property listings and services.";
+const DEFAULT_PREFILL_MESSAGE = "Hi";
 const MOBILE_MENU_STATE_EVENT = "propenu:mobile-menu-state";
 
 interface FloatingWhatsAppButtonProps {

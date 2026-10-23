@@ -1,62 +1,60 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowDropdownIcon } from "@/icons/icons";
 import LoanOfferCard from "./HomeLoanOfferCard";
 import { topLoanOffers } from "./homeLoanData";
 
-interface JourneyStep {
+interface HomeLoanPlan {
+  image: string;
   title: string;
   description: string;
-  bgClass: string;
-  accentClass: string;
 }
 
-const journeySteps: JourneyStep[] = [
+const homeLoanPlans: HomeLoanPlan[] = [
   {
-    title: "Choose a Loan Offer",
-    description:
-      "Select a suitable home loan offer based on your requirements and preferred loan.",
-    bgClass: "bg-emerald-50",
-    accentClass: "bg-emerald-500",
+    image: "/home-loan/img1.png",
+    title: "Home Purchase Loan",
+    description: "Finance the purchase of a new or resale house or apartment.",
   },
   {
-    title: "Upload Documents",
-    description:
-      "Upload the required documents securely to complete the verification process smoothly.",
-    bgClass: "bg-cyan-50",
-    accentClass: "bg-cyan-500",
+    image: "/home-loan/img2.png",
+    title: "Home Construction Loan",
+    description: "Build your dream home on a plot of land you own.",
   },
   {
-    title: "Submit Your Application",
-    description:
-      "Review your information carefully and submit your application for processing.",
-    bgClass: "bg-pink-50",
-    accentClass: "bg-pink-400",
+    image: "/home-loan/img3.png",
+    title: "Home Renovation Loan",
+    description: "Upgrade your home with repairs, improvements and stylish interiors.",
   },
   {
-    title: "Get Approval",
-    description:
-      "Track your application status and receive lender approval with expert support.",
-    bgClass: "bg-blue-50",
-    accentClass: "bg-indigo-500",
+    image: "/home-loan/img4.png",
+    title: "Home Extension Loan",
+    description: "Add extra rooms or floors to create more space for your family.",
+  },
+  {
+    image: "/home-loan/img5.png",
+    title: "Home Loan Top-Up",
+    description: "Explore additional borrowing if you already have an eligible home loan.",
+  },
+  {
+    image: "/home-loan/img6.png",
+    title: "Joint Home Loan",
+    description: "Apply for a home loan together with an eligible co-applicant.",
+  },
+  {
+    image: "/home-loan/img7.png",
+    title: "NRI Home Loan",
+    description: "Explore home loans for Indians abroad buying or building in India.",
+  },
+  {
+    image: "/home-loan/img8.png",
+    title: "Plot Loan / Land Loan",
+    description: "Finance the purchase of a residential plot for your future investment.",
   },
 ];
-
-function JourneyIllustration({ accentClass }: { accentClass: string }) {
-  return (
-    <div className="absolute bottom-0 right-4 h-20 w-20 rotate-12 rounded-lg bg-white/80 shadow-sm">
-      <span
-        className={`absolute left-1/2 top-3 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full ${accentClass}`}
-      >
-        <span className="h-2 w-2 rounded-full bg-white" />
-      </span>
-      <span className="absolute bottom-6 left-5 h-1.5 w-10 rounded-full bg-gray-700/60" />
-      <span className="absolute bottom-3 left-4 h-1.5 w-12 rounded-full bg-gray-700/30" />
-    </div>
-  );
-}
 
 export default function HomeLoanOffers() {
   const carouselRef = useRef<HTMLDivElement>(null);
@@ -102,7 +100,7 @@ export default function HomeLoanOffers() {
   }, []);
 
   return (
-    <section className="w-full bg-white py-12 sm:py-8">
+    <section className="w-full bg-white">
       <div className="container mx-auto space-y-14">
         {/* <div className="overflow-hidden rounded-2xl bg-[#F5FFFC] py-8 shadow-[0_2px_22px_rgba(15,23,42,0.04)]">
           <div className="flex items-center justify-between gap-4 px-6 sm:px-10">
@@ -155,23 +153,33 @@ export default function HomeLoanOffers() {
           </div>
         </div> */}
 
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight text-gray-950 sm:text-3xl">
-            Your Home Loan Journey in 4 Simple Steps
-          </h2>
-          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {journeySteps.map((step) => (
-              <article
-                key={step.title}
-                className={`relative min-h-32 overflow-hidden rounded-xl p-5 ${step.bgClass}`}
-              >
-                <h3 className="relative z-10 text-base font-semibold text-gray-950">
-                  {step.title}
-                </h3>
-                <p className="relative z-10 mt-4 max-w-[72%] text-xs leading-relaxed text-gray-500">
-                  {step.description}
-                </p>
-                <JourneyIllustration accentClass={step.accentClass} />
+        <div className="rounded-[28px] bg-[#F9FBFD] p-6 sm:p-8 lg:p-10">
+          <div className="max-w-3xl">
+            <h2 className="text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl lg:text-[32px]">
+              Home Loans for Every Home Plan
+            </h2>
+          </div>
+
+          <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 sm:gap-7">
+            {homeLoanPlans.map((plan) => (
+              <article key={plan.title} className="flex flex-col">
+                <div className="relative aspect-[16/10] w-full overflow-hidden rounded-2xl bg-gray-100">
+                  <Image
+                    src={plan.image}
+                    alt={plan.title}
+                    fill
+                    sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
+                    className="object-cover"
+                  />
+                </div>
+                <div className="mt-3.5">
+                  <h3 className="text-base font-semibold leading-snug text-gray-900 sm:text-[17px]">
+                    {plan.title}
+                  </h3>
+                  <p className="mt-1 text-xs leading-relaxed text-gray-500 sm:text-[13px]">
+                    {plan.description}
+                  </p>
+                </div>
               </article>
             ))}
           </div>

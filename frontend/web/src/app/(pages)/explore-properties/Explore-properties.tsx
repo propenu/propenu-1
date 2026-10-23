@@ -53,7 +53,7 @@ export function PropertyCard({ item }: { item: (typeof CATEGORIES)[number] }) {
   return (
     <Link
       href={item.href}
-      className="relative h-[360px] rounded-3xl overflow-hidden group shadow-md hover:shadow-xl transition-all duration-300"
+      className="relative h-[220px] overflow-hidden rounded-2xl group shadow-md transition-all duration-300 hover:shadow-xl sm:h-[300px] sm:rounded-3xl lg:h-[360px]"
     >
       {/* Background Color */}
       <div
@@ -74,8 +74,8 @@ export function PropertyCard({ item }: { item: (typeof CATEGORIES)[number] }) {
       <div className="absolute inset-0" />
 
       {/* Text Content */}
-      <div className="relative z-10 p-6">
-        <h3 className="text-2xl font-semibold">
+      <div className="relative z-10 p-3.5 sm:p-5 lg:p-6">
+        <h3 className="text-base font-semibold leading-snug sm:text-xl lg:text-2xl">
           {item.title}
         </h3>
         {/* <p className="mt-2 text-base">
@@ -83,7 +83,6 @@ export function PropertyCard({ item }: { item: (typeof CATEGORIES)[number] }) {
         </p> */}
       </div>
     </Link>
-
   );
 }
 
@@ -91,17 +90,17 @@ export function PropertyCard({ item }: { item: (typeof CATEGORIES)[number] }) {
 export default function ExploreMorePropertiesPage() {
   const { selectedCity } = useCity();
   return (
-    <>
-      <div className="headingSideBar">
+    <section className="relative w-full">
+      <div className="headingSideBar mb-4 sm:mb-6">
         <h1 className="text-base font-bold sm:text-2xl truncate">Explore Properties in {selectedCity?.city ?? "Hyderabad"} </h1>
         <p className="mt-1 text-sm text-gray-500 sm:text-base">Find apartments, villas, farmhouses, and residential plots in top localities.</p>
       </div>
       {/* Grid */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+      <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-4 lg:gap-8">
         {CATEGORIES.map((item) => (
           <PropertyCard key={item.id} item={item} />
         ))}
-      </section>
+      </div>
 
       {/* JSON-LD for SEO (category list) */}
       <script
@@ -121,6 +120,6 @@ export default function ExploreMorePropertiesPage() {
           }),
         }}
       />
-    </>
+    </section>
   );
 }

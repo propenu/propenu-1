@@ -20,7 +20,7 @@ const data = [
   },
   {
     href: "/construction-services",
-    image: "/home-loan/construction.png",
+    image: "/home-loan/construction.jpeg",
     title: "Construction & Renovation Services",
     desc: "From planning to complete project delivery.",
   },

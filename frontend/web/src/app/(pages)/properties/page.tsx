@@ -27,9 +27,6 @@ import { ArrowDropdownIcon } from "@/icons/icons";
 import formatINR from "@/utilies/PriceFormat";
 import { trackInteraction } from "@/services/trackingService";
 
-const propertySkeletonItems = Array.from({ length: 4 });
-const sponsoredSkeletonItems = Array.from({ length: 2 });
-
 const sortOptions = [
   { value: "newest", label: "Newest" },
   { value: "oldest", label: "Oldest" },
@@ -38,6 +35,9 @@ const sortOptions = [
   { value: "area-low-high", label: "Area: Low to High" },
   { value: "area-high-low", label: "Area: High to Low" },
 ];
+
+const propertySkeletonItems = Array.from({ length: 4 });
+const sponsoredSkeletonItems = Array.from({ length: 2 });
 
 
 function getPropertyLink(property: any) {
@@ -268,41 +268,35 @@ function formatLocationSummary(localities: string[], city?: string, state?: stri
   return locationParts.join(", ");
 }
 
+function SkeletonBlock({ className = "" }: { className?: string }) {
+  return <div aria-hidden="true" className={`animate-pulse rounded bg-gray-200 ${className}`} />;
+}
 
 function PropertiesListSkeleton() {
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" aria-label="Loading properties" aria-busy="true">
       {propertySkeletonItems.map((_, index) => (
-        <div
-          key={`property-skeleton-${index}`}
-          className="overflow-hidden rounded-2xl border border-gray-100 bg-white p-2 shadow-sm"
-        >
+        <div key={`property-skeleton-${index}`} className="overflow-hidden rounded-2xl border border-gray-100 bg-white p-2 shadow-sm">
           <div className="flex flex-col gap-4 md:h-[220px] md:flex-row">
-            <div className="h-48 w-full animate-pulse rounded-xl bg-gray-200 md:h-full md:w-56 md:shrink-0" />
-
+            <SkeletonBlock className="h-48 w-full rounded-xl md:h-full md:w-56 md:shrink-0" />
             <div className="flex min-w-0 flex-1 flex-col justify-between p-2 md:p-4">
               <div>
-                <div className="h-6 w-3/4 animate-pulse rounded bg-gray-200" />
-                <div className="mt-3 h-4 w-1/2 animate-pulse rounded bg-gray-200" />
+                <SkeletonBlock className="h-6 w-3/4" />
+                <SkeletonBlock className="mt-3 h-4 w-1/2" />
               </div>
-
               <div className="grid grid-cols-2 gap-4 border-t border-gray-200 pt-4 md:grid-cols-4 md:gap-6">
                 {Array.from({ length: 4 }).map((__, metaIndex) => (
-                  <div
-                    key={`property-skeleton-meta-${metaIndex}`}
-                    className="space-y-2"
-                  >
-                    <div className="h-4 w-16 animate-pulse rounded bg-gray-200" />
-                    <div className="h-4 w-20 animate-pulse rounded bg-gray-200" />
+                  <div key={`property-skeleton-meta-${metaIndex}`} className="space-y-2">
+                    <SkeletonBlock className="h-4 w-16" />
+                    <SkeletonBlock className="h-4 w-20" />
                   </div>
                 ))}
               </div>
             </div>
-
             <div className="rounded-xl bg-[#27AE60]/10 px-3 py-4 md:flex md:w-52 md:flex-col md:justify-center">
-              <div className="h-7 w-24 animate-pulse rounded bg-[#27AE60]/20" />
-              <div className="mt-2 h-4 w-16 animate-pulse rounded bg-[#27AE60]/15" />
-              <div className="mt-4 h-10 w-full animate-pulse rounded-md bg-[#27AE60]/25" />
+              <SkeletonBlock className="h-7 w-24 bg-[#27AE60]/20" />
+              <SkeletonBlock className="mt-2 h-4 w-16 bg-[#27AE60]/15" />
+              <SkeletonBlock className="mt-4 h-10 w-full rounded-md bg-[#27AE60]/25" />
             </div>
           </div>
         </div>
@@ -313,37 +307,29 @@ function PropertiesListSkeleton() {
 
 function SponsoredCardsSkeleton() {
   return (
-    <>
+    <div className="flex flex-col gap-6" aria-label="Loading sponsored properties" aria-busy="true">
       {sponsoredSkeletonItems.map((_, index) => (
-        <div
-          key={`sponsored-skeleton-${index}`}
-          className="overflow-hidden rounded-2xl bg-white shadow-md"
-        >
-          <div className="relative h-40 w-full overflow-hidden bg-linear-to-br from-gray-100 to-gray-200">
-            <div className="absolute left-2 top-2 h-7 w-24 animate-pulse rounded-md bg-gray-300" />
-            <div className="absolute bottom-2 right-2 h-9 w-9 animate-pulse rounded-full bg-white shadow-md" />
+        <div key={`sponsored-skeleton-${index}`} className="overflow-hidden rounded-2xl bg-white shadow-md">
+          <div className="relative h-40 w-full overflow-hidden rounded-t-2xl bg-gray-100">
             <div className="grid h-full grid-cols-2 gap-4 p-6">
               {Array.from({ length: 4 }).map((__, imageIndex) => (
-                <div
-                  key={`sponsored-image-skeleton-${index}-${imageIndex}`}
-                  className="animate-pulse rounded-lg bg-gray-200"
-                />
+                <SkeletonBlock key={`sponsored-image-skeleton-${index}-${imageIndex}`} className="rounded-lg" />
               ))}
             </div>
           </div>
-
           <div className="space-y-3 p-3">
-            <div className="h-6 w-24 animate-pulse rounded-md bg-[#D1EFDD]" />
-            <div className="h-4 w-3/4 animate-pulse rounded bg-gray-200" />
-            <div className="h-3 w-2/3 animate-pulse rounded bg-gray-200" />
-            <div className="h-4 w-20 animate-pulse rounded bg-[#27AE60]/20" />
-            <div className="h-3 w-28 animate-pulse rounded bg-gray-200" />
+            <SkeletonBlock className="h-6 w-24 bg-[#D1EFDD]" />
+            <SkeletonBlock className="h-4 w-3/4" />
+            <SkeletonBlock className="h-3 w-2/3" />
+            <SkeletonBlock className="h-4 w-20 bg-[#27AE60]/20" />
+            <SkeletonBlock className="h-3 w-28" />
           </div>
         </div>
       ))}
-    </>
+    </div>
   );
 }
+
 
 const PropertiesPageContent: React.FC = () => {
   const filters = useAppSelector((s) => s.filters);
@@ -621,10 +607,9 @@ const PropertiesPageContent: React.FC = () => {
         <div className="flex w-full flex-col gap-4 lg:flex-row">
           <div className="w-full lg:w-[80%]">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              {loading && (
-                <div className="h-8 w-64 animate-pulse rounded bg-gray-200 sm:w-80" />
-              )}
-              {!loading && (
+              {loading ? (
+                <SkeletonBlock className="h-8 w-64 sm:w-80" />
+              ) : (
                 <p className="text-base capitalize leading-snug text-gray-700 wrap-break-word sm:text-lg md:text-xl lg:text-2xl">
                   <strong>{total ?? items.length}</strong> Properties for{" "}
                   {params.listingType} in

@@ -330,6 +330,28 @@ function SponsoredCardsSkeleton() {
   );
 }
 
+function PropertiesPageSkeleton() {
+  return (
+    <div className="relative min-h-screen">
+      <div aria-hidden="true" className="sticky top-0 z-10 h-14 w-full bg-[#D1EFDD] shadow-sm" />
+      <div className="container p-4">
+        <div className="flex w-full flex-col gap-4 lg:flex-row">
+          <div className="w-full lg:w-[80%]">
+            <div className="mb-4 flex items-center justify-between">
+              <SkeletonBlock className="h-8 w-64 sm:w-80" />
+              <SkeletonBlock className="h-10 w-52 rounded-lg" />
+            </div>
+            <PropertiesListSkeleton />
+          </div>
+          <div className="w-full lg:w-[20%]">
+            <SponsoredCardsSkeleton />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 const PropertiesPageContent: React.FC = () => {
   const filters = useAppSelector((s) => s.filters);
@@ -707,7 +729,7 @@ const PropertiesPageContent: React.FC = () => {
 };
 
 const Page: React.FC = () => (
-  <Suspense fallback={<PropertiesListSkeleton />}>
+  <Suspense fallback={<PropertiesPageSkeleton />}>
     <PropertiesPageContent />
   </Suspense>
 );

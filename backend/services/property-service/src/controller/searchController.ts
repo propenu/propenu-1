@@ -146,6 +146,7 @@ type SuggestionItem =
       city: string;
       state: string;
       locality: string;
+      promotionType?: string;
     };
 
 function escapeRegex(value: string) {
@@ -212,12 +213,12 @@ export const getSearchSuggestionsHandler: RequestHandler = async (req, res) => {
             status: "active",
             $or: [{ title: regex }, { city: regex }, { locality: regex }],
           })
-            .select("title slug locality city state rank")
+            .select("title slug locality city state rank promotion.type")
             .sort({ rank: -1, createdAt: -1 })
             .limit(8)
             .lean()
         : FeaturedProject.find({ status: "active" })
-            .select("title slug locality city state rank")
+            .select("title slug locality city state rank promotion.type")
             .sort({ rank: -1, createdAt: -1 })
             .limit(4)
             .lean(),
@@ -269,6 +270,7 @@ export const getSearchSuggestionsHandler: RequestHandler = async (req, res) => {
         city: String(project.city || "").trim(),
         state: String(project.state || "").trim(),
         locality: String(project.locality || "").trim(),
+        promotionType: String(project.promotion?.type || "normal").trim().toLowerCase(),
       }))
       .filter((project) => project.label && project.slug);
 

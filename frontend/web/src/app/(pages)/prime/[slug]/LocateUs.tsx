@@ -409,7 +409,7 @@ export default function LocateUs({ nearbyPlaces: raw, primaryColor, location: ex
               <li className="text-sm text-slate-500">No nearby places provided.</li>
             )}
 
-            {withDistance.map(({ p, distanceText }, idx) => {
+            {withDistance.map(({ p }, idx) => {
               const active = selectedIndex === idx;
 
               return (
@@ -437,9 +437,6 @@ export default function LocateUs({ nearbyPlaces: raw, primaryColor, location: ex
                       </div>
                     </div>
 
-                    <span className="shrink-0 text-xs font-semibold text-slate-600 sm:text-sm">
-                      ({distanceText ?? p.distanceText ?? "-"})
-                    </span>
                   </div>
                 </li>
               );

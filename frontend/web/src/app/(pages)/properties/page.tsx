@@ -618,9 +618,7 @@ const PropertiesPageContent: React.FC = () => {
   return (
     <div className="relative min-h-screen ">
       <Suspense
-        fallback={
-          <div className="sticky top-0 z-10 h-14 w-full bg-[#D1EFDD] shadow-sm" />
-        }
+        fallback={null}
       >
         <FilterBar />
       </Suspense>

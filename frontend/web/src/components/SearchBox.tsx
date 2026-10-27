@@ -263,7 +263,16 @@ const SearchBox = ({
 
       const parsed = JSON.parse(stored) as RecentSearchItem[];
       if (Array.isArray(parsed)) {
-        setRecentSearches(parsed.slice(0, 5));
+        // Older saved project suggestions did not include promotionType, so
+        // they cannot be routed to the correct project page.
+        setRecentSearches(
+          parsed
+            .filter(
+              (item) =>
+                item.kind !== "project" || Boolean(item.promotionType),
+            )
+            .slice(0, 5),
+        );
       }
     } catch {
       // Ignore malformed local storage.

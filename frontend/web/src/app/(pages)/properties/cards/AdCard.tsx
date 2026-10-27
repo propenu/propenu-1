@@ -93,7 +93,10 @@ function formatCategoryLabel(category?: string) {
     case "agriculturals":
       return "Agricultural";
     default:
-      return category || "";
+      return String(category || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\b\w/g, (character) => character.toUpperCase());
   }
 }
 

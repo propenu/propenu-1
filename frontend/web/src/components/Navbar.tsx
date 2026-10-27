@@ -56,10 +56,6 @@ const UserGreetingSkeleton = () => (
   </div>
 );
 
-const PostPropertySkeleton = () => (
-  <div className="h-10 w-[152px] shrink-0 animate-pulse rounded-lg bg-gray-100" />
-);
-
 function getSafeRedirect(value: string | null) {
   if (!value || !value.startsWith("/") || value.startsWith("//")) {
     return "/";
@@ -729,9 +725,7 @@ const Navbar = () => {
                 </>
 
                 {/* CTA - secondary outlined */}
-                {isUserLoading ? (
-                  <PostPropertySkeleton />
-                ) : !isBuilder && (
+                {!isBuilder && (
                   <Link
                     href="/postproperty"
                     className="btn btn-secondary text-xs sm:text-sm whitespace-nowrap"

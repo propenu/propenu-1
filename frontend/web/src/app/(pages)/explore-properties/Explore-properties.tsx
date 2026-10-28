@@ -91,7 +91,7 @@ export default function ExploreMorePropertiesPage() {
   const { selectedCity } = useCity();
   return (
     <section className="relative w-full">
-      <div className="headingSideBar mb-4 sm:mb-6">
+      <div className="headingSideBar mb-4 sm:mb-5">
         <h1 className="text-base font-bold sm:text-2xl truncate">Explore Properties in {selectedCity?.city ?? "Hyderabad"} </h1>
         <p className="mt-1 text-sm text-gray-500 sm:text-base">Find apartments, villas, farmhouses, and residential plots in top localities.</p>
       </div>

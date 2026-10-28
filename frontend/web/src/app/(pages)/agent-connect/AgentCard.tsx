@@ -134,7 +134,7 @@ export default function AgentsList() {
   return (
     <div className="relative w-full">
       {/* Header Section */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="mb-2 flex items-center justify-between gap-3 sm:mb-3">
         {/* Left: Heading */}
         <div className="headingSideBar">
           <h1 className="text-base font-bold sm:text-2xl truncate">
@@ -186,18 +186,18 @@ export default function AgentsList() {
 
         {/* Scrollable Container */}
         {loading ? (
-          <div className="flex gap-3 overflow-x-auto scroll-smooth no-scrollbar pb-8 pt-2 px-2 sm:px-3">
+          <div className="flex gap-5 overflow-x-auto scroll-smooth no-scrollbar pb-8 pt-2 px-0">
             <HomeSectionSkeleton variant="agent" count={4} />
           </div>
         ) : hasItems ? (
           <div
             ref={sliderRef}
-            className="flex gap-3.5 overflow-x-auto scroll-smooth no-scrollbar pb-8 pt-2 px-2 sm:px-3"
+            className="flex gap-5 overflow-x-auto scroll-smooth no-scrollbar pb-8 pt-2 px-1"
           >
             {agents.map((agent) => (
               <div
                 key={agent._id}
-                className="w-full sm:w-[calc(33.333%-8px)] md:w-[calc(33.333%-8px)] lg:w-[calc(25%-9px)] shrink-0 flex flex-col"
+                className="w-full sm:w-[calc(33.333%-14px)] md:w-[calc(33.333%-14px)] lg:w-[calc(25%-15px)] shrink-0 flex flex-col"
               >
                 <AgentCard data={agent} />
               </div>
@@ -213,64 +213,61 @@ export default function AgentsList() {
 
 // Agent Card Component
 function AgentCard({ data }: { data: AgentConnect }) {
+  const initials = data.agencyName
+    ?.split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+
   return (
     <Link
       href={`/agent-connect/${data.slug}`}
       target="_blank"
       rel="noopener noreferrer"
-      className="block h-full w-full min-w-0"
+      aria-label={`View ${data.name}'s agent profile`}
+      className="group block h-full w-full min-w-0"
     >
-      <div className="card w-full h-full flex flex-col justify-between min-w-0 overflow-hidden">
-        {/* Banner */}
-        <div className="h-28 relative shrink-0">
-          <Image
-            src={data.coverImage?.url || "/placeholder.jpg"}
-            alt="Banner"
-            fill
-            className="object-cover brightness-95 rounded-t-xl"
-          />
-          <div
-            aria-label="primary"
-            className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-[#26ad5f] text-white px-4 py-1 rounded-md shadow-sm"
-          >
-            <MdVerifiedUser size={16} />
-            <span className="text-xs font-bold">Verified</span>
-          </div>
-
-          {/* Profile Picture */}
-          <div className="absolute left-5 -bottom-10 h-20 w-20 rounded-full border-4 border-white shadow-md overflow-hidden bg-gray-100">
+         <div className="flex h-full min-h-[284px] w-full min-w-0 flex-col items-center rounded-2xl border border-gray-100 bg-white px-4 pb-4 pt-6 text-center shadow-sm transition-shadow group-hover:shadow-md">
+        <div className="relative mb-4 h-[76px] w-[76px] shrink-0 rounded-full border border-emerald-300 p-[3px]">
+          <div className="relative h-full w-full overflow-hidden rounded-full bg-gray-100">
             <Image
               src={data.avatar?.url || "/images/UserPlaceholder.webp"}
               alt={data.name}
               fill
+              sizes="76px"
               className="object-cover"
             />
           </div>
+          {initials ? (
+            <span className="absolute -bottom-1 -right-1 flex h-7 min-w-7 items-center justify-center rounded-full border-2 border-white bg-teal-700 px-1 text-[10px] font-bold text-white">
+              {initials}
+            </span>
+          ) : null}
         </div>
 
-        {/* Content */}
-        <div className="pt-12 pb-5 px-5 flex flex-col justify-between grow min-w-0">
-          {/* Title + Headline */}
-          <div className="min-w-0">
-            <h2 className="text-lg font-bold text-gray-900 leading-tight truncate">
-              {data.name}
-            </h2>
-            <p className="text-sm font-medium text-green-600 truncate min-h-[20px]">
-              {data.agencyName}
-            </p>
+        <h2 className="w-full truncate text-base font-semibold leading-5 text-gray-900">
+          {data.agencyName || "Real Estate Agent"}
+        </h2>
+        <p className="mt-1 w-full truncate text-sm text-gray-500 ">
+          {data.name
+            .toLowerCase()
+            .replace(/\b\w/g, (character) => character.toUpperCase())}
+        </p>
 
-            {data.bio ? (
-              <p className="text-sm text-gray-500 mt-2 leading-snug line-clamp-2">
-                {data.bio}
-              </p>
-            ) : null}
+        <p className="mt-2 w-full truncate text-xs text-gray-800">
+          {data.experienceYears} Years Experience <span className="mx-1 text-gray-400">·</span> {data.dealsClosed} Deals closed
+        </p>
 
-            <p className="text-sm text-gray-500 mt-2 flex items-center min-h-[24px] min-w-0">
-              <MdLocationPin className="mr-1 text-gray-400 shrink-0" size={18} />
-              <span className="truncate min-w-0 block">{data.areasServed?.join(", ") || ""}</span>
-            </p>
-          </div>
-        </div>
+        <p className="mt-1 flex min-h-5 w-full items-center justify-center gap-1 text-xs text-gray-400">
+          <MdLocationPin className="shrink-0" size={15} aria-hidden="true" />
+          <span className="truncate">{data.areasServed?.join(", ") || data.city || ""}</span>
+        </p>
+
+        <span className="mt-auto flex min-h-[42px] w-full items-center justify-center rounded-md bg-[#26ad5f] px-3 text-sm font-medium text-white transition-colors group-hover:bg-green-600 sm:text-base">
+          Contact Agent
+        </span>
       </div>
     </Link>
   );

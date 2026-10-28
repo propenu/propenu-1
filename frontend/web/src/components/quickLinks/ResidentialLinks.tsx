@@ -160,7 +160,7 @@ const ResidentialLinks = () => {
         </span>
       </div>
 
-      <div className="mt-4 sm:mt-6">
+      <div className="mt-4">
         <ActiveTabs
           categories={residentialCategories}
           activeTab={activeTab}
@@ -168,7 +168,7 @@ const ResidentialLinks = () => {
         />
       </div>
 
-      <div className="no-scrollbar -mx-4 flex gap-4 overflow-x-auto px-4 pt-5 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-8 sm:px-1 sm:pt-6 lg:grid-cols-4">
+      <div className="no-scrollbar -mx-4 flex gap-4 overflow-x-auto px-4 pt-4 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-8 sm:px-1 lg:grid-cols-4">
         {activeGroups.map((group) => (
           <div key={group.title} className="w-[245px] shrink-0 sm:w-auto sm:shrink">
             <h3 className="text-base font-medium text-[#171717] sm:text-lg">

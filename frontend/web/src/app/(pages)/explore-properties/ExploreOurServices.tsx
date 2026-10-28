@@ -42,7 +42,7 @@ export default function ExploreOurServices() {
   const { selectedCity } = useCity();
   return (
     <section className="relative w-full">
-      <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-4 flex flex-col gap-3 sm:mb-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="headingSideBar">
           <h1 className="text-base font-bold sm:text-2xl truncate">
             Explore Our Services
@@ -62,7 +62,7 @@ export default function ExploreOurServices() {
             href={c.href}
             className="group flex h-full flex-col focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-700"
           >
-            <article className="flex h-full flex-col justify-between rounded-xl border border-gray-200/70 bg-white p-2.5 shadow-[0_2px_8px_rgba(0,0,0,0.04)] transition-all duration-300 hover:border-gray-300/80 hover:shadow-[0_8px_20px_rgba(0,0,0,0.08)] sm:rounded-[18px] sm:p-3.5">
+            <article className="flex h-full flex-col justify-between rounded-xl border border-gray-200/70 bg-white p-2.5 shadow-sm transition-shadow duration-300 hover:shadow-md sm:rounded-[18px] sm:p-3.5">
               <div>
                 <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg bg-gray-100 sm:rounded-[14px]">
                   <Image

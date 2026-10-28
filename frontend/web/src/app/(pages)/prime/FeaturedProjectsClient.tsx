@@ -407,7 +407,7 @@ export default function FeaturedProjectsClient() {
   return (
     <div className="relative w-full">
       {/* Header */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-2 flex flex-col gap-2 sm:mb-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="headingSideBar">
           <h1 className="text-base font-bold sm:text-2xl truncate">
             Prime Projects

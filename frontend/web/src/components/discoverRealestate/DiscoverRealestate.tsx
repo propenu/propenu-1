@@ -227,7 +227,7 @@ const DiscoverRealestate = () => {
                 </h2>
             </div>
 
-            <div className="grid gap-4 pt-4 sm:gap-5 sm:pt-5 lg:grid-cols-[264px_minmax(0,1fr)]">
+            <div className="grid gap-4 pt-4 sm:gap-5 sm:pt-4 lg:grid-cols-[264px_minmax(0,1fr)]">
                 <aside className="rounded-xl bg-[#effcf4] px-4 py-4 sm:px-5">
                     <h3 className="text-base font-semibold text-[#18af5b] sm:text-lg">
                         Why Invest in {stateName}?

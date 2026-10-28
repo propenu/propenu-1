@@ -200,7 +200,7 @@ export default function BlogsClient({
   return (
     <section className="w-full">
       {showHeader && (
-        <div className="mb-3 flex items-start justify-between gap-3 sm:mb-5 sm:items-end sm:gap-4">
+        <div className="mb-2 flex items-start justify-between gap-3 sm:mb-3 sm:items-end sm:gap-4">
           <div className="headingSideBar min-w-0">
             <h1 className="truncate text-base font-bold sm:text-2xl">
               Property Blogs
@@ -252,7 +252,7 @@ export default function BlogsClient({
         </div>
       )} */}
 
-      <div className={isPage ? "relative" : "relative mt-3 sm:mt-6"}>
+      <div className={isPage ? "relative" : "relative"}>
         {!isPage && (
           <>
             <button

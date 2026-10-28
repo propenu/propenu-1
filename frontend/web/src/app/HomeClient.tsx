@@ -10,10 +10,7 @@ import PopularOwnerPropertiesClient from "./(pages)/owner-listed/PopularOwnerPro
 import Banner from "@/components/Banner";
 
 import DiscoverRealestate from "@/components/discoverRealestate/DiscoverRealestate";
-import ResidentialLinks from "@/components/quickLinks/ResidentialLinks";
-import CommercialLinks from "@/components/quickLinks/CommercialLinks";
-import LandLinks from "@/components/quickLinks/LandLinks";
-import AgriculturalLinks from "@/components/quickLinks/AgriculturalLinks";
+import PropertyTypeExplorer from "@/components/quickLinks/PropertyTypeExplorer";
 import BlogsClient from "./(pages)/blogs/BlogsClient";
 
 export default function HomeClient() {
@@ -30,10 +27,7 @@ export default function HomeClient() {
         <TestomianalHome />
         <DiscoverRealestate />
         <BlogsClient />
-        <ResidentialLinks />
-        <CommercialLinks />
-        <LandLinks />
-        <AgriculturalLinks />
+        <PropertyTypeExplorer />
       </div>
     </div>
   );

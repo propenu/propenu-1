@@ -268,7 +268,7 @@ export default function HighlightProjectsClient() {
 
   return (
     <div className="relative w-full">
-      <div className="flex items-center justify-between gap-3">
+      <div className="mb-2 flex items-center justify-between gap-3 sm:mb-3">
         <div className="headingSideBar">
           <h1 className="truncate text-base font-bold sm:text-2xl">
             Top Selling Projects

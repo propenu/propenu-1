@@ -90,23 +90,17 @@ export default function HomeSectionSkeleton({
       {items.map((_, index) => (
         <div
           key={`agent-skeleton-${index}`}
-          className="w-[280px] sm:w-[310px] md:w-[320px] max-w-[320px] shrink-0 min-w-0 overflow-hidden rounded-xl border border-gray-100 bg-white"
+          className="flex min-h-[284px] w-full shrink-0 flex-col items-center rounded-2xl border border-gray-100 bg-white px-4 pb-4 pt-6 shadow-[0_3px_6px_-2px_rgba(0,0,0,0.12)] sm:w-[calc(33.333%-14px)] lg:w-[calc(25%-15px)]"
         >
-          <div className="relative">
-            <div className={`${baseBlock} h-28 w-full rounded-none`} />
-            <div className="absolute left-5 top-20 h-20 w-20 rounded-full border-4 border-white bg-gray-300" />
+          <div className="relative mb-4 h-[76px] w-[76px] shrink-0 rounded-full border border-emerald-300 p-[3px]">
+            <div className="h-full w-full animate-pulse rounded-full bg-gray-200" />
+            <div className="absolute -bottom-1 -right-1 h-7 w-7 rounded-full border-2 border-white bg-teal-700" />
           </div>
-          <div className="space-y-3 px-5 pb-5 pt-12">
-            <div className={`${baseBlock} h-5 w-1/2`} />
-            <div className={`${baseBlock} h-4 w-1/3`} />
-            <div className={`${baseBlock} h-4 w-full`} />
-            <div className={`${baseBlock} h-4 w-3/4`} />
-            <div className="grid grid-cols-3 gap-3 border-t border-gray-200 pt-4">
-              <div className={`${baseBlock} h-10 w-full`} />
-              <div className={`${baseBlock} h-10 w-full`} />
-              <div className={`${baseBlock} h-10 w-full`} />
-            </div>
-          </div>
+          <div className={`${baseBlock} h-5 w-1/2`} />
+          <div className={`${baseBlock} mt-1 h-5 w-2/3`} />
+          <div className={`${baseBlock} mt-2 h-4 w-4/5`} />
+          <div className={`${baseBlock} mt-1 h-5 w-3/5`} />
+          <div className={`${baseBlock} mt-auto h-[42px] w-full rounded-md`} />
         </div>
       ))}
     </>

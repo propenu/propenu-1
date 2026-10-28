@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { razorpay } from "../config/razorpay";
 import { Payment } from "../models/paymentModel";
+import { AdminSubscriptionPaymentLink } from "../models/adminSubscriptionPaymentLinkModel";
 import { Subscription } from "../models/subscriptionModel";
 import { Plan } from "../models/planModel";
 import { Types } from "mongoose";
@@ -57,6 +58,7 @@ export async function createPaymentOrder(
   planId: string,
   userId: string,
   userType: "buyer" | "owner" | "agent",
+  options: { discountPercent?: number; adminCreatedBy?: string; adminPaymentLinkId?: string } = {},
 ) {
   if (!Types.ObjectId.isValid(planId)) {
     throw new Error("Invalid planId");
@@ -115,6 +117,14 @@ export async function createPaymentOrder(
       }
     }
   }
+
+  const discountPercent = Number(options.discountPercent || 0);
+  if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 50) {
+    throw new Error("Discount must be between 0% and 50%");
+  }
+  const listPrice = roundCurrency(finalPayable);
+  const discountAmount = roundCurrency(listPrice * (discountPercent / 100));
+  finalPayable = roundCurrency(listPrice - discountAmount);
 
   /* ======================================================
      FREE PLAN FLOW
@@ -218,6 +228,10 @@ export async function createPaymentOrder(
     creditAdjusted,
     remainingDays,
     finalPayable,
+    discountPercent,
+    discountAmount,
+    adminCreatedBy: options.adminCreatedBy,
+    adminPaymentLinkId: options.adminPaymentLinkId,
     razorpayOrderId: order.id,
     status: "created",
   });
@@ -231,6 +245,9 @@ export async function createPaymentOrder(
     creditAdjusted,
     remainingDays,
     finalPayable,
+    discountPercent,
+    discountAmount,
+    listPrice,
     gstRate: GST_RATE * 100,
     gstAmount,
     totalPayable,
@@ -414,6 +431,13 @@ export async function verifyPaymentAndActivate(
     invoiceUrl,
     purchasedAt: new Date(),
   });
+
+  if (payment.adminPaymentLinkId) {
+    await AdminSubscriptionPaymentLink.updateOne(
+      { _id: payment.adminPaymentLinkId },
+      { $set: { status: "paid", paidAt: new Date() } },
+    );
+  }
 
   console.log("✅ Subscription activated:", subscription._id);
 

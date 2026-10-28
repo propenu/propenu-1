@@ -10,6 +10,7 @@ import {
   sendSubscriptionActivated,
 } from "../../../../shared/whatsapp/whatsapp.helper";
 import User from "../../../user-service/src/models/userModel";
+import { Payment } from "../models/paymentModel";
 import { notifyPaymentFailedByOrderId } from "../services/paymentNotificationService";
 
 const isAgentRole = (roleName?: string) =>
@@ -119,6 +120,13 @@ export async function verifyPayment(req: AuthRequest, res: Response) {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
       req.body;
+
+    const paymentRecord = await Payment.findOne({ razorpayOrderId: razorpay_order_id })
+      .select("userId")
+      .lean();
+    if (!paymentRecord || String(paymentRecord.userId) !== String(req.user!.id)) {
+      return res.status(403).json({ message: "Payment does not belong to this account" });
+    }
 
     const result = await verifyPaymentAndActivate(
       razorpay_order_id,

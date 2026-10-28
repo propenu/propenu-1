@@ -196,9 +196,11 @@ function PrimeProjectCard({
 export default function FeaturedProjectsClient() {
   const sliderRef = useRef<HTMLDivElement | null>(null);
   const transitionFrameRef = useRef<number | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  const isSliderPaused = isHovered || isFocused;
+  const [isTouching, setIsTouching] = useState(false);
+  const isSliderPaused = isHovered || isFocused || isTouching;
   const { selectedCity } = useCity();
   const cacheKey = getHomeSectionCacheKey("featured-projects", {
     state: selectedCity?.state,
@@ -398,6 +400,27 @@ export default function FeaturedProjectsClient() {
     );
   };
 
+  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    setIsTouching(true);
+  };
+
+  const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    setIsTouching(false);
+    if (!start) return;
+
+    const touch = event.changedTouches[0];
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (Math.abs(deltaX) < 40 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+
+    event.preventDefault();
+    scrollBy(deltaX < 0 ? "right" : "left");
+  };
+
   const hasItems = displayItems.length > 0;
 
   if (!loading && !hasItems) {
@@ -465,7 +488,13 @@ export default function FeaturedProjectsClient() {
         {/* Scrollable Row */}
         <div
           ref={sliderRef}
-          className="overflow-hidden px-1 py-2"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={() => {
+            touchStartRef.current = null;
+            setIsTouching(false);
+          }}
+          className="touch-pan-y select-none overflow-hidden px-1 py-2"
         >
           {loading || !cardWidth ? (
             <div className="flex gap-4">

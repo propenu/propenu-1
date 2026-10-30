@@ -3,7 +3,7 @@ export const SITE_URL =
   process.env.NEXT_PUBLIC_WEB_URL ||
   "https://propenu.com";
 
-export const DEFAULT_OG_IMAGE = "/images/spronsoreCard.png";
+export const DEFAULT_OG_IMAGE = "/email/propenu-logo.png";
 
 export function absoluteSiteUrl(pathOrUrl = "/") {
   try {

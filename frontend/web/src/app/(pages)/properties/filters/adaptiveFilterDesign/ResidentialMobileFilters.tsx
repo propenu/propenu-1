@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { IoIosSearch } from "react-icons/io";
 import {
   IoChevronBackOutline,
@@ -102,10 +102,9 @@ const ResidentialMobileFilters: React.FC<ResidentialMobileFiltersProps> = ({
 }) => {
   const dispatch = useDispatch();
   const cityData = useAppSelector(selectCityWithLocalities);
-  const { listingTypeLabel, category, searchText, minPrice, maxPrice, residential } =
+  const { listingTypeLabel, listingTypeValue, category, searchText, minPrice, maxPrice, residential } =
     useAppSelector((s) => s.filters);
   const isRent = listingTypeLabel === "Rent";
-  const previousListingType = useRef(listingTypeLabel);
   const activeBudgetOptions = isRent ? rentBudgetOptions : budgetOptions;
   const budgetMin = isRent ? RENT_BUDGET_MIN : BUDGET_MIN;
   const budgetMax = isRent ? RENT_BUDGET_MAX : BUDGET_MAX;
@@ -118,12 +117,6 @@ const ResidentialMobileFilters: React.FC<ResidentialMobileFiltersProps> = ({
     maxPrice ?? null,
   ]);
 
-  useEffect(() => {
-    if (previousListingType.current === listingTypeLabel) return;
-    previousListingType.current = listingTypeLabel;
-    setBudgetRange([null, null]);
-    dispatch(setBudget({ min: null, max: null }));
-  }, [dispatch, listingTypeLabel]);
   const [carpetRange, setCarpetRange] = useState<[number, number]>([
     residential.coveredArea?.min ?? CARPET_MIN,
     residential.coveredArea?.max ?? CARPET_MAX,
@@ -359,9 +352,12 @@ const ResidentialMobileFilters: React.FC<ResidentialMobileFiltersProps> = ({
               <button
                 key={option.value}
                 type="button"
-                onClick={() =>
-                  dispatch(setListingType({ label: option.label, value: option.value }))
-                }
+                onClick={() => {
+                  if (option.value !== listingTypeValue) {
+                    applyBudget([null, null]);
+                  }
+                  dispatch(setListingType({ label: option.label, value: option.value }));
+                }}
                 className={`rounded-xl border px-6 py-2 text-sm ${listingTypeLabel === option.label
                   ? "border-green-600 bg-[#d8ece0] font-semibold text-green-700"
                   : "border-gray-300 bg-white"
@@ -465,7 +461,9 @@ const ResidentialMobileFilters: React.FC<ResidentialMobileFiltersProps> = ({
               className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-green-600 focus:outline-none"
             >
               <option value="">Minimum</option>
-              {activeBudgetOptions.map((v) => (
+              {activeBudgetOptions
+                .filter((v) => budgetRange[1] === null || v <= budgetRange[1])
+                .map((v) => (
                 <option
                   key={v}
                   value={v}
@@ -473,7 +471,7 @@ const ResidentialMobileFilters: React.FC<ResidentialMobileFiltersProps> = ({
                 >
                   {formatActiveBudget(v)}
                 </option>
-              ))}
+                ))}
             </select>
 
             {/* Maximum */}
@@ -498,7 +496,9 @@ const ResidentialMobileFilters: React.FC<ResidentialMobileFiltersProps> = ({
               className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-green-600 focus:outline-none"
             >
               <option value="">Maximum</option>
-              {activeBudgetOptions.map((v) => (
+              {activeBudgetOptions
+                .filter((v) => budgetRange[0] === null || v >= budgetRange[0])
+                .map((v) => (
                 <option
                   key={v}
                   value={v}
@@ -506,9 +506,11 @@ const ResidentialMobileFilters: React.FC<ResidentialMobileFiltersProps> = ({
                 >
                   {formatActiveBudget(v)}
                 </option>
-              ))}
+                ))}
             </select>
           </div>
+
+          <p className="mt-2 text-xs text-gray-500">Leave either field blank for no limit.</p>
 
           {/* Range Slider */}
           {/* <div className="mt-6 px-1">

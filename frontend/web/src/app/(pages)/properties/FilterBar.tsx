@@ -836,9 +836,9 @@ const FilterBar: React.FC = () => {
 
   return (
     <div className="sticky top-[60px] z-50 w-full bg-[#D1EFDD] px-3 shadow-sm md:top-16">
-      <div className="mx-auto flex h-14 items-center gap-4 px-4 container">
+      <div className="container mx-auto flex flex-col items-stretch gap-2 px-4 py-2 xl:h-14 xl:flex-row xl:items-center xl:gap-4 xl:py-0">
         {/* Listing Type + Category + Search */}
-        <div className="flex items-center gap-3 rounded-xl bg-white px-4 py-2 shadow-sm md:w-full md:min-w-0 lg:w-auto lg:min-w-fit">
+        <div className="flex w-full min-w-0 items-center justify-between gap-2 rounded-xl bg-white px-3 py-2 shadow-sm md:gap-3 xl:w-auto xl:min-w-fit xl:justify-start xl:px-4">
 
           <div className="flex items-center gap-2">
             <FilterDropdown
@@ -870,7 +870,12 @@ const FilterBar: React.FC = () => {
                     {listingOptions.map((l) => (
                       <button
                         key={l.value}
+                        type="button"
+                        aria-pressed={l.value === listingTypeValue}
                         onClick={() => {
+                          if (l.value !== listingTypeValue) {
+                            dispatch(setBudget({ min: null, max: null }));
+                          }
                           dispatch(
                             setListingType({
                               label: l.label,
@@ -879,9 +884,16 @@ const FilterBar: React.FC = () => {
                           );
                           close();
                         }}
-                        className="rounded px-2 py-1 hover:bg-gray-100 cursor-pointer"
+                        className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors cursor-pointer ${
+                          l.value === listingTypeValue
+                            ? "bg-green-50 font-semibold text-green-700"
+                            : "text-gray-800 hover:bg-gray-100"
+                        }`}
                       >
                         {l.label}
+                        {l.value === listingTypeValue && (
+                          <span aria-hidden="true" className="text-green-700">✓</span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -1197,7 +1209,7 @@ const FilterBar: React.FC = () => {
               if (category === "Land") setShowLandAdvanced(true);
               if (category === "Agricultural") setShowAgriculturalAdvanced(true);
             }}
-            className={`flex items-center gap-2 rounded-md bg-[#D1EFDD] px-3 py-1 text-sm font-medium text-[#15803D] transition-colors hover:bg-[#BDE5CE] lg:hidden ${
+            className={`flex items-center gap-2 rounded-md bg-[#D1EFDD] px-3 py-1 text-sm font-medium text-[#15803D] transition-colors hover:bg-[#BDE5CE] md:hidden ${
               category !== "Residential" &&
               category !== "Commercial" &&
               category !== "Land" &&
@@ -1214,7 +1226,7 @@ const FilterBar: React.FC = () => {
         </div>
 
         {/* Desktop View */}
-        <div className="hidden lg:block">
+        <div className="hidden w-full min-w-0 md:block xl:w-auto">
           <CategoryFilters />
         </div>
 

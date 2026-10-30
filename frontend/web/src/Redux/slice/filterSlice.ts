@@ -47,6 +47,10 @@ const filterSlice = createSlice({
         value: ListingAPIValue;
       }>,
     ) {
+      if (state.listingTypeValue !== action.payload.value) {
+        state.minPrice = null;
+        state.maxPrice = null;
+      }
       state.listingTypeLabel = action.payload.label;
       state.listingTypeValue = action.payload.value;
     },
@@ -65,8 +69,10 @@ const filterSlice = createSlice({
       state,
       action: PayloadAction<{ min?: number | null; max?: number | null }>,
     ) {
-      state.minPrice = action.payload.min ?? null;
-      state.maxPrice = action.payload.max ?? null;
+      const min = action.payload.min ?? null;
+      const max = action.payload.max ?? null;
+      state.minPrice = min !== null && max !== null && min > max ? max : min;
+      state.maxPrice = min !== null && max !== null && min > max ? min : max;
     },
 
     /* -------- Residential -------- */

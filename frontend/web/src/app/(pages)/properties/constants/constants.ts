@@ -12,18 +12,57 @@ export const budgetOptions = [
 ];
 
 // Rent values are stored in lakhs to match the shared price query conversion.
-export const rentBudgetOptions = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1];
+export const rentBudgetOptions = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 3, 5];
 export const RENT_BUDGET_MIN = 0.05;
-export const RENT_BUDGET_MAX = 1;
+export const RENT_BUDGET_MAX = 5;
 export const RENT_BUDGET_STEP = 0.05;
 
 export const formatRentBudget = (value: number) =>
-  `₹${Math.round(value * 100000).toLocaleString("en-IN")}${value === RENT_BUDGET_MAX ? "+" : ""}`;
+  `₹${Math.round(value * 100000).toLocaleString("en-IN")}`;
 
 export const formatBudget = (value: number) => {
   if (value >= 100)
     return `₹${value / 100}${value === 5000 ? "+" : ""} Cr`;
   return `₹${value} Lac`;
+};
+
+export function getBudgetConfig(listingType: string) {
+  if (listingType === "rent") {
+    return {
+      options: rentBudgetOptions,
+      min: RENT_BUDGET_MIN,
+      max: RENT_BUDGET_MAX,
+      step: RENT_BUDGET_STEP,
+      format: formatRentBudget,
+      title: "Monthly rent",
+    };
+  }
+
+  return {
+    options: budgetOptions,
+    min: BUDGET_MIN,
+    max: BUDGET_MAX,
+    step: BUDGET_STEP,
+    format: formatBudget,
+    title: "Budget",
+  };
+}
+
+export const snapBudgetRangeToOptions = (
+  values: readonly number[],
+  options: readonly number[],
+): [number, number] => {
+  const [rawMin = options[0] ?? 0, rawMax = options[options.length - 1] ?? 0] = values;
+  const snap = (value: number) =>
+    options.length === 0
+      ? value
+      : options.reduce((closest, candidate) =>
+          Math.abs(candidate - value) < Math.abs(closest - value) ? candidate : closest,
+          options[0] ?? value,
+        );
+  const min = snap(rawMin);
+  const max = snap(rawMax);
+  return min <= max ? [min, max] : [max, min];
 };
 
 

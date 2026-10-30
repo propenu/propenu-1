@@ -14,7 +14,8 @@ import {
 import React, { useEffect, useRef, useState } from "react";
 import {
   commercialMoreFilterSections,
-  formatBudget,
+  getBudgetConfig,
+  snapBudgetRangeToOptions,
 } from "../constants/constants";
 import { getTrackBackground, Range } from "react-range";
 import { CommercialFilterKey, MoreFilterSectionCom } from "@/types";
@@ -32,17 +33,8 @@ import {
   uniqueFilterValues,
 } from "./filterValueUtils";
 
-const BUDGET_MIN = 5;
-const BUDGET_MAX = 5000;
-const BUDGET_STEP = 5;
-
 const CARPET_MIN = 100;
 const CARPET_MAX = 10000;
-
-const budgetOptions = [
-  5, 10, 20, 30, 50, 75, 100, 150, 200, 300, 400, 500, 750, 1000, 2000, 3000,
-  4000, 5000,
-];
 
 const carpetOptions = [
   100, 250, 500, 750, 1000, 1500, 2000, 3000, 4000, 5000, 7500, 10000,
@@ -84,6 +76,8 @@ const CommercialFilters = () => {
   const filtersState = useSelector((state: RootState) => state.filters);
 
   const { minPrice, maxPrice, commercial, listingTypeValue } = filtersState;
+  const budgetConfig = getBudgetConfig(listingTypeValue);
+  const { options: activeBudgetOptions, min: budgetMin, max: budgetMax, step: budgetStep, format: formatActiveBudget, title: budgetTitle } = budgetConfig;
 
   const { locality, createdByRole } = commercial;
   const localityList = Array.isArray(locality)
@@ -96,10 +90,14 @@ const CommercialFilters = () => {
     [number | null, number | null]
   >([minPrice ?? null, maxPrice ?? null]);
 
+  useEffect(() => {
+    setBudgetRange([minPrice ?? null, maxPrice ?? null]);
+  }, [minPrice, maxPrice]);
+
   const budgetLabel =
     budgetRange[0] == null && budgetRange[1] == null
-      ? "Budget"
-      : `${budgetRange[0] ? formatBudget(budgetRange[0]) : "Min"} - ${budgetRange[1] ? formatBudget(budgetRange[1]) : "Max"
+      ? budgetTitle
+      : `${budgetRange[0] ? formatActiveBudget(budgetRange[0]) : "Min"} - ${budgetRange[1] ? formatActiveBudget(budgetRange[1]) : "Max"
       }`;
 
   const [carpetRange, setCarpetRange] = useState<[number, number]>([
@@ -448,7 +446,7 @@ const CommercialFilters = () => {
   }, [activeFilter, open]);
 
   return (
-    <div className="flex gap-1 items-center">
+    <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 xl:flex-nowrap">
       {/* ---------- Localities ---------- */}
       <FilterDropdown
         className="shrink-0"
@@ -555,7 +553,7 @@ const CommercialFilters = () => {
         align="left"
         renderContent={() => (
           <div className="space-y-4">
-            <h4 className="text-sm font-semibold">Budget</h4>
+            <h4 className="text-sm font-semibold">{budgetTitle}</h4>
 
             {/* ---------- Min / Max Dropdowns ---------- */}
             <div className="flex gap-3">
@@ -564,9 +562,12 @@ const CommercialFilters = () => {
                 value={budgetRange[0] ?? ""}
                 onChange={(e) => {
                   setBudgetTouched(true);
+                  const nextMin = e.target.value ? Number(e.target.value) : null;
                   setBudgetRange([
-                    e.target.value ? Number(e.target.value) : null,
-                    budgetRange[1],
+                    nextMin,
+                    nextMin !== null && budgetRange[1] !== null && nextMin > budgetRange[1]
+                      ? nextMin
+                      : budgetRange[1],
                   ]);
                 }}
                 className="w-1/2 cursor-pointer border border-gray-400 rounded-md px-3 py-2 text-sm 
@@ -574,9 +575,9 @@ const CommercialFilters = () => {
                hover:border-gray-400 active:border-gray-400"
               >
                 <option value="">Min</option>
-                {budgetOptions.map((v) => (
+                  {activeBudgetOptions.filter((v) => budgetRange[1] === null || v <= budgetRange[1]).map((v) => (
                   <option key={v} value={v}>
-                    {formatBudget(v)}
+                    {formatActiveBudget(v)}
                   </option>
                 ))}
               </select>
@@ -590,9 +591,12 @@ const CommercialFilters = () => {
                 value={budgetRange[1] ?? ""}
                 onChange={(e) => {
                   setBudgetTouched(true);
+                  const nextMax = e.target.value ? Number(e.target.value) : null;
                   setBudgetRange([
-                    budgetRange[0],
-                    e.target.value ? Number(e.target.value) : null,
+                    budgetRange[0] !== null && nextMax !== null && nextMax < budgetRange[0]
+                      ? nextMax
+                      : budgetRange[0],
+                    nextMax,
                   ]);
                 }}
                 className="w-1/2 cursor-pointer border border-gray-400 rounded-md px-3 py-2 text-sm 
@@ -600,29 +604,31 @@ const CommercialFilters = () => {
                hover:border-gray-400 active:border-gray-400"
               >
                 <option value="">Max</option>
-                {budgetOptions.map((v) => (
+                  {activeBudgetOptions.filter((v) => budgetRange[0] === null || v >= budgetRange[0]).map((v) => (
                   <option key={v} value={v}>
-                    {formatBudget(v)}
+                    {formatActiveBudget(v)}
                   </option>
                 ))}
               </select>
             </div>
 
+            <p className="text-xs text-gray-500">Leave either field blank for no limit.</p>
+
             {/* ---------- Range Slider ---------- */}
             <Range
-              step={BUDGET_STEP}
-              min={BUDGET_MIN}
-              max={BUDGET_MAX}
+              step={budgetStep}
+              min={budgetMin}
+              max={budgetMax}
               values={[
-                budgetRange[0] ?? BUDGET_MIN,
-                budgetRange[1] ?? BUDGET_MAX,
+                budgetRange[0] ?? budgetMin,
+                budgetRange[1] ?? budgetMax,
               ]}
               onChange={(values) => {
-                const [min, max] = values as [number, number];
+                const [min, max] = snapBudgetRangeToOptions(values, activeBudgetOptions);
 
                 setBudgetRange([
-                  min === BUDGET_MIN ? null : min,
-                  max === BUDGET_MAX ? null : max,
+                  min === budgetMin ? null : min,
+                  max === budgetMax ? null : max,
                 ]);
               }}
               renderTrack={({ props, children }) => {
@@ -636,12 +642,12 @@ const CommercialFilters = () => {
                     style={{
                       background: getTrackBackground({
                         values: [
-                          budgetRange[0] ?? BUDGET_MIN,
-                          budgetRange[1] ?? BUDGET_MAX,
+                          budgetRange[0] ?? budgetMin,
+                          budgetRange[1] ?? budgetMax,
                         ],
                         colors: ["#E5E7EB", "#16A34A", "#E5E7EB"], // gray → green → gray
-                        min: BUDGET_MIN,
-                        max: BUDGET_MAX,
+                        min: budgetMin,
+                        max: budgetMax,
                       }),
                     }}
                   >
@@ -663,8 +669,8 @@ const CommercialFilters = () => {
 
             {/* ---------- Label ---------- */}
             <div className="text-xs text-gray-500 text-center">
-              {budgetRange[0] ? formatBudget(budgetRange[0]) : "Min"} –{" "}
-              {budgetRange[1] ? formatBudget(budgetRange[1]) : "Max"}
+              {budgetRange[0] ? formatActiveBudget(budgetRange[0]) : "Min"} –{" "}
+              {budgetRange[1] ? formatActiveBudget(budgetRange[1]) : "Max"}
             </div>
           </div>
         )}

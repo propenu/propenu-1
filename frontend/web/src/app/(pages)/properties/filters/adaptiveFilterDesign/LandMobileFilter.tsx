@@ -23,7 +23,7 @@ import {
 import { LandFilterKey } from "@/types";
 import { PostedByOption } from "@/types/residential";
 import { landKeyMapping } from "@/types/land";
-import { landMoreFilterSections } from "../../constants/constants";
+import { getBudgetConfig, landMoreFilterSections, snapBudgetRangeToOptions } from "../../constants/constants";
 import Toggle from "@/ui/ToggleSwitch";
 import { toast } from "sonner";
 import SelectableButton from "@/ui/SelectableButton";
@@ -56,16 +56,8 @@ type LandMobileFilterProps = {
   categoryOptions: readonly categoryOption[];
 };
 
-const BUDGET_MIN = 5;
-const BUDGET_MAX = 5000;
-const BUDGET_STEP = 5;
 const PLOT_AREA_MIN = 300;
 const PLOT_AREA_MAX = 10000;
-
-const budgetOptions = [
-  5, 10, 20, 30, 50, 75, 100, 150, 200, 300, 400, 500, 750, 1000, 2000, 3000,
-  4000, 5000,
-];
 
 const plotAreaOptions = [
   300, 500, 750, 1000, 1500, 2000, 3000, 5000, 7500, 10000,
@@ -74,7 +66,7 @@ const plotAreaOptions = [
 const getCategoryLabel = (value: categoryOption) =>
   value === "Land" ? "Plots" : value;
 
-const formatBudget = (value: number) =>
+const formatLegacyBudget = (value: number) =>
   value >= 100
     ? `₹${value / 100}${value === 5000 ? "+" : ""} Cr`
     : `₹${value} Lac`;
@@ -103,8 +95,9 @@ const LandMobileFilter: React.FC<LandMobileFilterProps> = ({
 }) => {
   const dispatch = useDispatch();
   const cityData = useAppSelector(selectCityWithLocalities);
-  const { listingTypeLabel, category, searchText, minPrice, maxPrice, land } =
+  const { listingTypeLabel, listingTypeValue, category, searchText, minPrice, maxPrice, land } =
     useAppSelector((s) => s.filters);
+  const { options: budgetOptions, min: BUDGET_MIN, max: BUDGET_MAX, step: BUDGET_STEP, format: formatBudget, title: budgetTitle } = getBudgetConfig(listingTypeValue);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [activeFilter, setActiveFilter] = useState<LandFilterKey>("Land Type");
@@ -296,9 +289,10 @@ const LandMobileFilter: React.FC<LandMobileFilterProps> = ({
               <button
                 key={option.value}
                 type="button"
-                onClick={() =>
-                  dispatch(setListingType({ label: option.label, value: option.value }))
-                }
+                onClick={() => {
+                  if (option.value !== listingTypeValue) applyBudget([null, null]);
+                  dispatch(setListingType({ label: option.label, value: option.value }));
+                }}
                 className={`rounded-xl border px-6 py-2 text-sm ${listingTypeLabel === option.label
                     ? "border-green-600 bg-[#d8ece0] font-semibold text-green-700"
                     : "border-gray-300 bg-white"
@@ -372,7 +366,7 @@ const LandMobileFilter: React.FC<LandMobileFilterProps> = ({
         </div>
 
         <div>
-          <h3 className="mb-3 text-lg font-semibold text-gray-900">Budget</h3>
+          <h3 className="mb-3 text-lg font-semibold text-gray-900">{budgetTitle}</h3>
           <div className="grid grid-cols-2 gap-3">
             <select
               value={budgetRange[0] ?? ""}
@@ -390,7 +384,7 @@ const LandMobileFilter: React.FC<LandMobileFilterProps> = ({
               className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-green-600 focus:outline-none"
             >
               <option value="">Minimum</option>
-              {budgetOptions.map((v) => (
+              {budgetOptions.filter((v) => budgetRange[1] === null || v <= budgetRange[1]).map((v) => (
                 <option
                   key={v}
                   value={v}
@@ -417,7 +411,7 @@ const LandMobileFilter: React.FC<LandMobileFilterProps> = ({
               className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-green-600 focus:outline-none"
             >
               <option value="">Maximum</option>
-              {budgetOptions.map((v) => (
+              {budgetOptions.filter((v) => budgetRange[0] === null || v >= budgetRange[0]).map((v) => (
                 <option
                   key={v}
                   value={v}
@@ -429,6 +423,8 @@ const LandMobileFilter: React.FC<LandMobileFilterProps> = ({
             </select>
           </div>
 
+          <p className="mt-2 text-xs text-gray-500">Leave either field blank for no limit.</p>
+
           <div className="mt-6 px-1">
             <Range
               step={BUDGET_STEP}
@@ -436,7 +432,7 @@ const LandMobileFilter: React.FC<LandMobileFilterProps> = ({
               max={BUDGET_MAX}
               values={[budgetRange[0] ?? BUDGET_MIN, budgetRange[1] ?? BUDGET_MAX]}
               onChange={(values) => {
-                const [min, max] = values as [number, number];
+                const [min, max] = snapBudgetRangeToOptions(values, budgetOptions);
                 applyBudget([
                   min === BUDGET_MIN ? null : min,
                   max === BUDGET_MAX ? null : max,

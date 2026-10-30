@@ -34,6 +34,7 @@ import {
   carpetOptions,
   formatBudget,
   formatRentBudget,
+  snapBudgetRangeToOptions,
   moreFilterSections,
 } from "../constants/constants";
 import { ArrowDropdownIcon } from "@/icons/icons";
@@ -54,7 +55,6 @@ const ResidentialFilters = () => {
   const localities = useSelector(selectLocalitiesByCity);
   const filtersState = useSelector((state: RootState) => state.filters);
   const { minPrice, maxPrice, residential, listingTypeValue } = filtersState;
-  const previousListingType = useRef(listingTypeValue);
   const isRent = listingTypeValue === "rent";
   const activeBudgetOptions = isRent ? rentBudgetOptions : budgetOptions;
   const budgetMin = isRent ? RENT_BUDGET_MIN : BUDGET_MIN;
@@ -192,12 +192,8 @@ const ResidentialFilters = () => {
   >([minPrice ?? null, maxPrice ?? null]);
 
   useEffect(() => {
-    if (previousListingType.current === listingTypeValue) return;
-    previousListingType.current = listingTypeValue;
-    setBudgetRange([null, null]);
-    setBudgetTouched(false);
-    dispatch(setBudget({ min: null, max: null }));
-  }, [dispatch, listingTypeValue]);
+    setBudgetRange([minPrice ?? null, maxPrice ?? null]);
+  }, [minPrice, maxPrice]);
 
   const budgetLabel =
     budgetRange[0] == null && budgetRange[1] == null
@@ -465,7 +461,7 @@ const ResidentialFilters = () => {
   return (
     <>
       {/* ==================== FILTER BAR ==================== */}
-      <div className="flex gap-1 items-center">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 xl:flex-nowrap">
         {/* ---------- Localities ---------- */}
         <FilterDropdown
           triggerLabel={
@@ -587,9 +583,12 @@ const ResidentialFilters = () => {
                   value={budgetRange[0] ?? ""}
                   onChange={(e) => {
                     setBudgetTouched(true);
+                    const nextMin = e.target.value ? Number(e.target.value) : null;
                     setBudgetRange([
-                      e.target.value ? Number(e.target.value) : null,
-                      budgetRange[1],
+                      nextMin,
+                      nextMin !== null && budgetRange[1] !== null && nextMin > budgetRange[1]
+                        ? nextMin
+                        : budgetRange[1],
                     ]);
                   }}
                   className="w-1/2 border border-gray-400 rounded-md px-3 py-2 text-sm 
@@ -597,11 +596,13 @@ const ResidentialFilters = () => {
            hover:border-gray-400 active:border-gray-400 cursor-pointer"
                 >
                   <option value="">Min</option>
-                  {activeBudgetOptions.map((v) => (
-                    <option key={v} value={v} className="cursor-pointer">
+                  {activeBudgetOptions
+                    .filter((v) => budgetRange[1] === null || v <= budgetRange[1])
+                    .map((v) => (
+                    <option key={v} value={v} disabled={budgetRange[1] !== null && v > budgetRange[1]} className="cursor-pointer">
                       {formatActiveBudget(v)}
                     </option>
-                  ))}
+                    ))}
                 </select>
 
                 <span className="flex items-center justify-center text-md text-gray-500 min-w-5">
@@ -613,9 +614,12 @@ const ResidentialFilters = () => {
                   value={budgetRange[1] ?? ""}
                   onChange={(e) => {
                     setBudgetTouched(true);
+                    const nextMax = e.target.value ? Number(e.target.value) : null;
                     setBudgetRange([
-                      budgetRange[0],
-                      e.target.value ? Number(e.target.value) : null,
+                      budgetRange[0] !== null && nextMax !== null && nextMax < budgetRange[0]
+                        ? nextMax
+                        : budgetRange[0],
+                      nextMax,
                     ]);
                   }}
                   className="w-1/2 border border-gray-400 rounded-md px-3 py-2 text-sm 
@@ -623,13 +627,17 @@ const ResidentialFilters = () => {
            hover:border-gray-400 active:border-gray-400 cursor-pointer"
                 >
                   <option value="">Max</option>
-                  {activeBudgetOptions.map((v) => (
-                    <option key={v} value={v} className="cursor-pointer">
+                  {activeBudgetOptions
+                    .filter((v) => budgetRange[0] === null || v >= budgetRange[0])
+                    .map((v) => (
+                    <option key={v} value={v} disabled={budgetRange[0] !== null && v < budgetRange[0]} className="cursor-pointer">
                       {formatActiveBudget(v)}
                     </option>
-                  ))}
+                    ))}
                 </select>
               </div>
+
+              <p className="text-xs text-gray-500">Leave either field blank for no limit.</p>
 
               {/* ---------- Range Slider ---------- */}
               <Range
@@ -641,7 +649,7 @@ const ResidentialFilters = () => {
                   budgetRange[1] ?? budgetMax,
                 ]}
                 onChange={(values) => {
-                  const [min, max] = values as [number, number];
+                  const [min, max] = snapBudgetRangeToOptions(values, activeBudgetOptions);
 
                   setBudgetRange([
                     min === budgetMin ? null : min,

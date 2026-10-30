@@ -35,14 +35,11 @@ import {
 } from "../filterValueUtils";
 import {
   agriculturalMoreFilterSections,
-  BUDGET_MAX,
-  BUDGET_MIN,
-  BUDGET_STEP,
-  budgetOptions,
+  getBudgetConfig,
   CARPET_MAX,
   CARPET_MIN,
   carpetOptions,
-  formatBudget,
+  snapBudgetRangeToOptions,
 } from "../../constants/constants";
 
 type ListingOption = {
@@ -103,8 +100,9 @@ const AgriculturalMobileFilter: React.FC<AgriculturalMobileFilterProps> = ({
 }) => {
   const dispatch = useDispatch();
   const cityData = useAppSelector(selectCityWithLocalities);
-  const { listingTypeLabel, category, searchText, minPrice, maxPrice, agricultural } =
+  const { listingTypeLabel, listingTypeValue, category, searchText, minPrice, maxPrice, agricultural } =
     useAppSelector((s) => s.filters);
+  const { options: budgetOptions, min: BUDGET_MIN, max: BUDGET_MAX, step: BUDGET_STEP, format: formatBudget, title: budgetTitle } = getBudgetConfig(listingTypeValue);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [activeFilter, setActiveFilter] =
@@ -297,9 +295,10 @@ const AgriculturalMobileFilter: React.FC<AgriculturalMobileFilterProps> = ({
               <button
                 key={option.value}
                 type="button"
-                onClick={() =>
-                  dispatch(setListingType({ label: option.label, value: option.value }))
-                }
+                onClick={() => {
+                  if (option.value !== listingTypeValue) applyBudget([null, null]);
+                  dispatch(setListingType({ label: option.label, value: option.value }));
+                }}
                 className={`rounded-xl border px-6 py-2 text-sm ${
                   listingTypeLabel === option.label
                     ? "border-green-600 bg-[#d8ece0] font-semibold text-green-700"
@@ -376,7 +375,7 @@ const AgriculturalMobileFilter: React.FC<AgriculturalMobileFilterProps> = ({
         </div>
 
         <div>
-          <h3 className="mb-3 text-lg font-semibold text-gray-900">Budget</h3>
+          <h3 className="mb-3 text-lg font-semibold text-gray-900">{budgetTitle}</h3>
           <div className="grid grid-cols-2 gap-3">
             <select
               value={budgetRange[0] ?? ""}
@@ -387,7 +386,7 @@ const AgriculturalMobileFilter: React.FC<AgriculturalMobileFilterProps> = ({
               className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-green-600 focus:outline-none"
             >
               <option value="">Minimum</option>
-              {budgetOptions.map((v) => (
+              {budgetOptions.filter((v) => budgetRange[1] === null || v <= budgetRange[1]).map((v) => (
                 <option
                   key={v}
                   value={v}
@@ -407,7 +406,7 @@ const AgriculturalMobileFilter: React.FC<AgriculturalMobileFilterProps> = ({
               className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-green-600 focus:outline-none"
             >
               <option value="">Maximum</option>
-              {budgetOptions.map((v) => (
+              {budgetOptions.filter((v) => budgetRange[0] === null || v >= budgetRange[0]).map((v) => (
                 <option
                   key={v}
                   value={v}
@@ -419,6 +418,8 @@ const AgriculturalMobileFilter: React.FC<AgriculturalMobileFilterProps> = ({
             </select>
           </div>
 
+          <p className="mt-2 text-xs text-gray-500">Leave either field blank for no limit.</p>
+
           <div className="mt-6 px-1">
             <Range
               step={BUDGET_STEP}
@@ -426,7 +427,7 @@ const AgriculturalMobileFilter: React.FC<AgriculturalMobileFilterProps> = ({
               max={BUDGET_MAX}
               values={[budgetRange[0] ?? BUDGET_MIN, budgetRange[1] ?? BUDGET_MAX]}
               onChange={(values) => {
-                const [min, max] = values as [number, number];
+                const [min, max] = snapBudgetRangeToOptions(values, budgetOptions);
                 applyBudget([
                   min === BUDGET_MIN ? null : min,
                   max === BUDGET_MAX ? null : max,

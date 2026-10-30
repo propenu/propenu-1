@@ -33,8 +33,8 @@ export const metadata: Metadata = {
     images: [
       {
         url: absoluteSiteUrl(DEFAULT_OG_IMAGE),
-        width: 1200,
-        height: 630,
+        width: 318,
+        height: 93,
         alt: "Propenu real estate platform",
       },
     ],

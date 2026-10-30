@@ -719,7 +719,12 @@ const PropertiesPageContent: React.FC = () => {
             )}
 
             {!loading && sortedItems.length === 0 && (
-              <p>No properties found.</p>
+              <div className="rounded-xl border border-gray-200 bg-white px-6 py-10 text-center shadow-sm">
+                <h2 className="text-lg font-semibold text-gray-900">No properties found</h2>
+                <p className="mt-2 text-sm text-gray-600">
+                  Try changing your filters or broadening your search.
+                </p>
+              </div>
             )}
           </div>
 
@@ -732,7 +737,7 @@ const PropertiesPageContent: React.FC = () => {
                   {sidebarAds.map((ad) => (
                     <AdCard key={ad.id} ad={ad} onDismiss={handleDismissAd} />
                   ))}
-                  {sidebarAds.length === 0 && (
+                  {sidebarAds.length === 0 && sortedItems.length > 0 && (
                     <SponsoreCard target={sponsorCardTarget} />
                   )}
                 </>

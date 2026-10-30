@@ -99,7 +99,7 @@ const SponsoreCard = ({
   if (!copy) return null;
 
   return (
-    <div className="relative min-h-[560px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+    <div className="relative min-h-[250px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm xl:min-h-[560px]">
       <div
         className="absolute inset-0"
         style={{
@@ -116,12 +116,12 @@ const SponsoreCard = ({
         }}
       />
 
-      <div className="relative z-10 flex min-h-[560px] flex-col items-center px-6 py-10 text-center">
-        <p className="text-[28px] font-extrabold italic leading-tight text-[#27AE60]">
+      <div className="relative z-10 flex min-h-[250px] flex-col items-center px-4 py-5 text-center xl:min-h-[560px] xl:px-6 xl:py-10">
+        <p className="text-xl font-extrabold italic leading-tight text-[#27AE60] sm:text-2xl xl:text-[28px]">
           {copy.headline}
         </p>
 
-        <div className="mt-10 space-y-3 text-[21px] leading-8 text-gray-600">
+        <div className="mt-4 space-y-1 text-sm leading-5 text-gray-600 sm:text-base sm:leading-6 xl:mt-10 xl:space-y-3 xl:text-[21px] xl:leading-8">
           <p>{copy.lines[0]}</p>
           <p>
             {copy.lines[1]
@@ -145,20 +145,20 @@ const SponsoreCard = ({
         {copy.cta ? (
           <Link
             href={copy.href}
-            className="mt-24 inline-flex h-11 w-full max-w-[235px] items-center justify-center gap-2 rounded-md bg-[#27AE60] text-base font-semibold text-white shadow-sm transition hover:bg-[#219653] focus:outline-none focus:ring-2 focus:ring-[#27AE60]/30"
+            className="mt-4 inline-flex h-10 w-full max-w-[235px] items-center justify-center gap-2 rounded-md bg-[#27AE60] text-sm font-semibold text-white shadow-sm transition hover:bg-[#219653] focus:outline-none focus:ring-2 focus:ring-[#27AE60]/30 xl:mt-24 xl:h-11 xl:text-base"
           >
             {copy.cta}
             <HiArrowRight className="h-5 w-5" />
           </Link>
         ) : null}
 
-        <div className="relative mt-auto h-36 w-[calc(100%+48px)]">
+        <div className="relative mt-auto hidden h-14 w-full sm:h-16 xl:block xl:h-36 xl:w-[calc(100%+48px)]">
           <Image
             src="/images/spronsoreCard.png"
             alt=""
             fill
-            className="object-contain object-bottom scale-150"
-            sizes="280px"
+            className="object-contain object-bottom xl:scale-150"
+            sizes="(max-width: 1279px) 100vw, 280px"
           />
         </div>
       </div>

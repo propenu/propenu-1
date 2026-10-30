@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { IoIosSearch } from "react-icons/io";
 import {
   IoChevronBackOutline,
@@ -26,10 +26,15 @@ import {
   BUDGET_MIN,
   BUDGET_STEP,
   budgetOptions,
+  rentBudgetOptions,
+  RENT_BUDGET_MIN,
+  RENT_BUDGET_MAX,
+  RENT_BUDGET_STEP,
   CARPET_MAX,
   CARPET_MIN,
   carpetOptions,
   formatBudget,
+  formatRentBudget,
   moreFilterSections,
 } from "../../constants/constants";
 import { BedroomOption } from "@/types/residential";
@@ -99,12 +104,26 @@ const ResidentialMobileFilters: React.FC<ResidentialMobileFiltersProps> = ({
   const cityData = useAppSelector(selectCityWithLocalities);
   const { listingTypeLabel, category, searchText, minPrice, maxPrice, residential } =
     useAppSelector((s) => s.filters);
+  const isRent = listingTypeLabel === "Rent";
+  const previousListingType = useRef(listingTypeLabel);
+  const activeBudgetOptions = isRent ? rentBudgetOptions : budgetOptions;
+  const budgetMin = isRent ? RENT_BUDGET_MIN : BUDGET_MIN;
+  const budgetMax = isRent ? RENT_BUDGET_MAX : BUDGET_MAX;
+  const budgetStep = isRent ? RENT_BUDGET_STEP : BUDGET_STEP;
+  const formatActiveBudget = isRent ? formatRentBudget : formatBudget;
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [activeFilter, setActiveFilter] = useState<RESFilterKey>("Property Type");
   const [budgetRange, setBudgetRange] = useState<[number | null, number | null]>([
     minPrice ?? null,
     maxPrice ?? null,
   ]);
+
+  useEffect(() => {
+    if (previousListingType.current === listingTypeLabel) return;
+    previousListingType.current = listingTypeLabel;
+    setBudgetRange([null, null]);
+    dispatch(setBudget({ min: null, max: null }));
+  }, [dispatch, listingTypeLabel]);
   const [carpetRange, setCarpetRange] = useState<[number, number]>([
     residential.coveredArea?.min ?? CARPET_MIN,
     residential.coveredArea?.max ?? CARPET_MAX,
@@ -420,7 +439,7 @@ const ResidentialMobileFilters: React.FC<ResidentialMobileFiltersProps> = ({
         </div>
 
         <div>
-          <h3 className="mb-3 text-lg font-semibold text-gray-900">Budget</h3>
+          <h3 className="mb-3 text-lg font-semibold text-gray-900">{isRent ? "Monthly rent" : "Budget"}</h3>
 
           {/* Min / Max Dropdowns */}
           <div className="grid grid-cols-2 gap-3">
@@ -446,13 +465,13 @@ const ResidentialMobileFilters: React.FC<ResidentialMobileFiltersProps> = ({
               className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-green-600 focus:outline-none"
             >
               <option value="">Minimum</option>
-              {budgetOptions.map((v) => (
+              {activeBudgetOptions.map((v) => (
                 <option
                   key={v}
                   value={v}
                   disabled={budgetRange[1] !== null && v > budgetRange[1]}
                 >
-                  {formatBudget(v)}
+                  {formatActiveBudget(v)}
                 </option>
               ))}
             </select>
@@ -479,13 +498,13 @@ const ResidentialMobileFilters: React.FC<ResidentialMobileFiltersProps> = ({
               className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-green-600 focus:outline-none"
             >
               <option value="">Maximum</option>
-              {budgetOptions.map((v) => (
+              {activeBudgetOptions.map((v) => (
                 <option
                   key={v}
                   value={v}
                   disabled={budgetRange[0] !== null && v < budgetRange[0]}
                 >
-                  {formatBudget(v)}
+                  {formatActiveBudget(v)}
                 </option>
               ))}
             </select>
@@ -494,19 +513,19 @@ const ResidentialMobileFilters: React.FC<ResidentialMobileFiltersProps> = ({
           {/* Range Slider */}
           {/* <div className="mt-6 px-1">
             <Range
-              step={BUDGET_STEP}
-              min={BUDGET_MIN}
-              max={BUDGET_MAX}
+              step={budgetStep}
+              min={budgetMin}
+              max={budgetMax}
               values={[
-                budgetRange[0] ?? BUDGET_MIN,
-                budgetRange[1] ?? BUDGET_MAX,
+                budgetRange[0] ?? budgetMin,
+                budgetRange[1] ?? budgetMax,
               ]}
               onChange={(values) => {
                 const [min, max] = values as [number, number];
 
                 applyBudget([
-                  min === BUDGET_MIN ? null : min,
-                  max === BUDGET_MAX ? null : max,
+                  min === budgetMin ? null : min,
+                  max === budgetMax ? null : max,
                 ]);
               }}
               renderTrack={({ props, children }) => (
@@ -517,12 +536,12 @@ const ResidentialMobileFilters: React.FC<ResidentialMobileFiltersProps> = ({
                     ...props.style,
                     background: getTrackBackground({
                       values: [
-                        budgetRange[0] ?? BUDGET_MIN,
-                        budgetRange[1] ?? BUDGET_MAX,
+                        budgetRange[0] ?? budgetMin,
+                        budgetRange[1] ?? budgetMax,
                       ],
                       colors: ["#E5E7EB", "#16A34A", "#E5E7EB"],
-                      min: BUDGET_MIN,
-                      max: BUDGET_MAX,
+                      min: budgetMin,
+                      max: budgetMax,
                     }),
                   }}
                 >

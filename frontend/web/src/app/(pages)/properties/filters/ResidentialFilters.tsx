@@ -25,10 +25,15 @@ import {
   BUDGET_MIN,
   BUDGET_STEP,
   budgetOptions,
+  rentBudgetOptions,
+  RENT_BUDGET_MIN,
+  RENT_BUDGET_MAX,
+  RENT_BUDGET_STEP,
   CARPET_MAX,
   CARPET_MIN,
   carpetOptions,
   formatBudget,
+  formatRentBudget,
   moreFilterSections,
 } from "../constants/constants";
 import { ArrowDropdownIcon } from "@/icons/icons";
@@ -49,6 +54,13 @@ const ResidentialFilters = () => {
   const localities = useSelector(selectLocalitiesByCity);
   const filtersState = useSelector((state: RootState) => state.filters);
   const { minPrice, maxPrice, residential, listingTypeValue } = filtersState;
+  const previousListingType = useRef(listingTypeValue);
+  const isRent = listingTypeValue === "rent";
+  const activeBudgetOptions = isRent ? rentBudgetOptions : budgetOptions;
+  const budgetMin = isRent ? RENT_BUDGET_MIN : BUDGET_MIN;
+  const budgetMax = isRent ? RENT_BUDGET_MAX : BUDGET_MAX;
+  const budgetStep = isRent ? RENT_BUDGET_STEP : BUDGET_STEP;
+  const formatActiveBudget = isRent ? formatRentBudget : formatBudget;
   const [budgetTouched, setBudgetTouched] = useState(false);
 
   const { locality, bedrooms, createdByRole } = residential;
@@ -179,11 +191,19 @@ const ResidentialFilters = () => {
     [number | null, number | null]
   >([minPrice ?? null, maxPrice ?? null]);
 
+  useEffect(() => {
+    if (previousListingType.current === listingTypeValue) return;
+    previousListingType.current = listingTypeValue;
+    setBudgetRange([null, null]);
+    setBudgetTouched(false);
+    dispatch(setBudget({ min: null, max: null }));
+  }, [dispatch, listingTypeValue]);
+
   const budgetLabel =
     budgetRange[0] == null && budgetRange[1] == null
-      ? "Budget"
-      : `${budgetRange[0] ? formatBudget(budgetRange[0]) : "Min"} - ${
-          budgetRange[1] ? formatBudget(budgetRange[1]) : "Max"
+      ? isRent ? "Monthly rent" : "Budget"
+      : `${budgetRange[0] ? formatActiveBudget(budgetRange[0]) : "Min"} - ${
+          budgetRange[1] ? formatActiveBudget(budgetRange[1]) : "Max"
         }`;
 
   const postedByOptions: PostedByOption[] = ["Owners", "Agents", "Builders"];
@@ -558,7 +578,7 @@ const ResidentialFilters = () => {
           align="left"
           renderContent={() => (
             <div className="space-y-4">
-              <h4 className="text-sm font-semibold">Budget</h4>
+              <h4 className="text-sm font-semibold">{isRent ? "Monthly rent" : "Budget"}</h4>
 
               {/* ---------- Min / Max Dropdowns ---------- */}
               <div className="flex gap-3">
@@ -577,9 +597,9 @@ const ResidentialFilters = () => {
            hover:border-gray-400 active:border-gray-400 cursor-pointer"
                 >
                   <option value="">Min</option>
-                  {budgetOptions.map((v) => (
+                  {activeBudgetOptions.map((v) => (
                     <option key={v} value={v} className="cursor-pointer">
-                      {formatBudget(v)}
+                      {formatActiveBudget(v)}
                     </option>
                   ))}
                 </select>
@@ -603,9 +623,9 @@ const ResidentialFilters = () => {
            hover:border-gray-400 active:border-gray-400 cursor-pointer"
                 >
                   <option value="">Max</option>
-                  {budgetOptions.map((v) => (
+                  {activeBudgetOptions.map((v) => (
                     <option key={v} value={v} className="cursor-pointer">
-                      {formatBudget(v)}
+                      {formatActiveBudget(v)}
                     </option>
                   ))}
                 </select>
@@ -613,19 +633,19 @@ const ResidentialFilters = () => {
 
               {/* ---------- Range Slider ---------- */}
               <Range
-                step={BUDGET_STEP}
-                min={BUDGET_MIN}
-                max={BUDGET_MAX}
+                step={budgetStep}
+                min={budgetMin}
+                max={budgetMax}
                 values={[
-                  budgetRange[0] ?? BUDGET_MIN,
-                  budgetRange[1] ?? BUDGET_MAX,
+                  budgetRange[0] ?? budgetMin,
+                  budgetRange[1] ?? budgetMax,
                 ]}
                 onChange={(values) => {
                   const [min, max] = values as [number, number];
 
                   setBudgetRange([
-                    min === BUDGET_MIN ? null : min,
-                    max === BUDGET_MAX ? null : max,
+                    min === budgetMin ? null : min,
+                    max === budgetMax ? null : max,
                   ]);
                 }}
                 renderTrack={({ props, children }) => {
@@ -639,12 +659,12 @@ const ResidentialFilters = () => {
                       style={{
                         background: getTrackBackground({
                           values: [
-                            budgetRange[0] ?? BUDGET_MIN,
-                            budgetRange[1] ?? BUDGET_MAX,
+                            budgetRange[0] ?? budgetMin,
+                            budgetRange[1] ?? budgetMax,
                           ],
                           colors: ["#E5E7EB", "#16A34A", "#E5E7EB"], // gray → green → gray
-                          min: BUDGET_MIN,
-                          max: BUDGET_MAX,
+                          min: budgetMin,
+                          max: budgetMax,
                         }),
                       }}
                     >
@@ -666,8 +686,8 @@ const ResidentialFilters = () => {
 
               {/* ---------- Label ---------- */}
               <div className="text-xs text-gray-500 text-center">
-                {budgetRange[0] ? formatBudget(budgetRange[0]) : "Min"} –{" "}
-                {budgetRange[1] ? formatBudget(budgetRange[1]) : "Max"}
+                {budgetRange[0] ? formatActiveBudget(budgetRange[0]) : "Min"} –{" "}
+                {budgetRange[1] ? formatActiveBudget(budgetRange[1]) : "Max"}
               </div>
             </div>
           )}

@@ -11,6 +11,15 @@ export const budgetOptions = [
   500, 750, 1000, 2000, 3000, 4000, 5000,
 ];
 
+// Rent values are stored in lakhs to match the shared price query conversion.
+export const rentBudgetOptions = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1];
+export const RENT_BUDGET_MIN = 0.05;
+export const RENT_BUDGET_MAX = 1;
+export const RENT_BUDGET_STEP = 0.05;
+
+export const formatRentBudget = (value: number) =>
+  `₹${Math.round(value * 100000).toLocaleString("en-IN")}${value === RENT_BUDGET_MAX ? "+" : ""}`;
+
 export const formatBudget = (value: number) => {
   if (value >= 100)
     return `₹${value / 100}${value === 5000 ? "+" : ""} Cr`;

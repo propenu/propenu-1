@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import {
   checkWhatsAppCloudHealth,
   getConversationMessages,
+  getInboxMessageMedia,
   listConversations,
   markConversationRead,
   normalizeWaId,
@@ -227,6 +228,33 @@ export async function getMessages(req: AuthedRequest, res: Response) {
     return res.status(400).json({
       success: false,
       message: error?.message || "Failed to load messages",
+    });
+  }
+}
+
+export async function getMessageMedia(req: AuthedRequest, res: Response) {
+  try {
+    const waId = String(req.params.waId || "");
+    const messageId = String(req.params.messageId || "");
+    const access = await assertCanAccessConversation(req, waId);
+    if (!access.ok) {
+      return res.status(access.status).json({
+        success: false,
+        message: access.message,
+      });
+    }
+    const media = await getInboxMessageMedia(waId, messageId);
+    res.setHeader("Content-Type", media.mimeType);
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${encodeURIComponent(media.filename)}"`,
+    );
+    res.setHeader("Cache-Control", "private, max-age=300");
+    return res.send(media.buffer);
+  } catch (error: any) {
+    return res.status(400).json({
+      success: false,
+      message: error?.message || "Failed to load media",
     });
   }
 }

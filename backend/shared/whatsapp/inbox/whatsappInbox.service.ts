@@ -919,12 +919,36 @@ const SEARCH_PROPERTY_TEMPLATE = String(
     "looking_to_buy_or_rent_a_property_choose_an_option_below",
 ).trim();
 
+type InboxTemplateButton = {
+  label: string;
+  /** Matches WhatsApp: reply arrow vs visit-website / URL click. */
+  kind: "quick_reply" | "url";
+};
+
+function normalizeInboxTemplateButtons(
+  buttons?: Array<string | InboxTemplateButton>,
+): InboxTemplateButton[] {
+  return (buttons || [])
+    .map((item) => {
+      if (typeof item === "string") {
+        const label = String(item || "").trim();
+        return label ? { label, kind: "quick_reply" as const } : null;
+      }
+      const label = String(item?.label || "").trim();
+      if (!label) return null;
+      const kind = item?.kind === "url" ? ("url" as const) : ("quick_reply" as const);
+      return { label, kind };
+    })
+    .filter(Boolean)
+    .slice(0, 3) as InboxTemplateButton[];
+}
+
 async function sendApprovedInboxTemplate(params: {
   waIdRaw: string;
   templateName: string;
   source: string;
   bodyPreview: string;
-  buttons?: string[];
+  buttons?: Array<string | InboxTemplateButton>;
   dedupeHours?: number;
 }) {
   const waId = normalizeWaId(params.waIdRaw);
@@ -932,10 +956,7 @@ async function sendApprovedInboxTemplate(params: {
 
   const templateName = String(params.templateName || "").trim();
   if (!templateName) return false;
-  const buttons = (params.buttons || [])
-    .map((label) => String(label || "").trim())
-    .filter(Boolean)
-    .slice(0, 3);
+  const buttons = normalizeInboxTemplateButtons(params.buttons);
 
   const templateLang =
     String(process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en").trim() || "en";
@@ -1042,7 +1063,7 @@ async function sendNewUserRegistrationTemplate(waIdRaw: string) {
     source: "new_user_registration_template",
     bodyPreview:
       "Hello , Your Propenu account registration details are available. You can proceed with the registration process using the option below.",
-    buttons: ["Complete Registration"],
+    buttons: [{ label: "Complete Registration", kind: "url" }],
   });
 }
 
@@ -1054,7 +1075,10 @@ export async function sendAccountCreatedSuccessfullyTemplate(phoneRaw: string) {
     source: "account_created_successfully_template",
     bodyPreview:
       "✅ Your Propenu account has been created successfully! You can now explore properties, post listings, manage leads, and access services based on your needs.",
-    buttons: ["Search Property", "Post Property"],
+    buttons: [
+      { label: "Search Property", kind: "quick_reply" },
+      { label: "Post Property", kind: "quick_reply" },
+    ],
     dedupeHours: 24 * 7,
   });
 }
@@ -1083,7 +1107,10 @@ async function sendSearchPropertyOptionsTemplate(waIdRaw: string) {
     source: "search_property_options_template",
     bodyPreview:
       "Your property search request has been received.\n\nPlease select the property requirement below to continue.",
-    buttons: ["Buy Property", "Rent Property"],
+    buttons: [
+      { label: "Buy Property", kind: "url" },
+      { label: "Rent Property", kind: "url" },
+    ],
     dedupeHours: 1,
   });
 }
@@ -1603,6 +1630,62 @@ export async function getConversationMessages(
   return {
     conversation,
     messages: messages.reverse(),
+  };
+}
+
+/** Proxy Meta media for inbox image/document/video/audio bubbles. */
+export async function getInboxMessageMedia(waIdRaw: string, messageIdRaw: string) {
+  const waId = normalizeWaId(waIdRaw);
+  const messageId = String(messageIdRaw || "").trim();
+  if (!waId || !messageId) throw new Error("Invalid media request");
+
+  const message = await WhatsAppMessage.findOne({
+    _id: messageId,
+    waId,
+  }).lean();
+  if (!message) throw new Error("Message not found");
+
+  const raw = (message.raw || {}) as Record<string, any>;
+  const type = String(message.type || raw.type || "").toLowerCase();
+  const mediaBlock =
+    raw?.[type] ||
+    raw?.image ||
+    raw?.document ||
+    raw?.video ||
+    raw?.audio ||
+    raw?.sticker ||
+    null;
+  const mediaId = String(mediaBlock?.id || "").trim();
+  if (!mediaId) throw new Error("No media on this message");
+
+  const { token } = getCredentials();
+  if (!token) throw new Error("WhatsApp credentials are missing");
+
+  const meta = await axios.get(
+    `https://graph.facebook.com/${API_VERSION}/${mediaId}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 15000,
+    },
+  );
+  const downloadUrl = String(meta?.data?.url || "").trim();
+  const mimeType = String(
+    meta?.data?.mime_type || mediaBlock?.mime_type || "application/octet-stream",
+  ).trim();
+  if (!downloadUrl) throw new Error("Meta media URL missing");
+
+  const file = await axios.get(downloadUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+    responseType: "arraybuffer",
+    timeout: 30000,
+  });
+
+  return {
+    buffer: Buffer.from(file.data),
+    mimeType,
+    filename:
+      String(mediaBlock?.filename || "").trim() ||
+      `${type || "media"}-${mediaId}`,
   };
 }
 

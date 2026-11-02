@@ -4,6 +4,7 @@ import {
   getAssignableRoles,
   getCloudHealth,
   getConversations,
+  getMessageMedia,
   getMessages,
   patchConversation,
   postMarkRead,
@@ -26,6 +27,7 @@ router.post("/conversations", postStartConversation);
 router.post("/sync", postSyncFromLogs);
 router.patch("/conversations/:waId", patchConversation);
 router.get("/conversations/:waId/messages", getMessages);
+router.get("/conversations/:waId/messages/:messageId/media", getMessageMedia);
 router.post("/conversations/:waId/messages", postMessage);
 router.post("/conversations/:waId/read", postMarkRead);
 

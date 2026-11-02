@@ -947,6 +947,7 @@ async function sendApprovedInboxTemplate(params: {
     waId,
     direction: "outbound",
     "raw.source": params.source,
+    "raw.dedupeInvalidated": { $ne: true },
     status: { $in: ["sent", "delivered", "read"] },
     createdAt: { $gte: since },
   });
@@ -1102,6 +1103,23 @@ export async function reopenWhatsAppChatForDeletedPhone(phoneRaw: string) {
         assignedAgentRole: "",
       },
     },
+  );
+  // Earlier registration/account templates still count for 24h dedupe.
+  // After delete the same phone must get the new-user flow again.
+  await WhatsAppMessage.updateMany(
+    {
+      waId,
+      direction: "outbound",
+      "raw.source": {
+        $in: [
+          "new_user_registration_template",
+          "account_created_successfully_template",
+          "search_property_options_template",
+        ],
+      },
+      "raw.dedupeInvalidated": { $ne: true },
+    },
+    { $set: { "raw.dedupeInvalidated": true } },
   );
   if (result.modifiedCount || result.matchedCount) {
     whatsappInboxBus.publish({ type: "conversation", waId });

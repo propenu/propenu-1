@@ -1638,9 +1638,12 @@ export async function getInboxMessageMedia(waIdRaw: string, messageIdRaw: string
   const waId = normalizeWaId(waIdRaw);
   const messageId = String(messageIdRaw || "").trim();
   if (!waId || !messageId) throw new Error("Invalid media request");
+  if (!mongoose.Types.ObjectId.isValid(messageId)) {
+    throw new Error("Invalid message id");
+  }
 
   const message = await WhatsAppMessage.findOne({
-    _id: messageId,
+    _id: new mongoose.Types.ObjectId(messageId),
     waId,
   }).lean();
   if (!message) throw new Error("Message not found");
@@ -1648,7 +1651,7 @@ export async function getInboxMessageMedia(waIdRaw: string, messageIdRaw: string
   const raw = (message.raw || {}) as Record<string, any>;
   const type = String(message.type || raw.type || "").toLowerCase();
   const mediaBlock =
-    raw?.[type] ||
+    (type && raw?.[type]) ||
     raw?.image ||
     raw?.document ||
     raw?.video ||
@@ -1661,32 +1664,42 @@ export async function getInboxMessageMedia(waIdRaw: string, messageIdRaw: string
   const { token } = getCredentials();
   if (!token) throw new Error("WhatsApp credentials are missing");
 
-  const meta = await axios.get(
-    `https://graph.facebook.com/${API_VERSION}/${mediaId}`,
-    {
+  try {
+    const meta = await axios.get(
+      `https://graph.facebook.com/${API_VERSION}/${mediaId}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 20000,
+      },
+    );
+    const downloadUrl = String(meta?.data?.url || "").trim();
+    const mimeType = String(
+      meta?.data?.mime_type ||
+        mediaBlock?.mime_type ||
+        "application/octet-stream",
+    ).trim();
+    if (!downloadUrl) throw new Error("Meta media URL missing");
+
+    const file = await axios.get(downloadUrl, {
       headers: { Authorization: `Bearer ${token}` },
-      timeout: 15000,
-    },
-  );
-  const downloadUrl = String(meta?.data?.url || "").trim();
-  const mimeType = String(
-    meta?.data?.mime_type || mediaBlock?.mime_type || "application/octet-stream",
-  ).trim();
-  if (!downloadUrl) throw new Error("Meta media URL missing");
+      responseType: "arraybuffer",
+      timeout: 60000,
+    });
 
-  const file = await axios.get(downloadUrl, {
-    headers: { Authorization: `Bearer ${token}` },
-    responseType: "arraybuffer",
-    timeout: 30000,
-  });
-
-  return {
-    buffer: Buffer.from(file.data),
-    mimeType,
-    filename:
-      String(mediaBlock?.filename || "").trim() ||
-      `${type || "media"}-${mediaId}`,
-  };
+    return {
+      buffer: Buffer.from(file.data),
+      mimeType,
+      filename:
+        String(mediaBlock?.filename || "").trim() ||
+        `${type || "media"}-${mediaId}`,
+    };
+  } catch (err: any) {
+    const metaMessage =
+      err?.response?.data?.error?.message ||
+      err?.message ||
+      "Failed to download WhatsApp media";
+    throw new Error(metaMessage);
+  }
 }
 
 export async function markConversationRead(waIdRaw: string) {

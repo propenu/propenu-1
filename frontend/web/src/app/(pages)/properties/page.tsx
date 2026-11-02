@@ -351,33 +351,6 @@ function PropertiesPageSkeleton() {
   );
 }
 
-function FilterBarFallback() {
-  return (
-    <div
-      aria-hidden="true"
-      className="sticky top-[60px] z-50 w-full bg-[#D1EFDD] px-3 shadow-sm md:top-16"
-    >
-      <div className="container mx-auto flex h-14 items-center gap-4 px-4">
-        <div className="flex min-w-0 items-center gap-3 rounded-xl bg-white px-4 py-2 shadow-sm md:w-full lg:w-auto">
-          <span className="rounded-md bg-[#D1EFDD] px-3 py-1.5 text-sm font-medium text-[#15803D]">Buy⌄</span>
-          <span className="h-5 w-px bg-gray-200" />
-          <span className="whitespace-nowrap text-sm text-gray-900">Residential⌄</span>
-          <span className="h-5 w-px bg-gray-200" />
-          <span className="hidden min-w-40 text-sm text-gray-500 md:block">⌕&nbsp; Enter locality or projects</span>
-        </div>
-        <div className="hidden flex-1 items-center justify-around gap-4 text-sm font-medium text-[#27AE60] lg:flex">
-          <span>Select Locality</span>
-          <span>Budget</span>
-          <span>BHK</span>
-          <span>Posted By</span>
-          <span className="rounded-full border border-[#27AE60] bg-white px-4 py-2">More Filters⌄</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
 const PropertiesPageContent: React.FC = () => {
   const filters = useAppSelector((s) => s.filters);
   const cityData = useAppSelector(selectCityWithLocalities);
@@ -752,7 +725,7 @@ const PropertiesPageContent: React.FC = () => {
 
 const Page: React.FC = () => (
   <>
-    <Suspense fallback={<FilterBarFallback />}>
+    <Suspense fallback={null}>
       <FilterBar />
     </Suspense>
     <Suspense fallback={<PropertiesPageSkeleton />}>

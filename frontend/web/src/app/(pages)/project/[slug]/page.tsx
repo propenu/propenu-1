@@ -56,7 +56,7 @@ export async function generateMetadata({ params }: PageProps) {
               project.logo?.url ||
               DEFAULT_OG_IMAGE,
           ),
-          width: 1200,
+          width: 1200, 
           height: 630,
           alt: project.title,
         },

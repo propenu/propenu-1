@@ -442,13 +442,11 @@ function ClientProvidersContent({
           expand={true}
           duration={3000}
         />
-        <div className="hidden lg:block">
-          {pathname?.startsWith("/login") || pathname?.startsWith("/register") ? null : !hideLayout ? (
-            <Footer />
-          ) : (
-            <FooterLegalBar />
-          )}
-        </div>
+        {pathname?.startsWith("/login") || pathname?.startsWith("/register") ? null : !hideLayout ? (
+          <Footer />
+        ) : (
+          <FooterLegalBar />
+        )}
         {process.env.NODE_ENV === "development" && (
           <ReactQueryDevtools initialIsOpen={false} />
         )}

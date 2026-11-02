@@ -455,7 +455,8 @@ async function findUserByWhatsAppPhone(waId: string) {
 async function findWhatsAppAccount(waId: string) {
   if (mongoose.connection.readyState !== 1) {
     console.error("WhatsApp welcome skipped the account lookup: database is not connected");
-    return { isNew: false, name: "", city: "", state: "" };
+    // Safer default: treat as new so registration template can still go out.
+    return { isNew: true, name: "", city: "", state: "" };
   }
   const user = await findUserByWhatsAppPhone(waId);
   const isNew = user?.phoneVerified !== true;
@@ -905,35 +906,207 @@ async function sendWelcomeMenu(waId: string) {
   );
 }
 
+const NEW_USER_REGISTRATION_TEMPLATE = String(
+  process.env.WHATSAPP_NEW_USER_REGISTRATION_TEMPLATE || "propenu_registration_information",
+).trim();
+
+const ACCOUNT_CREATED_TEMPLATE = String(
+  process.env.WHATSAPP_ACCOUNT_CREATED_TEMPLATE || "account_created_sucessfully",
+).trim();
+
+const SEARCH_PROPERTY_TEMPLATE = String(
+  process.env.WHATSAPP_SEARCH_PROPERTY_TEMPLATE ||
+    "looking_to_buy_or_rent_a_property_choose_an_option_below",
+).trim();
+
+async function sendApprovedInboxTemplate(params: {
+  waIdRaw: string;
+  templateName: string;
+  source: string;
+  bodyPreview: string;
+  dedupeHours?: number;
+}) {
+  const waId = normalizeWaId(params.waIdRaw);
+  if (!waId) return false;
+
+  const templateName = String(params.templateName || "").trim();
+  if (!templateName) return false;
+
+  const templateLang =
+    String(process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en").trim() || "en";
+  const dedupeHours = Math.max(1, Number(params.dedupeHours) || 24);
+  const since = new Date(Date.now() - dedupeHours * 60 * 60 * 1000);
+  const alreadySent = await WhatsAppMessage.exists({
+    waId,
+    direction: "outbound",
+    "raw.source": params.source,
+    status: { $in: ["pending", "sent", "delivered", "read"] },
+    createdAt: { $gte: since },
+  });
+  if (alreadySent) return true;
+
+  const { token, phoneNumberId } = getCredentials();
+  if (!token || !phoneNumberId) {
+    throw new Error(
+      "WhatsApp credentials are missing (WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID)",
+    );
+  }
+
+  const conversation = await upsertConversation({
+    waId,
+    preview: previewFromBody(params.bodyPreview),
+    direction: "outbound",
+  });
+  await WhatsAppConversation.updateOne(
+    { _id: conversation._id },
+    { $set: { origin: "cloud" } },
+  );
+
+  const pending = await WhatsAppMessage.create({
+    conversationId: conversation._id,
+    waId,
+    direction: "outbound",
+    type: "template",
+    body: params.bodyPreview,
+    status: "pending",
+    raw: {
+      source: params.source,
+      template: templateName,
+      language: templateLang,
+    },
+  });
+
+  try {
+    const response = await axios.post(
+      `https://graph.facebook.com/${API_VERSION}/${phoneNumberId}/messages`,
+      {
+        messaging_product: "whatsapp",
+        to: waId,
+        type: "template",
+        template: {
+          name: templateName,
+          language: { code: templateLang },
+        },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 15000,
+      },
+    );
+    const wamid = extractMetaMessageId(response.data);
+    pending.status = "sent";
+    if (wamid) pending.wamid = wamid;
+    pending.raw = {
+      ...(pending.raw as object),
+      response: response.data,
+    };
+    await pending.save();
+    whatsappInboxBus.publish({ type: "message", waId });
+    console.log(
+      `WhatsApp template ${templateName} sent to ******${waId.slice(-4)} (${params.source})`,
+    );
+    return true;
+  } catch (err: any) {
+    pending.status = "failed";
+    pending.error =
+      err?.response?.data?.error?.message ||
+      err?.message ||
+      "Failed to send WhatsApp template";
+    pending.raw = {
+      ...(pending.raw as object),
+      ...(err?.response?.data || {}),
+    };
+    await pending.save();
+    whatsappInboxBus.publish({ type: "message", waId });
+    throw err;
+  }
+}
+
+/** Approved Meta template for visitors who have not finished a Propenu account. */
+async function sendNewUserRegistrationTemplate(waIdRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName: NEW_USER_REGISTRATION_TEMPLATE || "propenu_registration_information",
+    source: "new_user_registration_template",
+    bodyPreview:
+      "Hello , Your Propenu account registration details are available. You can proceed with the registration process using the option below.",
+  });
+}
+
+/** Approved Meta template after a new Propenu account is created successfully. */
+export async function sendAccountCreatedSuccessfullyTemplate(phoneRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw: phoneRaw,
+    templateName: ACCOUNT_CREATED_TEMPLATE || "account_created_sucessfully",
+    source: "account_created_successfully_template",
+    bodyPreview:
+      "✅ Your Propenu account has been created successfully! You can now explore properties, post listings, manage leads, and access services based on your needs.",
+    dedupeHours: 24 * 7,
+  });
+}
+
+function isSearchPropertyChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ");
+  return (
+    normalized === "search property" ||
+    normalized === "search_property" ||
+    normalized === "search properties" ||
+    normalized === "searchproperty"
+  );
+}
+
+/** Buy / Rent options after the visitor taps Search Property. */
+async function sendSearchPropertyOptionsTemplate(waIdRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName:
+      SEARCH_PROPERTY_TEMPLATE ||
+      "looking_to_buy_or_rent_a_property_choose_an_option_below",
+    source: "search_property_options_template",
+    bodyPreview:
+      "Your property search request has been received.\n\nPlease select the property requirement below to continue.",
+    dedupeHours: 1,
+  });
+}
+
 async function replyToInboundMessage(waId: string, text: string) {
   if (replyInFlight.has(waId)) return;
   replyInFlight.add(waId);
   try {
     if (await isBotPaused(waId)) return;
-    const inbound = chatbotMessageFromInbound(text);
-    if (inbound.kind === "chat" && isWhatsAppGreeting(inbound.text)) {
-      await sendWelcomeMenu(waId);
+    if (!String(text || "").trim()) return;
+
+    // Search Property from account-created template (or typed) → Buy/Rent options.
+    if (isSearchPropertyChoice(text)) {
+      try {
+        await sendSearchPropertyOptionsTemplate(waId);
+      } catch (err) {
+        console.error("WhatsApp search-property options template failed:", err);
+      }
       return;
     }
-    if (inbound.kind === "agent") {
-      await handOffToAgent(waId);
+
+    const account = await findWhatsAppAccount(waId);
+
+    // AI property-chat / welcome-list replies are paused.
+    // New visitors (no verified Propenu account) get the registration template.
+    if (account.isNew) {
+      try {
+        await sendNewUserRegistrationTemplate(waId);
+      } catch (err) {
+        console.error("WhatsApp new-user registration template failed:", err);
+      }
       return;
     }
-    if (inbound.kind === "chat" && !inbound.text) return;
-    if (inbound.kind === "account") {
-      await maybeReplyNewUserChoice(waId, "create_account");
-      return;
-    }
-    if (inbound.kind === "post") {
-      await maybeReplyNewUserChoice(waId, "post_property");
-      return;
-    }
-    try {
-      await sendChatbotReply(waId, inbound.text);
-    } catch (err) {
-      console.error("WhatsApp property chat failed, sending the opening list:", err);
-      await sendWelcomeMenu(waId);
-    }
+
+    // Existing verified users: wait for the dedicated existing-user template flow.
   } catch (err) {
     console.error("WhatsApp inbound auto-reply failed:", err);
   } finally {

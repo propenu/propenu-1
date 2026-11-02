@@ -43,6 +43,7 @@ import {
   territoryFromHomeLocation,
 } from "../utils/workingLocations";
 import { activateSubscription } from "../../../payment-service/src/services/subscriptionService";
+import { sendAccountCreatedSuccessfullyTemplate } from "../../../../shared/whatsapp/inbox/whatsappInbox.service";
 
 const PLATFORM_END_USER_ROLE_SET = new Set<string>(PLATFORM_END_USER_ROLE_NAMES);
 
@@ -674,6 +675,8 @@ export const me = async (req: AuthRequest, res: Response) => {
 
     const isSuperAdmin = role?.name === "super_admin";
 
+    const impersonationActive = Boolean(req.user.impersonation);
+
     return res.status(200).json({
       message: "Authenticated user",
       user: {
@@ -693,6 +696,17 @@ export const me = async (req: AuthRequest, res: Response) => {
         roleName: role ? role.name : null,
         permissions: isSuperAdmin ? ["*"] : role?.permissions || [],
         builderAccess,
+        impersonation: impersonationActive
+          ? {
+              active: true,
+              readOnly: Boolean(req.user.readOnly),
+              impersonatorSub: req.user.impersonatorSub || null,
+              impersonatorName: req.user.impersonatorName || null,
+              expiresAt: req.user.exp
+                ? new Date(Number(req.user.exp) * 1000).toISOString()
+                : null,
+            }
+          : null,
       },
     });
   } catch (err: any) {
@@ -1820,6 +1834,7 @@ const emptyUserSearchPayload = (page: number, limit: number) => ({
     states: [] as string[],
     cities: [] as string[],
     localities: [] as string[],
+    pincodes: [] as string[],
     statusCounts: {} as Record<string, number>,
   },
 });
@@ -2221,10 +2236,10 @@ export const searchUsers = async (req: AuthRequest, res: Response) => {
         },
       });
       pipeline.push({
-        $sort: { _searchRank: 1, createdAt: -1, name: 1 },
+        $sort: { _searchRank: 1, createdAt: -1, name: 1, _id: 1 },
       });
     } else {
-      pipeline.push({ $sort: { createdAt: -1, name: 1 } });
+      pipeline.push({ $sort: { createdAt: -1, name: 1, _id: 1 } });
     }
 
     pipeline.push({
@@ -2366,6 +2381,11 @@ export const searchUsers = async (req: AuthRequest, res: Response) => {
           ...(stateQ ? { state: exact(stateQ) } : {}),
           ...(cityQ ? { city: exact(cityQ) } : {}),
         }),
+        pincodes: uniqueValues("pincode", {
+          ...(stateQ ? { state: exact(stateQ) } : {}),
+          ...(cityQ ? { city: exact(cityQ) } : {}),
+          ...(localityQ ? { locality: exact(localityQ) } : {}),
+        }),
         statusCounts: [
           ...locStage,
           {
@@ -2424,6 +2444,7 @@ export const searchUsers = async (req: AuthRequest, res: Response) => {
         states: pickIds(facet?.states),
         cities: pickIds(facet?.cities),
         localities: pickIds(facet?.localities),
+        pincodes: pickIds(facet?.pincodes),
         statusCounts: Object.fromEntries(
           (Array.isArray(facet?.statusCounts) ? facet.statusCounts : [])
             .filter((row: any) => row?._id)
@@ -2696,6 +2717,16 @@ export const createVerifyOtp = async (req: Request, res: Response) => {
         .catch((emailError) => {
           console.error("Failed to send welcome email on signup:", emailError);
         });
+    }
+
+    const createdPhone = String(user.phone || normalizedPhone || phone || "").trim();
+    if (createdPhone) {
+      void sendAccountCreatedSuccessfullyTemplate(createdPhone).catch((whatsappError) => {
+        console.error(
+          "Failed to send account-created WhatsApp template on signup:",
+          whatsappError,
+        );
+      });
     }
 
     const token = await createAuthToken({ user, roleDoc });

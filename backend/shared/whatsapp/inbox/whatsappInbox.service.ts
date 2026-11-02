@@ -924,6 +924,7 @@ async function sendApprovedInboxTemplate(params: {
   templateName: string;
   source: string;
   bodyPreview: string;
+  buttons?: string[];
   dedupeHours?: number;
 }) {
   const waId = normalizeWaId(params.waIdRaw);
@@ -931,16 +932,22 @@ async function sendApprovedInboxTemplate(params: {
 
   const templateName = String(params.templateName || "").trim();
   if (!templateName) return false;
+  const buttons = (params.buttons || [])
+    .map((label) => String(label || "").trim())
+    .filter(Boolean)
+    .slice(0, 3);
 
   const templateLang =
     String(process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en").trim() || "en";
   const dedupeHours = Math.max(1, Number(params.dedupeHours) || 24);
   const since = new Date(Date.now() - dedupeHours * 60 * 60 * 1000);
+  // Only treat real Meta deliveries as "already sent".
+  // Stuck "pending" rows (deploy restart mid-send) must not block later retries.
   const alreadySent = await WhatsAppMessage.exists({
     waId,
     direction: "outbound",
     "raw.source": params.source,
-    status: { $in: ["pending", "sent", "delivered", "read"] },
+    status: { $in: ["sent", "delivered", "read"] },
     createdAt: { $gte: since },
   });
   if (alreadySent) return true;
@@ -959,7 +966,7 @@ async function sendApprovedInboxTemplate(params: {
   });
   await WhatsAppConversation.updateOne(
     { _id: conversation._id },
-    { $set: { origin: "cloud" } },
+    { $set: { origin: "cloud", botPaused: false } },
   );
 
   const pending = await WhatsAppMessage.create({
@@ -973,6 +980,7 @@ async function sendApprovedInboxTemplate(params: {
       source: params.source,
       template: templateName,
       language: templateLang,
+      buttons,
     },
   });
 
@@ -1033,6 +1041,7 @@ async function sendNewUserRegistrationTemplate(waIdRaw: string) {
     source: "new_user_registration_template",
     bodyPreview:
       "Hello , Your Propenu account registration details are available. You can proceed with the registration process using the option below.",
+    buttons: ["Complete Registration"],
   });
 }
 
@@ -1044,6 +1053,7 @@ export async function sendAccountCreatedSuccessfullyTemplate(phoneRaw: string) {
     source: "account_created_successfully_template",
     bodyPreview:
       "✅ Your Propenu account has been created successfully! You can now explore properties, post listings, manage leads, and access services based on your needs.",
+    buttons: ["Search Property", "Post Property"],
     dedupeHours: 24 * 7,
   });
 }
@@ -1072,19 +1082,45 @@ async function sendSearchPropertyOptionsTemplate(waIdRaw: string) {
     source: "search_property_options_template",
     bodyPreview:
       "Your property search request has been received.\n\nPlease select the property requirement below to continue.",
+    buttons: ["Buy Property", "Rent Property"],
     dedupeHours: 1,
   });
+}
+
+/** After dashboard delete, the users row is gone but the WhatsApp chat may still be paused. */
+export async function reopenWhatsAppChatForDeletedPhone(phoneRaw: string) {
+  const waId = normalizeWaId(phoneRaw);
+  if (!waId) return false;
+  const result = await WhatsAppConversation.updateOne(
+    { waId },
+    {
+      $set: {
+        botPaused: false,
+        inboxStatus: "new",
+        assignedAgentId: "",
+        assignedAgentName: "",
+        assignedAgentRole: "",
+      },
+    },
+  );
+  if (result.modifiedCount || result.matchedCount) {
+    whatsappInboxBus.publish({ type: "conversation", waId });
+  }
+  return Boolean(result.matchedCount);
 }
 
 async function replyToInboundMessage(waId: string, text: string) {
   if (replyInFlight.has(waId)) return;
   replyInFlight.add(waId);
   try {
-    if (await isBotPaused(waId)) return;
     if (!String(text || "").trim()) return;
+
+    const account = await findWhatsAppAccount(waId);
+    const paused = await isBotPaused(waId);
 
     // Search Property from account-created template (or typed) → Buy/Rent options.
     if (isSearchPropertyChoice(text)) {
+      if (paused && !account.isNew) return;
       try {
         await sendSearchPropertyOptionsTemplate(waId);
       } catch (err) {
@@ -1093,11 +1129,24 @@ async function replyToInboundMessage(waId: string, text: string) {
       return;
     }
 
-    const account = await findWhatsAppAccount(waId);
-
     // AI property-chat / welcome-list replies are paused.
     // New visitors (no verified Propenu account) get the registration template.
+    // Deleted accounts reopen even if an old handoff left botPaused=true.
     if (account.isNew) {
+      if (paused) {
+        await WhatsAppConversation.updateOne(
+          { waId },
+          {
+            $set: {
+              botPaused: false,
+              inboxStatus: "new",
+              assignedAgentId: "",
+              assignedAgentName: "",
+              assignedAgentRole: "",
+            },
+          },
+        );
+      }
       try {
         await sendNewUserRegistrationTemplate(waId);
       } catch (err) {
@@ -1106,7 +1155,12 @@ async function replyToInboundMessage(waId: string, text: string) {
       return;
     }
 
-    // Existing verified users: wait for the dedicated existing-user template flow.
+    if (paused) return;
+
+    // Existing verified users: no auto template yet (waiting for existing-user template).
+    console.log(
+      `WhatsApp inbound skipped auto-template for existing user ******${String(waId).slice(-4)} (phoneVerified)`,
+    );
   } catch (err) {
     console.error("WhatsApp inbound auto-reply failed:", err);
   } finally {

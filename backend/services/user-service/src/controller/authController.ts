@@ -43,7 +43,10 @@ import {
   territoryFromHomeLocation,
 } from "../utils/workingLocations";
 import { activateSubscription } from "../../../payment-service/src/services/subscriptionService";
-import { sendAccountCreatedSuccessfullyTemplate } from "../../../../shared/whatsapp/inbox/whatsappInbox.service";
+import {
+  reopenWhatsAppChatForDeletedPhone,
+  sendAccountCreatedSuccessfullyTemplate,
+} from "../../../../shared/whatsapp/inbox/whatsappInbox.service";
 
 const PLATFORM_END_USER_ROLE_SET = new Set<string>(PLATFORM_END_USER_ROLE_NAMES);
 
@@ -896,7 +899,13 @@ export const deleteMyAccount = async (req: AuthRequest, res: Response) => {
       deletionFeedback: feedback?.trim() || null,
     });
 
+    const deletedPhone = String(user.phone || "").trim();
     await User.findByIdAndDelete(user._id);
+    if (deletedPhone) {
+      void reopenWhatsAppChatForDeletedPhone(deletedPhone).catch((err) => {
+        console.error("Failed to reopen WhatsApp chat after account delete:", err);
+      });
+    }
 
     return res.status(200).json({
       message: "Your account has been deleted successfully",
@@ -1019,7 +1028,13 @@ export const adminDeleteUser = async (req: AuthRequest, res: Response) => {
       deletionFeedback: null,
     });
 
+    const deletedPhone = String(user.phone || "").trim();
     await User.findByIdAndDelete(user._id);
+    if (deletedPhone) {
+      void reopenWhatsAppChatForDeletedPhone(deletedPhone).catch((err) => {
+        console.error("Failed to reopen WhatsApp chat after admin delete:", err);
+      });
+    }
 
     return res.json({
       success: true,

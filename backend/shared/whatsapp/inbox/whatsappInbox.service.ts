@@ -2098,12 +2098,16 @@ const INBOX_MEDIA_MIME: Record<string, "image" | "document" | "video" | "audio">
   "image/jpg": "image",
   "image/png": "image",
   "image/webp": "image",
+  "image/gif": "image",
   "application/pdf": "document",
   "application/msword": "document",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
     "document",
   "application/vnd.ms-excel": "document",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "document",
+  "text/plain": "document",
+  "text/csv": "document",
+  "application/csv": "document",
   "video/mp4": "video",
   "video/3gpp": "video",
   "audio/aac": "audio",
@@ -2120,7 +2124,15 @@ function resolveInboxMediaKind(mimeTypeRaw: string, fileNameRaw: string) {
   if (mime.startsWith("image/")) return "image" as const;
   if (mime.startsWith("video/")) return "video" as const;
   if (mime.startsWith("audio/")) return "audio" as const;
-  if (name.endsWith(".pdf") || name.endsWith(".doc") || name.endsWith(".docx")) {
+  if (
+    name.endsWith(".pdf") ||
+    name.endsWith(".doc") ||
+    name.endsWith(".docx") ||
+    name.endsWith(".xls") ||
+    name.endsWith(".xlsx") ||
+    name.endsWith(".txt") ||
+    name.endsWith(".csv")
+  ) {
     return "document" as const;
   }
   return null;

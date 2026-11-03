@@ -11,7 +11,10 @@ import {
 } from "../services/promotionService";
 import { IPromotion } from "../models/sharedSchemas";
 import { AuthRequest } from "../middlewares/authMiddleware";
-import { resolveVisibleLeadLimit } from "../utils/promotionAccess";
+import {
+  canForceManualPromotion,
+  resolveVisibleLeadLimit,
+} from "../utils/promotionAccess";
 import { notifyLifecycleEvent } from "../services/lifecycleNotificationService";
 import { BuilderInvoiceRead } from "../models/builderPlanReadModels";
 import { findActivePlan } from "../services/planPromotionService";
@@ -19,7 +22,12 @@ import { findActivePlan } from "../services/planPromotionService";
 const INVOICE_REQUIRED_MESSAGE =
   "Invoice required: this project has no paid invoice. Create an invoice in Builder Plans and mark it as Paid, then start the promotion.";
 
-async function invoiceRequiredResponse(res: Response, projectId: string) {
+async function invoiceRequiredResponse(
+  res: Response,
+  projectId: string,
+  roleName?: string | null,
+) {
+  if (canForceManualPromotion(roleName)) return null;
   if (await findActivePlan(projectId)) return null;
   return res.status(403).json({
     success: false,
@@ -193,7 +201,11 @@ export const promoteProperty = async (req: AuthRequest, res: Response) => {
     }
 
     if (type !== "normal") {
-      const blocked = await invoiceRequiredResponse(res, String(property._id));
+      const blocked = await invoiceRequiredResponse(
+        res,
+        String(property._id),
+        req.user?.roleName,
+      );
       if (blocked) return blocked;
     }
 
@@ -360,8 +372,10 @@ export const renewPromotion = async (req: AuthRequest, res: Response) => {
     const currentPromotion = (property.promotion || {}) as Partial<IPromotion>;
     const currentType = (currentPromotion.type || "normal") as PromotionType;
     const nextType = (type || currentType) as PromotionType;
+    const forceManual = canForceManualPromotion(req.user?.roleName);
+    const previousPlanInvoiceId = planInvoiceIdOf(currentPromotion);
 
-    if (planInvoiceIdOf(currentPromotion)) {
+    if (previousPlanInvoiceId && !forceManual) {
       return res.status(400).json({
         success: false,
         needsInvoice: true,
@@ -378,7 +392,11 @@ export const renewPromotion = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const blocked = await invoiceRequiredResponse(res, String(property._id));
+    const blocked = await invoiceRequiredResponse(
+      res,
+      String(property._id),
+      req.user?.roleName,
+    );
     if (blocked) return blocked;
 
     const now = new Date();
@@ -426,20 +444,34 @@ export const renewPromotion = async (req: AuthRequest, res: Response) => {
       promotion.visibleLeadLimit = nextLeadLimit;
     }
 
-    appendPromotionHistory(
-      property,
-      req,
-      promotion,
-      `Promotion renewed for ${renewalDays} day${renewalDays === 1 ? "" : "s"}`,
-    );
+    const renewReason = previousPlanInvoiceId
+      ? `Direct Super Admin renewal for ${renewalDays} day${
+          renewalDays === 1 ? "" : "s"
+        } (detached from builder plan invoice)`
+      : `Promotion renewed for ${renewalDays} day${renewalDays === 1 ? "" : "s"}`;
+
+    appendPromotionHistory(property, req, promotion, renewReason);
 
     property.promotion = promotion as any;
+    if (previousPlanInvoiceId) {
+      (property as any).promotionMode = "manual";
+    }
 
     await property.save();
 
+    if (previousPlanInvoiceId) {
+      await markPlanInvoice(
+        previousPlanInvoiceId,
+        "cancelled",
+        `Superseded by Super Admin direct renewal (${renewalDays} days)`,
+      );
+    }
+
     return res.status(200).json({
       success: true,
-      message: "Promotion renewed successfully",
+      message: `Promotion renewed for ${renewalDays} day${
+        renewalDays === 1 ? "" : "s"
+      }`,
       data: property,
     });
   } catch (err) {

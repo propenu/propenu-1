@@ -5,14 +5,26 @@ const LEAD_ALLOWANCE_ROLES = new Set([
   "bdh",
 ]);
 
-/** Super Admin, Admin, and Business Development Head may set visible lead allowance. */
-export function canSetVisibleLeadAllowance(roleName?: string | null) {
-  const role = String(roleName || "")
+function normalizeRoleName(roleName?: string | null) {
+  return String(roleName || "")
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
-  return LEAD_ALLOWANCE_ROLES.has(role);
+}
+
+/** Super Admin, Admin, and Business Development Head may set visible lead allowance. */
+export function canSetVisibleLeadAllowance(roleName?: string | null) {
+  return LEAD_ALLOWANCE_ROLES.has(normalizeRoleName(roleName));
+}
+
+/**
+ * Super Admin / Admin may renew or extend promotions directly without a paid
+ * Builder Plans invoice (manual override for production ops).
+ */
+export function canForceManualPromotion(roleName?: string | null) {
+  const role = normalizeRoleName(roleName);
+  return role === "super_admin" || role === "admin";
 }
 
 /**

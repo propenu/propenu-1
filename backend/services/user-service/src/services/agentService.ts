@@ -204,7 +204,7 @@ const AgentService = {
   ) {
     const filter: any = { verificationStatus: "approved" };
 
-    if (location.city) filter.city = new RegExp(`^${location.city}$`, "i");
+    if (location.city) filter.city = location.city.trim().toLowerCase();
 
     if (location.locality) {
       filter.locality = new RegExp(`^${location.locality}$`, "i");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Meta, Property } from "@/types/property";
 import { SearchFilterParams } from "@/types/sharedTypes";
 import { minDelay } from "@/utilies/minDelay";
@@ -17,23 +17,21 @@ export function useStreamProperties(params: SearchFilterParams) {
   const [total, setTotal] = useState<number | null>(null);
   const [sponsored, setSponsored] = useState<Property[]>([]);
   const [meta, setMeta] = useState<Meta | null>(null);
+  const hasLoadedOnce = useRef(false);
+  const query = new URLSearchParams(
+    Object.entries(params)
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => [key, String(value)]),
+  ).toString();
 
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
+    const showInitialSkeleton = !hasLoadedOnce.current;
 
     async function start() {
       const startedAt = Date.now();
-      setLoading(true);
-      setItems([]);
-      setTotal(null);
-      setMeta(null);
-
-      const query = new URLSearchParams(
-        Object.entries(params)
-          .filter(([, v]) => v !== undefined)
-          .map(([k, v]) => [k, String(v)]),
-      ).toString();
+      if (showInitialSkeleton) setLoading(true);
 
       const searchUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/properties/search?${query}`;
       const sponsoredUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/properties/sponsored?${query}`;
@@ -69,6 +67,9 @@ export function useStreamProperties(params: SearchFilterParams) {
       const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
 
       let buffer = "";
+      const nextItems: Property[] = [];
+      let nextMeta: Meta | null = null;
+      let nextTotal: number | null = null;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -85,14 +86,18 @@ export function useStreamProperties(params: SearchFilterParams) {
             const parsed = JSON.parse(line) as any;
 
             if (parsed && parsed.__meta) {
-              setMeta(parsed.__meta as Meta);
+              nextMeta = parsed.__meta as Meta;
               if (typeof parsed.__meta.total === "number") {
-                setTotal(parsed.__meta.total);
+                nextTotal = parsed.__meta.total;
               }
               continue;
             }
 
-            setItems((prev) => [...prev, parsed as Property]);
+            nextItems.push(parsed as Property);
+            // Stream the first result set in progressively. During later
+            // searches, keep the previous results visible until the new
+            // response is complete so the page never falls back to skeletons.
+            if (showInitialSkeleton) setItems([...nextItems]);
           } catch (err) {
             console.error("Invalid JSON chunk", line);
           }
@@ -107,7 +112,11 @@ export function useStreamProperties(params: SearchFilterParams) {
       const sponsoredRes = await sponsoredPromise;
 
       if (!cancelled) {
+        setItems(nextItems);
+        setMeta(nextMeta);
+        setTotal(nextTotal);
         setSponsored(sponsoredRes.data || []);
+        hasLoadedOnce.current = true;
         setLoading(false);
       }
     }
@@ -122,7 +131,7 @@ export function useStreamProperties(params: SearchFilterParams) {
       cancelled = true;
       controller.abort();
     };
-  }, [params]);
+  }, [query]);
 
   return { items, sponsored, loading, total, meta };
 }

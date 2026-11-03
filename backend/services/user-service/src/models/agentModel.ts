@@ -96,6 +96,8 @@ const AgentSchema = new Schema<Agent>(
   { timestamps: true }
 );
 
+AgentSchema.index({ verificationStatus: 1, city: 1, createdAt: -1 });
+
 // ================= SLUG GENERATION =================
 
 const slugify = (value?: string) =>

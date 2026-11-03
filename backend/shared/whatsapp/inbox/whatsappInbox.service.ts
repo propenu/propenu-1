@@ -1142,6 +1142,17 @@ const AGENT_MANAGE_LEADS_TEMPLATE = String(
 const AGENT_PAYMENT_SUPPORT_TEMPLATE = String(
   process.env.WHATSAPP_AGENT_PAYMENT_SUPPORT_TEMPLATE || "get_payment_support",
 ).trim();
+/**
+ * Dynamic URL suffixes for Meta templates that use https://…/{{1}}.
+ * Empty string = static URL button → do NOT send urlButton (avoids #132018).
+ *
+ * Confirmed dynamic in Meta:
+ * - Manage Leads → agent/leads
+ * - Reach Buyers → agent-plan
+ *
+ * Static by default (set env only if Meta template has {{1}}):
+ * - post_a_property, manage properties, payment support, listing-limit, plan benefits
+ */
 const AGENT_MANAGE_LEADS_URL_SUFFIX = String(
   process.env.WHATSAPP_AGENT_MANAGE_LEADS_URL_SUFFIX || "agent/leads",
 )
@@ -1152,33 +1163,28 @@ const AGENT_REACH_BUYERS_URL_SUFFIX = String(
 )
   .trim()
   .replace(/^\/+/, "");
-/**
- * post_a_property Meta template uses a FIXED URL button (no {{1}}).
- * Only set WHATSAPP_AGENT_POST_PROPERTY_URL_SUFFIX if Meta adds a dynamic suffix later.
- * Sending url params on a static-URL template → Meta (#132018).
- */
 const AGENT_POST_PROPERTY_URL_SUFFIX = String(
   process.env.WHATSAPP_AGENT_POST_PROPERTY_URL_SUFFIX || "",
 )
   .trim()
   .replace(/^\/+/, "");
 const AGENT_MANAGE_PROPERTIES_URL_SUFFIX = String(
-  process.env.WHATSAPP_AGENT_MANAGE_PROPERTIES_URL_SUFFIX || "agent/my-properties",
+  process.env.WHATSAPP_AGENT_MANAGE_PROPERTIES_URL_SUFFIX || "",
 )
   .trim()
   .replace(/^\/+/, "");
 const AGENT_PAYMENT_SUPPORT_URL_SUFFIX = String(
-  process.env.WHATSAPP_AGENT_PAYMENT_SUPPORT_URL_SUFFIX || "agent/support",
+  process.env.WHATSAPP_AGENT_PAYMENT_SUPPORT_URL_SUFFIX || "",
 )
   .trim()
   .replace(/^\/+/, "");
 const AGENT_NO_PLAN_LIMIT_URL_SUFFIX = String(
-  process.env.WHATSAPP_AGENT_NO_PLAN_LIMIT_URL_SUFFIX || "agent-plan",
+  process.env.WHATSAPP_AGENT_NO_PLAN_LIMIT_URL_SUFFIX || "",
 )
   .trim()
   .replace(/^\/+/, "");
 const AGENT_PLAN_BENEFITS_URL_SUFFIX = String(
-  process.env.WHATSAPP_AGENT_PLAN_BENEFITS_URL_SUFFIX || "agent-plan",
+  process.env.WHATSAPP_AGENT_PLAN_BENEFITS_URL_SUFFIX || "",
 )
   .trim()
   .replace(/^\/+/, "");
@@ -1190,6 +1196,15 @@ const AGENT_FREE_DEFAULT_LISTING_LIMIT = Math.max(
   1,
   Number(process.env.WHATSAPP_AGENT_FREE_DEFAULT_LISTING_LIMIT) || 20,
 );
+
+/** Include urlButton only when Meta template expects a dynamic URL suffix. */
+function optionalUrlButton(suffix: string, index = 0) {
+  const text = String(suffix || "")
+    .trim()
+    .replace(/^\/+/, "");
+  if (!text) return {} as { urlButton?: { index: number; text: string } };
+  return { urlButton: { index: Math.max(0, index), text } };
+}
 
 type InboxTemplateButton = {
   label: string;
@@ -1661,16 +1676,7 @@ async function sendAgentPostPropertyTemplate(waIdRaw: string) {
     bodyPreview:
       "Your property submission request is ready for the next step.\n\nPlease use the link below to access the property submission page.",
     buttons: [{ label: "Post a property", kind: "url" }],
-    // Static Meta URL button — do NOT send urlButton unless env opt-in is set.
-    // Extra URL params on this template caused production (#132018).
-    ...(AGENT_POST_PROPERTY_URL_SUFFIX
-      ? {
-          urlButton: {
-            index: 0,
-            text: AGENT_POST_PROPERTY_URL_SUFFIX,
-          },
-        }
-      : {}),
+    ...optionalUrlButton(AGENT_POST_PROPERTY_URL_SUFFIX),
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
@@ -1685,11 +1691,7 @@ async function sendAgentManagePropertiesTemplate(waIdRaw: string) {
     bodyPreview:
       "Your property listings are available in your Propenu account.\n\nYou can access and review your listed properties using the link below.",
     buttons: [{ label: "Click Here", kind: "url" }],
-    // Meta dynamic URL: https://propenu.com/{{1}} → agent/my-properties
-    urlButton: {
-      index: 0,
-      text: AGENT_MANAGE_PROPERTIES_URL_SUFFIX || "agent/my-properties",
-    },
+    ...optionalUrlButton(AGENT_MANAGE_PROPERTIES_URL_SUFFIX),
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
@@ -1705,11 +1707,8 @@ async function sendAgentManageLeadsTemplate(waIdRaw: string) {
     bodyPreview:
       "Your property lead details are available in your Propenu account.\n\nYou can review the interested users and their enquiry details using the option below.",
     buttons: [{ label: "Click Here", kind: "url" }],
-    // Meta dynamic URL: https://propenu.com/{{1}} → agent/leads
-    urlButton: {
-      index: 0,
-      text: AGENT_MANAGE_LEADS_URL_SUFFIX || "agent/leads",
-    },
+    // Confirmed Meta dynamic URL: https://propenu.com/{{1}} → agent/leads
+    ...optionalUrlButton(AGENT_MANAGE_LEADS_URL_SUFFIX || "agent/leads"),
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
@@ -1723,11 +1722,7 @@ async function sendAgentNoPlanLimitTemplate(waIdRaw: string) {
     bodyPreview:
       "Your current Propenu subscription has reached its property listing limit.\n\nAdditional property listings are not available under your current plan.\n\nPlease review your subscription details using the link below.",
     buttons: [{ label: "Click Here", kind: "url" }],
-    // Meta dynamic URL: https://propenu.com/plans/pricing/{{1}} → agent-plan
-    urlButton: {
-      index: 0,
-      text: AGENT_NO_PLAN_LIMIT_URL_SUFFIX || "agent-plan",
-    },
+    ...optionalUrlButton(AGENT_NO_PLAN_LIMIT_URL_SUFFIX),
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
@@ -1741,11 +1736,8 @@ async function sendAgentReachBuyersTemplate(waIdRaw: string) {
     bodyPreview:
       "Your current Propenu plan details are available. Please review your plan information using the option below.",
     buttons: [{ label: "Click Here", kind: "url" }],
-    // Meta dynamic URL: https://propenu.com/plans/pricing/{{1}} → agent-plan
-    urlButton: {
-      index: 0,
-      text: AGENT_REACH_BUYERS_URL_SUFFIX || "agent-plan",
-    },
+    // Confirmed Meta dynamic URL: https://propenu.com/plans/pricing/{{1}} → agent-plan
+    ...optionalUrlButton(AGENT_REACH_BUYERS_URL_SUFFIX || "agent-plan"),
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
@@ -1759,11 +1751,7 @@ async function sendAgentPaymentSupportTemplate(waIdRaw: string) {
     bodyPreview:
       "Need help with a Propenu payment or invoice?\n\nUse the option below to get payment support from our team.",
     buttons: [{ label: "Click Here", kind: "url" }],
-    // Meta dynamic URL: https://propenu.com/{{1}} → agent/support
-    urlButton: {
-      index: 0,
-      text: AGENT_PAYMENT_SUPPORT_URL_SUFFIX || "agent/support",
-    },
+    ...optionalUrlButton(AGENT_PAYMENT_SUPPORT_URL_SUFFIX),
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
@@ -1779,10 +1767,7 @@ async function sendAgentHasPlanTemplates(waIdRaw: string, planNames: string) {
     bodyPreview: `The additional Propenu plan details requested are available in your account.\n\nPlan Names: ${names}\n\nYou can access the plan details and included benefits using the link below.`,
     bodyParams: [names],
     buttons: [{ label: "Click Here", kind: "url" }],
-    urlButton: {
-      index: 0,
-      text: AGENT_PLAN_BENEFITS_URL_SUFFIX || "agent-plan",
-    },
+    ...optionalUrlButton(AGENT_PLAN_BENEFITS_URL_SUFFIX),
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });

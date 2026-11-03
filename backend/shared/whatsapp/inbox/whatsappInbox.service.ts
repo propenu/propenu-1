@@ -970,7 +970,8 @@ async function sendApprovedInboxTemplate(params: {
 
   const templateLang =
     String(process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en").trim() || "en";
-  const dedupeHours = Math.max(1, Number(params.dedupeHours) || 24);
+  // Allow sub-hour windows (e.g. 0.25 = 15 minutes) for greeting re-tries.
+  const dedupeHours = Math.max(0.05, Number(params.dedupeHours) || 24);
   const since = new Date(Date.now() - dedupeHours * 60 * 60 * 1000);
   // Only treat real Meta deliveries as "already sent".
   // Stuck "pending" rows (deploy restart mid-send) must not block later retries.
@@ -982,7 +983,12 @@ async function sendApprovedInboxTemplate(params: {
     status: { $in: ["sent", "delivered", "read"] },
     createdAt: { $gte: since },
   });
-  if (alreadySent) return true;
+  if (alreadySent) {
+    console.log(
+      `WhatsApp template ${templateName} skipped (dedupe ${dedupeHours}h) ******${waId.slice(-4)} (${params.source})`,
+    );
+    return true;
+  }
 
   const { token, phoneNumberId } = getCredentials();
   if (!token || !phoneNumberId) {
@@ -1152,7 +1158,8 @@ async function sendExistingUserAgentTemplate(waIdRaw: string, nameRaw: string) {
     bodyPreview: `Hello ${name},\n\nWe have received your message on Propenu.\n\nPlease select an option below to continue with your requested assistance.`,
     bodyParams: [name],
     buttons: [{ label: "More Options", kind: "quick_reply" }],
-    dedupeHours: 24,
+    // Industry: greeting menu can re-fire after a short gap, not a full day.
+    dedupeHours: 0.25,
   });
 }
 
@@ -1200,13 +1207,15 @@ async function replyToInboundMessage(waId: string, text: string) {
   if (replyInFlight.has(waId)) return;
   replyInFlight.add(waId);
   try {
-    if (!String(text || "").trim()) return;
+    const inbound = String(text || "").trim();
+    if (!inbound) return;
 
     const account = await findWhatsAppAccount(waId);
     const paused = await isBotPaused(waId);
+    const greeting = isWhatsAppGreeting(inbound);
 
     // Search Property from account-created template (or typed) → Buy/Rent options.
-    if (isSearchPropertyChoice(text)) {
+    if (isSearchPropertyChoice(inbound)) {
       if (paused && !account.isNew) return;
       try {
         await sendSearchPropertyOptionsTemplate(waId);
@@ -1216,9 +1225,10 @@ async function replyToInboundMessage(waId: string, text: string) {
       return;
     }
 
-    // AI property-chat / welcome-list replies are paused.
-    // New visitors (no verified Propenu account) get the registration template.
-    // Deleted accounts reopen even if an old handoff left botPaused=true.
+    // Realtime industry path: classify user immediately, then send Meta utility template.
+    // New (not phone-verified) → registration template.
+    // Existing verified → existing_agent template.
+    // Greetings (hi/hello) always take this path; other text does too while AI is paused.
     if (account.isNew) {
       if (paused) {
         await WhatsAppConversation.updateOne(
@@ -1235,6 +1245,9 @@ async function replyToInboundMessage(waId: string, text: string) {
         );
       }
       try {
+        console.log(
+          `WhatsApp realtime new-user template ******${String(waId).slice(-4)} greeting=${greeting}`,
+        );
         await sendNewUserRegistrationTemplate(waId);
       } catch (err) {
         console.error("WhatsApp new-user registration template failed:", err);
@@ -1244,8 +1257,10 @@ async function replyToInboundMessage(waId: string, text: string) {
 
     if (paused) return;
 
-    // Existing verified users → existing_agent utility template.
     try {
+      console.log(
+        `WhatsApp realtime existing-user template ******${String(waId).slice(-4)} greeting=${greeting}`,
+      );
       await sendExistingUserAgentTemplate(waId, account.name);
     } catch (err) {
       console.error("WhatsApp existing-user agent template failed:", err);

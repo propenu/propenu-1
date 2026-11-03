@@ -445,7 +445,7 @@ export const renewPromotion = async (req: AuthRequest, res: Response) => {
     }
 
     const renewReason = previousPlanInvoiceId
-      ? `Direct Super Admin renewal for ${renewalDays} day${
+      ? `Direct head renewal for ${renewalDays} day${
           renewalDays === 1 ? "" : "s"
         } (detached from builder plan invoice)`
       : `Promotion renewed for ${renewalDays} day${renewalDays === 1 ? "" : "s"}`;
@@ -463,7 +463,7 @@ export const renewPromotion = async (req: AuthRequest, res: Response) => {
       await markPlanInvoice(
         previousPlanInvoiceId,
         "cancelled",
-        `Superseded by Super Admin direct renewal (${renewalDays} days)`,
+        `Superseded by head direct renewal (${renewalDays} days)`,
       );
     }
 

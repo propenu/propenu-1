@@ -18,13 +18,24 @@ export function canSetVisibleLeadAllowance(roleName?: string | null) {
   return LEAD_ALLOWANCE_ROLES.has(normalizeRoleName(roleName));
 }
 
+const FORCE_MANUAL_PROMOTION_ROLES = new Set([
+  "super_admin",
+  "admin",
+  "business_development_head",
+  "bdh",
+  "operations_head",
+  "regional_manager",
+  "marketing_head",
+  "customer_support_head",
+  "technical_support_head",
+]);
+
 /**
- * Super Admin / Admin may renew or extend promotions directly without a paid
- * Builder Plans invoice (manual override for production ops).
+ * Super Admin, Admin, and main heads may renew or extend promotions directly
+ * without a paid Builder Plans invoice (manual override for production ops).
  */
 export function canForceManualPromotion(roleName?: string | null) {
-  const role = normalizeRoleName(roleName);
-  return role === "super_admin" || role === "admin";
+  return FORCE_MANUAL_PROMOTION_ROLES.has(normalizeRoleName(roleName));
 }
 
 /**

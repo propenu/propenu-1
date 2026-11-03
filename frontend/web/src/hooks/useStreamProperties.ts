@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Meta, Property } from "@/types/property";
 import { SearchFilterParams } from "@/types/sharedTypes";
-import { minDelay } from "@/utilies/minDelay";
 
 type PropertyResults = {
   items: Property[];
@@ -22,13 +21,18 @@ function isAbortError(error: unknown) {
   ) || (typeof error === "object" && error !== null && (error as { name?: string }).name === "AbortError");
 }
 
-export function useStreamProperties(params: SearchFilterParams) {
+export function useStreamProperties(
+  params: SearchFilterParams,
+  enabled = true,
+) {
   const query = new URLSearchParams(
     Object.entries(params)
       .filter(([, value]) => value !== undefined)
       .map(([key, value]) => [key, String(value)]),
   ).toString();
-  const [initialResults] = useState(() => resultsCache.get(query));
+  const [initialResults] = useState(() =>
+    enabled ? resultsCache.get(query) : undefined,
+  );
   const [items, setItems] = useState<Property[]>(initialResults?.items ?? []);
   const [loading, setLoading] = useState(!initialResults);
   const [total, setTotal] = useState<number | null>(initialResults?.total ?? null);
@@ -38,12 +42,23 @@ export function useStreamProperties(params: SearchFilterParams) {
   const hasLoadedOnce = useRef(Boolean(initialResults));
 
   useEffect(() => {
+    if (!enabled) return;
+
+    const cachedResults = resultsCache.get(query);
+    if (cachedResults) {
+      setItems(cachedResults.items);
+      setSponsored(cachedResults.sponsored);
+      setTotal(cachedResults.total);
+      setMeta(cachedResults.meta);
+      setSponsoredLoading(false);
+      hasLoadedOnce.current = true;
+    }
+
     let cancelled = false;
     const controller = new AbortController();
     const showInitialSkeleton = !hasLoadedOnce.current;
 
     async function start() {
-      const startedAt = Date.now();
       if (showInitialSkeleton) setLoading(true);
 
       const searchUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/properties/search?${query}`;
@@ -119,11 +134,6 @@ export function useStreamProperties(params: SearchFilterParams) {
         }
       }
 
-      const elapsed = Date.now() - startedAt;
-      if (elapsed < 1000) {
-        await minDelay(1000 - elapsed);
-      }
-
       if (!cancelled) {
         setItems(nextItems);
         setMeta(nextMeta);
@@ -146,24 +156,18 @@ export function useStreamProperties(params: SearchFilterParams) {
       }
     }
 
-    // FilterBar hydrates Redux from the URL after mount. Waiting briefly lets
-    // those synchronous hydration dispatches settle before issuing a request,
-    // avoiding a fetch for the default filters followed by another for the URL.
-    const startTimer = window.setTimeout(() => {
-      start().catch((error) => {
-        if (isAbortError(error) || cancelled) return;
-        console.error("Failed to stream properties", error);
-        setLoading(false);
-        setSponsoredLoading(false);
-      });
-    }, 100);
+    start().catch((error) => {
+      if (isAbortError(error) || cancelled) return;
+      console.error("Failed to stream properties", error);
+      setLoading(false);
+      setSponsoredLoading(false);
+    });
 
     return () => {
       cancelled = true;
-      window.clearTimeout(startTimer);
       controller.abort();
     };
-  }, [query]);
+  }, [query, enabled]);
 
   return { items, sponsored, loading, sponsoredLoading, total, meta };
 }

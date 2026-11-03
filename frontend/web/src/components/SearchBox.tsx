@@ -361,7 +361,7 @@ const SearchBox = ({
     } = options ?? {};
 
     const params = new URLSearchParams({
-      type: categoryToType[category],
+      category,
       listingType: listingTypeValue,
     });
 

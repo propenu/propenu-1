@@ -38,6 +38,7 @@ import AgriculturalMobileFilter from "./filters/adaptiveFilterDesign/Agricultura
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { buildSearchParams } from "./filters/buildSearchParams";
 import { hydrateFiltersFromSearchParams } from "./filters/hydrateFiltersFromSearchParams";
+import { markFiltersHydrated } from "@/utilies/filterHydration";
 
 const LAST_PROPERTY_CATEGORY_KEY = "properties:lastCategory";
 const SEARCH_API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -88,7 +89,7 @@ function getProjectHref(
     : `/project/${suggestion.slug}`;
 }
 
-const FilterBar: React.FC = () => {
+const FilterBar: React.FC<{ hydrationId: string }> = ({ hydrationId }) => {
   const getCategoryLabel = (value: categoryOption) =>
     value === "Land" ? "Plots" : value;
 
@@ -382,7 +383,8 @@ const FilterBar: React.FC = () => {
 
     setHasRestoredCategory(true);
     setHasHydratedFromUrl(true);
-  }, [searchParams, dispatch]);
+    markFiltersHydrated(hydrationId, searchParams.toString());
+  }, [hydrationId, searchParams, dispatch]);
 
   useEffect(() => {
     if (!hasHydratedFromUrl) return;

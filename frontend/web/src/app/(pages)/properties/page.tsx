@@ -26,6 +26,7 @@ import FilterDropdown from "@/ui/FilterDropdown";
 import { ArrowDropdownIcon } from "@/icons/icons";
 import formatINR from "@/utilies/PriceFormat";
 import { trackInteraction } from "@/services/trackingService";
+import { useFiltersHydrated } from "@/utilies/filterHydration";
 
 const sortOptions = [
   { value: "newest", label: "Newest" },
@@ -351,10 +352,29 @@ function PropertiesPageSkeleton() {
   );
 }
 
-const PropertiesPageContent: React.FC = () => {
+function PropertiesRouteFallback() {
+  return (
+    <div className="relative min-h-screen">
+      <div aria-hidden="true" className="h-[72px] border-b border-gray-100 bg-white" />
+      <div className="container p-4">
+        <div className="flex w-full flex-col gap-4 lg:flex-row">
+          <div className="w-full lg:w-[80%]">
+            <div className="mb-4 flex items-center justify-between">
+              <SkeletonBlock className="h-8 w-64 sm:w-80" />
+              <SkeletonBlock className="h-10 w-52 rounded-lg" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const PropertiesPageContent: React.FC<{ hydrationId: string }> = ({ hydrationId }) => {
   const filters = useAppSelector((s) => s.filters);
   const cityData = useAppSelector(selectCityWithLocalities);
   const searchParams = useSearchParams();
+  const filtersHydrated = useFiltersHydrated(hydrationId, searchParams.toString());
   const urlCity = searchParams.get("city")?.trim() || undefined;
   const urlState = searchParams.get("state")?.trim() || undefined;
   const urlLocality = searchParams.get("locality")?.trim() || undefined;
@@ -415,7 +435,7 @@ const PropertiesPageContent: React.FC = () => {
     });
   }, [searchContextKey]);
 
-  const { items, sponsored, loading, sponsoredLoading, total, meta } = useStreamProperties(params);
+  const { items, sponsored, loading, sponsoredLoading, total, meta } = useStreamProperties(params, filtersHydrated);
   const [sortBy, setSortBy] = React.useState("newest");
   const [sortDropdownOpen, setSortDropdownOpen] = React.useState(false);
   const [dismissedAds, setDismissedAds] = useState<Set<string>>(new Set());
@@ -428,9 +448,9 @@ const PropertiesPageContent: React.FC = () => {
   const selectedSortOption =
     sortOptions.find((option) => option.value === sortBy) ?? sortOptions[0];
 
-  const renderPropertyCard = (p: Property, index: number) => {
+  const renderPropertyCard = (p: Property) => {
     const baseCardKey = getPropertyId(p) || p.slug || "property";
-    const cardKey = `${String(p.type || "property").toLowerCase()}-${baseCardKey}-${index}`;
+    const cardKey = `${String(p.type || "property").toLowerCase()}-${baseCardKey}`;
     const propertyForCard = {
       ...p,
       listingType: p.listingType || params.listingType,
@@ -685,10 +705,10 @@ const PropertiesPageContent: React.FC = () => {
               />
             </div>
 
-            {loading ? (
+            {loading && items.length === 0 ? (
               <PropertiesListSkeleton />
             ) : (
-              finalList.map((p, index) => renderPropertyCard(p, index))
+              finalList.map((p) => renderPropertyCard(p))
             )}
 
             {!loading && sortedItems.length === 0 && (
@@ -723,15 +743,17 @@ const PropertiesPageContent: React.FC = () => {
   );
 };
 
-const Page: React.FC = () => (
-  <>
-    <Suspense fallback={null}>
-      <FilterBar />
+const Page: React.FC = () => {
+  const hydrationId = React.useId();
+
+  return (
+    <Suspense fallback={<PropertiesRouteFallback />}>
+      <>
+        <FilterBar hydrationId={hydrationId} />
+        <PropertiesPageContent hydrationId={hydrationId} />
+      </>
     </Suspense>
-    <Suspense fallback={null}>
-      <PropertiesPageContent />
-    </Suspense>
-  </>
-);
+  );
+};
 
 export default Page;

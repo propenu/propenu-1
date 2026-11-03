@@ -67,6 +67,33 @@ function previewFromBody(body: string, max = 80) {
   return `${text.slice(0, max - 1)}…`;
 }
 
+/** Pull a usable menu label from Meta FLOW (nfm_reply) payloads. */
+function extractTextFromNfmReply(nfm: any): string {
+  const values: string[] = [];
+  try {
+    const parsed = JSON.parse(String(nfm?.response_json || "{}"));
+    const walk = (value: unknown) => {
+      if (typeof value === "string" && value.trim()) values.push(value.trim());
+      else if (Array.isArray(value)) value.forEach(walk);
+      else if (value && typeof value === "object") {
+        Object.values(value as Record<string, unknown>).forEach(walk);
+      }
+    };
+    walk(parsed);
+  } catch {
+    /* ignore invalid flow JSON */
+  }
+  const known = values.find((value) =>
+    /more\s*options|post\s*a?\s*property|manage\s+(my\s+)?propert|manage\s+my\s+leads|my\s+leads|reach\s+buyers|payment\s+support|buy\s+property|rent\s+property|buy\s+commercial|lease\s+commercial|buy\s+plot/i.test(
+      value,
+    ),
+  );
+  if (known) return known;
+  const body = String(nfm?.body || "").trim();
+  if (body && !/^sent$/i.test(body)) return body;
+  return values[0] || "";
+}
+
 function extractInboundText(message: any): { type: string; body: string } {
   const type = String(message?.type || "text");
   if (type === "text") {
@@ -82,13 +109,23 @@ function extractInboundText(message: any): { type: string; body: string } {
   if (type === "interactive") {
     const button = message?.interactive?.button_reply;
     const listReply = message?.interactive?.list_reply;
+    const nfm = message?.interactive?.nfm_reply;
     const buttonId = String(button?.id || "");
     const buttonTitle = String(button?.title || "");
+    // Prefer list id (full option text) over truncated title.
     const listId = String(listReply?.id || "");
     const listTitle = String(listReply?.title || "");
+    const nfmText = nfm ? extractTextFromNfmReply(nfm) : "";
     return {
       type,
-      body: String(buttonTitle || listTitle || buttonId || listId || "[Interactive]"),
+      body: String(
+        buttonTitle ||
+          listId ||
+          listTitle ||
+          nfmText ||
+          buttonId ||
+          "[Interactive]",
+      ),
     };
   }
   if (type === "image") {
@@ -642,7 +679,10 @@ const CHAT_OPENING_OPTIONS = [
   "Buy Plot",
 ];
 
-/** Agent More Options menu — Post / Manage first so listing templates can run. */
+/**
+ * Agent More Options menu (WhatsApp list max 10 rows).
+ * Template CTAs first so Post / Manage / Leads / Reach / Payment always appear.
+ */
 const AGENT_CHAT_OPENING_OPTIONS = [
   "Post Property",
   "Manage Properties",
@@ -653,7 +693,7 @@ const AGENT_CHAT_OPENING_OPTIONS = [
   "Rent Property",
   "Buy Commercial",
   "Lease Commercial",
-  "Buy Plot",
+  "Contact our team",
 ];
 
 const CONTACT_AGENT_ID = "contact_agent";
@@ -1002,8 +1042,15 @@ function propertyReplyText(
 }
 
 async function openingOptions(includeCreateAccount: boolean, forAgent = false) {
-  const options = forAgent ? AGENT_CHAT_OPENING_OPTIONS : CHAT_OPENING_OPTIONS;
-  return withChatOptions("What would you like to do?", options, includeCreateAccount);
+  // Agents: fixed 10-row menu (do not re-slice via withChatOptions or CTAs get dropped).
+  if (forAgent) {
+    return AGENT_CHAT_OPENING_OPTIONS.slice(0, 10);
+  }
+  return withChatOptions(
+    "What would you like to do?",
+    CHAT_OPENING_OPTIONS,
+    includeCreateAccount,
+  );
 }
 
 async function sendChatbotReply(waId: string, text: string) {
@@ -1105,6 +1152,39 @@ const AGENT_REACH_BUYERS_URL_SUFFIX = String(
 )
   .trim()
   .replace(/^\/+/, "");
+const AGENT_POST_PROPERTY_URL_SUFFIX = String(
+  process.env.WHATSAPP_AGENT_POST_PROPERTY_URL_SUFFIX || "postproperty",
+)
+  .trim()
+  .replace(/^\/+/, "");
+const AGENT_MANAGE_PROPERTIES_URL_SUFFIX = String(
+  process.env.WHATSAPP_AGENT_MANAGE_PROPERTIES_URL_SUFFIX || "agent/my-properties",
+)
+  .trim()
+  .replace(/^\/+/, "");
+const AGENT_PAYMENT_SUPPORT_URL_SUFFIX = String(
+  process.env.WHATSAPP_AGENT_PAYMENT_SUPPORT_URL_SUFFIX || "agent/support",
+)
+  .trim()
+  .replace(/^\/+/, "");
+const AGENT_NO_PLAN_LIMIT_URL_SUFFIX = String(
+  process.env.WHATSAPP_AGENT_NO_PLAN_LIMIT_URL_SUFFIX || "agent-plan",
+)
+  .trim()
+  .replace(/^\/+/, "");
+const AGENT_PLAN_BENEFITS_URL_SUFFIX = String(
+  process.env.WHATSAPP_AGENT_PLAN_BENEFITS_URL_SUFFIX || "agent-plan",
+)
+  .trim()
+  .replace(/^\/+/, "");
+/** Default free agent plan when no active subscription row exists. */
+const AGENT_FREE_PLAN_CODE = String(
+  process.env.WHATSAPP_AGENT_FREE_PLAN_CODE || "AGENT_FREE",
+).trim();
+const AGENT_FREE_DEFAULT_LISTING_LIMIT = Math.max(
+  1,
+  Number(process.env.WHATSAPP_AGENT_FREE_DEFAULT_LISTING_LIMIT) || 20,
+);
 
 type InboxTemplateButton = {
   label: string;
@@ -1227,8 +1307,8 @@ async function sendApprovedInboxTemplate(params: {
       direction: "outbound",
       "raw.source": params.source,
       "raw.dedupeInvalidated": { $ne: true },
-      // Allow immediate retry after config errors like #131009 (missing flow button).
-      error: { $not: /#131009/i },
+      // Allow immediate retry after config errors (#131009 flow / #131008 URL param).
+      error: { $not: /#(131009|131008)/i },
       createdAt: { $gte: coolSince },
     });
     if (recentAttempt) {
@@ -1450,6 +1530,53 @@ type AgentPostPlanState = {
   planNames: string;
 };
 
+function isAgentFreePlanDoc(plan: any) {
+  if (!plan) return false;
+  const tier = String(plan.tier || "").toLowerCase();
+  const code = String(plan.code || "").trim().toUpperCase();
+  const price = Number(plan.price);
+  return (
+    tier === "free" ||
+    code === String(AGENT_FREE_PLAN_CODE || "AGENT_FREE").toUpperCase() ||
+    (Number.isFinite(price) && price === 0)
+  );
+}
+
+async function loadDefaultAgentFreePlan() {
+  const code = AGENT_FREE_PLAN_CODE || "AGENT_FREE";
+  const byCode = await mongoose.connection.collection("plans").findOne({
+    code,
+    userType: "agent",
+  });
+  if (byCode) return byCode;
+  return mongoose.connection.collection("plans").findOne({
+    userType: "agent",
+    tier: "free",
+  });
+}
+
+function listingLimitFromPlan(plan: any, fallback = AGENT_FREE_DEFAULT_LISTING_LIMIT) {
+  const limitRaw = planFeatureNumber(plan?.features, "PROPERTY_LISTING_LIMIT");
+  if (typeof limitRaw === "number" && Number.isFinite(limitRaw) && limitRaw > 0) {
+    return limitRaw;
+  }
+  return Math.max(1, Number(fallback) || 20);
+}
+
+/** Free-plan fallback when agent has no usable active subscription row. */
+async function getAgentFreePlanFallbackState(userId: string): Promise<AgentPostPlanState> {
+  const freePlan = await loadDefaultAgentFreePlan();
+  const limit = listingLimitFromPlan(freePlan);
+  const listingCount = await countAgentActiveListings(userId);
+  const underLimit = listingCount < limit;
+  return {
+    hasPaidPlan: false,
+    hasFreePlan: true,
+    canPostFree: underLimit,
+    planNames: String(freePlan?.name || freePlan?.code || "Free"),
+  };
+}
+
 /** Active agent subscription + free listing quota for Post Property branching. */
 async function getAgentPostPlanState(userId: string): Promise<AgentPostPlanState> {
   const empty: AgentPostPlanState = {
@@ -1471,7 +1598,11 @@ async function getAgentPostPlanState(userId: string): Promise<AgentPostPlanState
       $or: [{ endDate: null }, { endDate: { $exists: false } }, { endDate: { $gt: now } }],
     })
     .toArray();
-  if (!subs.length) return empty;
+
+  // No subscription row → treat as AGENT_FREE (registration does not always create one).
+  if (!subs.length) {
+    return getAgentFreePlanFallbackState(userId);
+  }
 
   const planCodes = [
     ...new Set(subs.map((sub) => String(sub.planCode || "").trim()).filter(Boolean)),
@@ -1492,15 +1623,20 @@ async function getAgentPostPlanState(userId: string): Promise<AgentPostPlanState
     if (!plan) continue;
     const name = String(plan.name || plan.code || "").trim();
     if (name && !names.includes(name)) names.push(name);
-    const tier = String(plan.tier || "").toLowerCase();
-    if (tier === "free") freePlan = plan;
+    if (isAgentFreePlanDoc(plan)) freePlan = plan;
     else paidPlan = plan;
+  }
+
+  // Orphaned / unknown plan codes → same free fallback (safe for free agents).
+  if (!paidPlan && !freePlan) {
+    return getAgentFreePlanFallbackState(userId);
   }
 
   const activePlan = paidPlan || freePlan;
   const limitRaw = planFeatureNumber(activePlan?.features, "PROPERTY_LISTING_LIMIT");
   const limit = typeof limitRaw === "number" && Number.isFinite(limitRaw) ? limitRaw : 0;
   const listingCount = await countAgentActiveListings(userId);
+  // Missing / 0 limit → allow post (legacy behavior for known subscription plans).
   const underLimit = limit <= 0 ? true : listingCount < limit;
 
   return {
@@ -1519,6 +1655,11 @@ async function sendAgentPostPropertyTemplate(waIdRaw: string) {
     bodyPreview:
       "Your property submission request is ready for the next step.\n\nPlease use the link below to access the property submission page.",
     buttons: [{ label: "Post a property", kind: "url" }],
+    // Meta dynamic URL: https://propenu.com/{{1}} → postproperty
+    urlButton: {
+      index: 0,
+      text: AGENT_POST_PROPERTY_URL_SUFFIX || "postproperty",
+    },
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
@@ -1533,6 +1674,11 @@ async function sendAgentManagePropertiesTemplate(waIdRaw: string) {
     bodyPreview:
       "Your property listings are available in your Propenu account.\n\nYou can access and review your listed properties using the link below.",
     buttons: [{ label: "Click Here", kind: "url" }],
+    // Meta dynamic URL: https://propenu.com/{{1}} → agent/my-properties
+    urlButton: {
+      index: 0,
+      text: AGENT_MANAGE_PROPERTIES_URL_SUFFIX || "agent/my-properties",
+    },
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
@@ -1566,6 +1712,11 @@ async function sendAgentNoPlanLimitTemplate(waIdRaw: string) {
     bodyPreview:
       "Your current Propenu subscription has reached its property listing limit.\n\nAdditional property listings are not available under your current plan.\n\nPlease review your subscription details using the link below.",
     buttons: [{ label: "Click Here", kind: "url" }],
+    // Meta dynamic URL: https://propenu.com/plans/pricing/{{1}} → agent-plan
+    urlButton: {
+      index: 0,
+      text: AGENT_NO_PLAN_LIMIT_URL_SUFFIX || "agent-plan",
+    },
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
@@ -1597,6 +1748,11 @@ async function sendAgentPaymentSupportTemplate(waIdRaw: string) {
     bodyPreview:
       "Need help with a Propenu payment or invoice?\n\nUse the option below to get payment support from our team.",
     buttons: [{ label: "Click Here", kind: "url" }],
+    // Meta dynamic URL: https://propenu.com/{{1}} → agent/support
+    urlButton: {
+      index: 0,
+      text: AGENT_PAYMENT_SUPPORT_URL_SUFFIX || "agent/support",
+    },
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
@@ -1612,6 +1768,10 @@ async function sendAgentHasPlanTemplates(waIdRaw: string, planNames: string) {
     bodyPreview: `The additional Propenu plan details requested are available in your account.\n\nPlan Names: ${names}\n\nYou can access the plan details and included benefits using the link below.`,
     bodyParams: [names],
     buttons: [{ label: "Click Here", kind: "url" }],
+    urlButton: {
+      index: 0,
+      text: AGENT_PLAN_BENEFITS_URL_SUFFIX || "agent-plan",
+    },
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
@@ -1619,9 +1779,10 @@ async function sendAgentHasPlanTemplates(waIdRaw: string, planNames: string) {
 
 /**
  * Agent taps Post Property (More Options):
- * - Free plan + remaining quota → post_a_property
- * - No plan / free quota used up → agnet_plans_listing_limit
+ * - Free plan (or missing sub row treated as AGENT_FREE) + remaining quota → post_a_property
+ * - Free quota used up → agnet_plans_listing_limit
  * - Paid plan → reach_buyers__tenants + additional_plan_benefits_update
+ *   (+ post_a_property when paid quota still remains)
  */
 async function handleAgentPostPropertyFlow(waId: string, account: {
   userId: string;
@@ -1630,9 +1791,10 @@ async function handleAgentPostPropertyFlow(waId: string, account: {
   if (!account.isAgent || !account.userId) return false;
   const state = await getAgentPostPlanState(account.userId);
   console.log(
-    `WhatsApp agent Post Property ******${String(waId).slice(-4)} paid=${state.hasPaidPlan} free=${state.hasFreePlan} canPost=${state.canPostFree}`,
+    `WhatsApp agent Post Property ******${String(waId).slice(-4)} paid=${state.hasPaidPlan} free=${state.hasFreePlan} canPost=${state.canPostFree} plans=${state.planNames || "-"}`,
   );
 
+  // Paid plan → plan templates first; post link only while quota remains.
   if (state.hasPaidPlan) {
     await sendAgentHasPlanTemplates(waId, state.planNames);
     if (state.canPostFree) {
@@ -1645,11 +1807,13 @@ async function handleAgentPostPropertyFlow(waId: string, account: {
     return true;
   }
 
-  if (state.canPostFree) {
+  // Free plan + quota → post_a_property only.
+  if (state.hasFreePlan && state.canPostFree) {
     await sendAgentPostPropertyTemplate(waId);
     return true;
   }
 
+  // Free quota finished (or free fallback under limit failed) → listing-limit template.
   await sendAgentNoPlanLimitTemplate(waId);
   return true;
 }
@@ -1752,11 +1916,12 @@ async function replyToInboundMessage(waId: string, text: string) {
     }
 
     // existing_agent "More Options" → session list (Buy / Rent / Contact…).
+    // Agents: always open menu (self-serve), even if inbox was paused.
     if (isMoreOptionsChoice(inbound)) {
-      if (paused && !account.isNew) return;
+      if (paused && !account.isNew && !account.isAgent) return;
       try {
         console.log(
-          `WhatsApp more-options menu ******${String(waId).slice(-4)} isNew=${account.isNew}`,
+          `WhatsApp more-options menu ******${String(waId).slice(-4)} isNew=${account.isNew} isAgent=${account.isAgent}`,
         );
         await sendWelcomeMenu(waId);
       } catch (err) {
@@ -1765,10 +1930,15 @@ async function replyToInboundMessage(waId: string, text: string) {
       return;
     }
 
+    // Agent self-serve More Options templates — do not block on botPaused.
     // Agent Manage Properties (More Options) → manage listings template.
     if (isManagePropertiesChoice(inbound)) {
-      if (paused && !account.isNew) return;
-      if (!account.isAgent) return;
+      if (!account.isAgent) {
+        console.log(
+          `WhatsApp Manage Properties skipped ******${String(waId).slice(-4)} role=${account.roleName || "unknown"}`,
+        );
+        return;
+      }
       try {
         console.log(
           `WhatsApp agent Manage Properties ******${String(waId).slice(-4)}`,
@@ -1782,8 +1952,12 @@ async function replyToInboundMessage(waId: string, text: string) {
 
     // Agent Manage My Leads (More Options) → leads follow-up template.
     if (isManageMyLeadsChoice(inbound)) {
-      if (paused && !account.isNew) return;
-      if (!account.isAgent) return;
+      if (!account.isAgent) {
+        console.log(
+          `WhatsApp Manage My Leads skipped ******${String(waId).slice(-4)} role=${account.roleName || "unknown"}`,
+        );
+        return;
+      }
       try {
         console.log(
           `WhatsApp agent Manage My Leads ******${String(waId).slice(-4)}`,
@@ -1797,8 +1971,12 @@ async function replyToInboundMessage(waId: string, text: string) {
 
     // Agent Reach Buyers & Tenants (More Options) → plan pricing template.
     if (isReachBuyersTenantsChoice(inbound)) {
-      if (paused && !account.isNew) return;
-      if (!account.isAgent) return;
+      if (!account.isAgent) {
+        console.log(
+          `WhatsApp Reach Buyers skipped ******${String(waId).slice(-4)} role=${account.roleName || "unknown"}`,
+        );
+        return;
+      }
       try {
         console.log(
           `WhatsApp agent Reach Buyers & Tenants ******${String(waId).slice(-4)}`,
@@ -1812,8 +1990,12 @@ async function replyToInboundMessage(waId: string, text: string) {
 
     // Agent Get Payment Support (More Options) → payment support template.
     if (isGetPaymentSupportChoice(inbound)) {
-      if (paused && !account.isNew) return;
-      if (!account.isAgent) return;
+      if (!account.isAgent) {
+        console.log(
+          `WhatsApp Get Payment Support skipped ******${String(waId).slice(-4)} role=${account.roleName || "unknown"}`,
+        );
+        return;
+      }
       try {
         console.log(
           `WhatsApp agent Get Payment Support ******${String(waId).slice(-4)}`,
@@ -1827,7 +2009,6 @@ async function replyToInboundMessage(waId: string, text: string) {
 
     // Agent Post Property (More Options / account-created button) → plan/limit templates.
     if (isPostPropertyChoice(inbound)) {
-      if (paused && !account.isNew) return;
       if (account.isAgent) {
         try {
           await handleAgentPostPropertyFlow(waId, account);
@@ -1837,6 +2018,7 @@ async function replyToInboundMessage(waId: string, text: string) {
         return;
       }
       // Non-agents: keep a simple post link session reply.
+      if (paused && !account.isNew) return;
       try {
         const content = newUserChoiceContent("post_property");
         await sendInboxTextMessage(waId, `${content.text}\n${content.url}`, {

@@ -5,6 +5,17 @@ import { Meta, Property } from "@/types/property";
 import { SearchFilterParams } from "@/types/sharedTypes";
 import { minDelay } from "@/utilies/minDelay";
 
+type PropertyResults = {
+  items: Property[];
+  sponsored: Property[];
+  total: number | null;
+  meta: Meta | null;
+};
+
+// Keep recently viewed result sets alive while the user moves between routes.
+// This is intentionally session-local; the API remains the source of truth.
+const resultsCache = new Map<string, PropertyResults>();
+
 function isAbortError(error: unknown) {
   return (
     error instanceof DOMException && error.name === "AbortError"
@@ -12,17 +23,19 @@ function isAbortError(error: unknown) {
 }
 
 export function useStreamProperties(params: SearchFilterParams) {
-  const [items, setItems] = useState<Property[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [total, setTotal] = useState<number | null>(null);
-  const [sponsored, setSponsored] = useState<Property[]>([]);
-  const [meta, setMeta] = useState<Meta | null>(null);
-  const hasLoadedOnce = useRef(false);
   const query = new URLSearchParams(
     Object.entries(params)
       .filter(([, value]) => value !== undefined)
       .map(([key, value]) => [key, String(value)]),
   ).toString();
+  const [initialResults] = useState(() => resultsCache.get(query));
+  const [items, setItems] = useState<Property[]>(initialResults?.items ?? []);
+  const [loading, setLoading] = useState(!initialResults);
+  const [total, setTotal] = useState<number | null>(initialResults?.total ?? null);
+  const [sponsored, setSponsored] = useState<Property[]>(initialResults?.sponsored ?? []);
+  const [sponsoredLoading, setSponsoredLoading] = useState(!initialResults);
+  const [meta, setMeta] = useState<Meta | null>(initialResults?.meta ?? null);
+  const hasLoadedOnce = useRef(Boolean(initialResults));
 
   useEffect(() => {
     let cancelled = false;
@@ -45,12 +58,14 @@ export function useStreamProperties(params: SearchFilterParams) {
           console.error(`Property search failed with status ${res.status}`);
         }
         setLoading(false);
+        setSponsoredLoading(false);
         return;
       }
 
       if (!res.body) {
         console.error("Streaming not supported");
         setLoading(false);
+        setSponsoredLoading(false);
         return;
       }
 
@@ -109,29 +124,46 @@ export function useStreamProperties(params: SearchFilterParams) {
         await minDelay(1000 - elapsed);
       }
 
-      const sponsoredRes = await sponsoredPromise;
-
       if (!cancelled) {
         setItems(nextItems);
         setMeta(nextMeta);
         setTotal(nextTotal);
-        setSponsored(sponsoredRes.data || []);
         hasLoadedOnce.current = true;
         setLoading(false);
       }
+
+      const sponsoredRes = await sponsoredPromise;
+      if (!cancelled) {
+        const results = {
+          items: nextItems,
+          meta: nextMeta,
+          total: nextTotal,
+          sponsored: sponsoredRes.data || [],
+        };
+        resultsCache.set(query, results);
+        setSponsored(results.sponsored);
+        setSponsoredLoading(false);
+      }
     }
 
-    start().catch((error) => {
-      if (isAbortError(error) || cancelled) return;
-      console.error("Failed to stream properties", error);
-      setLoading(false);
-    });
+    // FilterBar hydrates Redux from the URL after mount. Waiting briefly lets
+    // those synchronous hydration dispatches settle before issuing a request,
+    // avoiding a fetch for the default filters followed by another for the URL.
+    const startTimer = window.setTimeout(() => {
+      start().catch((error) => {
+        if (isAbortError(error) || cancelled) return;
+        console.error("Failed to stream properties", error);
+        setLoading(false);
+        setSponsoredLoading(false);
+      });
+    }, 100);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(startTimer);
       controller.abort();
     };
   }, [query]);
 
-  return { items, sponsored, loading, total, meta };
+  return { items, sponsored, loading, sponsoredLoading, total, meta };
 }

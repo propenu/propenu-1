@@ -415,7 +415,7 @@ const PropertiesPageContent: React.FC = () => {
     });
   }, [searchContextKey]);
 
-  const { items, sponsored, loading, total, meta } = useStreamProperties(params);
+  const { items, sponsored, loading, sponsoredLoading, total, meta } = useStreamProperties(params);
   const [sortBy, setSortBy] = React.useState("newest");
   const [sortDropdownOpen, setSortDropdownOpen] = React.useState(false);
   const [dismissedAds, setDismissedAds] = useState<Set<string>>(new Set());
@@ -703,7 +703,7 @@ const PropertiesPageContent: React.FC = () => {
 
           <div className="w-full lg:w-[20%]">
             <div className="flex flex-col gap-6">
-              {loading ? (
+              {sponsoredLoading ? (
                 <SponsoredCardsSkeleton />
               ) : (
                 <>
@@ -728,7 +728,7 @@ const Page: React.FC = () => (
     <Suspense fallback={null}>
       <FilterBar />
     </Suspense>
-    <Suspense fallback={<PropertiesPageSkeleton />}>
+    <Suspense fallback={null}>
       <PropertiesPageContent />
     </Suspense>
   </>

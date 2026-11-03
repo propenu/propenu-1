@@ -232,7 +232,7 @@ export const promoteProperty = async (req: AuthRequest, res: Response) => {
     const durationDays =
       parsedPromoteDays != null && Number.isFinite(parsedPromoteDays)
         ? parsedPromoteDays
-        : 10;
+        : 30;
     promotion.startDate = startDate;
     if (type !== "normal") {
       promotion.boostExpiry = new Date(

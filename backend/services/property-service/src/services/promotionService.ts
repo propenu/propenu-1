@@ -181,7 +181,7 @@ export function buildManualPromotion(type: PromotionType) {
     priority: PRIORITY[type],
     source: "manual" as const,
     startDate: new Date(),
-    boostExpiry: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+    boostExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     sponsoredAd: {} as CoverageMap,
     mainCoverage: {} as CoverageMap,
     sponsoredEnabled: false,

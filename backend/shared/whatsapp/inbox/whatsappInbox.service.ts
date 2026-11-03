@@ -1912,12 +1912,12 @@ async function sendExistingUserAgentTemplate(waIdRaw: string, nameRaw: string) {
 
 /**
  * Approved Meta template for verified owners / end-users on Hi.
- * Live Meta template `existing_owner` = body {{1}} + FLOW "More Options"
- * (same pattern as existing_agent). Missing flow → #131009.
+ * Live Meta `existing_owner` = body {{1}} + quick-reply CTAs
+ * (Buy / Rent & Explore, Post Property & More) — NOT a FLOW button.
+ * Sending flowButton params caused production (#132018).
  */
 async function sendExistingUserOwnerTemplate(waIdRaw: string, nameRaw: string) {
   const name = existingUserDisplayName(nameRaw);
-  const waId = normalizeWaId(waIdRaw);
   return sendApprovedInboxTemplate({
     waIdRaw,
     templateName: EXISTING_OWNER_TEMPLATE || "existing_owner",
@@ -1928,11 +1928,6 @@ async function sendExistingUserOwnerTemplate(waIdRaw: string, nameRaw: string) {
       { label: "Buy / Rent & Explore", kind: "quick_reply" },
       { label: "Post Property & More", kind: "quick_reply" },
     ],
-    flowButton: {
-      index: 0,
-      flowToken: `existing_owner:${waId}:${Date.now()}`,
-      navigateScreen: "MORE_OPTIONS",
-    },
     dedupeHours: 1,
     attemptCooldownMinutes: 12,
   });

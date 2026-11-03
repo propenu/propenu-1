@@ -116,7 +116,7 @@ export const updateDeletedAccessController = async (req: AuthRequest, res: Respo
     const { area, enabled } = req.body || {};
     if (!isDeletedAccessArea(area)) {
       return res.status(400).json({
-        error: "area must be properties, propertyLeads, projects or projectLeads",
+        error: "Unknown access area",
       });
     }
     if (typeof enabled !== "boolean") {
@@ -131,7 +131,7 @@ export const updateDeletedAccessController = async (req: AuthRequest, res: Respo
     } else if (access.level === "head") {
       if (!access[area].canManageTeam) {
         return res.status(403).json({
-          error: "Super Admin has not enabled this deleted area for heads",
+          error: "Super Admin has not enabled this area for heads",
         });
       }
       await setTeamDeletedAccess(area, String(req.user?.id || ""), enabled, actor);

@@ -10,6 +10,7 @@ import { RiAccountCircle2Fill } from "react-icons/ri";
 import { BiSupport } from "react-icons/bi";
 import { FiBell } from "react-icons/fi";
 import { getAgentNotificationSummary } from "@/data/ClientData";
+import { toAdminViewHref } from "@/utilies/adminViewRoutes";
 
 const menuItems = [
   {
@@ -67,9 +68,11 @@ const Sidebar = () => {
   });
   const notificationCount = notificationData?.summary?.unread ?? 0;
 
-  const isItemActive = (link: string) => {
-    if (link === "/agent") return pathname === "/agent";
-    return pathname === link || pathname.startsWith(`${link}/`);
+  const isItemActive = (href: string, canonical: string) => {
+    if (canonical === "/agent") {
+      return pathname === href || pathname === "/agent" || pathname === "/admin-view/agent";
+    }
+    return pathname === href || pathname.startsWith(`${href}/`);
   };
 
   return (
@@ -82,12 +85,13 @@ const Sidebar = () => {
         <nav className="px-4 space-y-1.5 mt-10">
           {menuItems.map((item) => {
             const Icon = item.icon;
-            const isActive = isItemActive(item.link);
+            const href = toAdminViewHref(pathname, item.link);
+            const isActive = isItemActive(href, item.link);
 
             return (
               <Link
                 key={item.link}
-                href={item.link}
+                href={href}
                 className={`group flex items-center gap-3.5 px-4 py-3 rounded-xl text-[15px] transition-all duration-200
                   ${
                     isActive

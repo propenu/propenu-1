@@ -6,6 +6,8 @@ export const DELETED_ACCESS_AREAS = [
   "projects",
   "projectLeads",
   "leadContacts",
+  "editedSubscriptions",
+  "deletedSubscriptions",
 ] as const;
 export type DeletedAccessArea = (typeof DELETED_ACCESS_AREAS)[number];
 

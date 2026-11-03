@@ -1,5 +1,10 @@
 import express from "express";
 import { adminCreateRequestOtp, adminCreateUpdateLocation, adminCreateVerifyOtp, adminDeleteUser, adminSetUserActive, assignManager, assignReportsTo, claimSeClient, createRequestOtp,  createVerifyOtp, deleteMyAccount, getAllUsers, getEligibleReportsTo, getManagerTeamDetails, getRoleHierarchyGuide, listDeletedAccounts, me, requestAdminUserPhoneChangeOtp, requestOTP, searchUsers, updateLocationOtp, updateUser, updateUserProfileById, updateUserRole, verifyOtp } from "../controller/authController";
+import {
+  exchangeImpersonation,
+  startImpersonation,
+  stopImpersonation,
+} from "../controller/impersonationController";
 import { getDashboardUserCounts, getSidebarUserCounts } from "../controller/dashboardCounts.controller";
 import { updateFollowUpWorkStatus } from "../controller/followUpWorkController";
 import { getClientProgressQueue } from "../controller/clientProgressQueueController";
@@ -76,6 +81,23 @@ authRoute.post("/admin-credentials/verify-otp", authMiddleware, requirePermissio
 
 authRoute.get("/me", authMiddleware, me);
 authRoute.post("/presence/ping", authMiddleware, pingPresence);
+
+/** SuperAdmin read-only view-as (exact web screens). Exchange is public; code is single-use. */
+authRoute.post(
+  "/impersonate/exchange",
+  exchangeImpersonation,
+);
+authRoute.post(
+  "/impersonate/stop",
+  authMiddleware,
+  stopImpersonation,
+);
+authRoute.post(
+  "/impersonate/:userId",
+  authMiddleware,
+  superAdminOnly,
+  startImpersonation,
+);
 authRoute.patch("/me/update", authMiddleware, updateUser);
 authRoute.delete("/me", authMiddleware, deleteMyAccount);
 authRoute.get("/search", authMiddleware, searchUsers);

@@ -442,7 +442,12 @@ export const listFieldMeetings = async (req: AuthRequest, res: Response) => {
     const skip = (page - 1) * limit;
 
     const [rows, total] = await Promise.all([
-      FieldMeeting.find(filter).sort({ scheduledStart: 1 }).skip(skip).limit(limit).lean(),
+      // Newest meetings first (recently created), then latest schedule time.
+      FieldMeeting.find(filter)
+        .sort({ createdAt: -1, scheduledStart: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
       FieldMeeting.countDocuments(filter),
     ]);
 

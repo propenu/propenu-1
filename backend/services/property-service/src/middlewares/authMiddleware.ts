@@ -48,12 +48,33 @@ export async function authMiddleware(
       }
     }
 
-    req.user = {
+    const user = {
       ...decoded,
       roleName,
       permissions,
       id: decoded.sub, // ✅ standardized user id
+      impersonation: Boolean(decoded.impersonation),
+      readOnly: Boolean(decoded.readOnly),
+      ...(decoded.impersonatorSub
+        ? { impersonatorSub: decoded.impersonatorSub }
+        : {}),
+      ...(decoded.impersonatorName
+        ? { impersonatorName: decoded.impersonatorName }
+        : {}),
     };
+    req.user = user;
+
+    if (
+      user.impersonation &&
+      user.readOnly &&
+      !["GET", "HEAD", "OPTIONS"].includes(String(req.method || "").toUpperCase())
+    ) {
+      return res.status(403).json({
+        message:
+          "Read-only view-as session: changes are blocked. Exit view-as to continue as Super Admin.",
+        code: "IMPERSONATION_READ_ONLY",
+      });
+    }
 
     next();
   } catch (err) {

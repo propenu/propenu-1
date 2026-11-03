@@ -6,6 +6,10 @@ import Role from "../models/roleModel";
 import User from "../models/userModel";
 import { ALL_PERMISSIONS } from "../constants/permissionCatalog";
 import { touchUserPresence } from "../utils/presence";
+import {
+  isImpersonationReadOnly,
+  rejectImpersonationWrites,
+} from "../utils/impersonationGuard";
 
 export interface AuthRequest extends Request {
   user?: JwtUserPayload;
@@ -132,9 +136,24 @@ export async function authMiddleware(
       id: userId,
       roleName,
       permissions,
+      impersonation: Boolean(decoded.impersonation),
+      readOnly: Boolean(decoded.readOnly),
+      ...(decoded.impersonatorSub
+        ? { impersonatorSub: decoded.impersonatorSub }
+        : {}),
+      ...(decoded.impersonatorName
+        ? { impersonatorName: decoded.impersonatorName }
+        : {}),
     };
 
-    void touchUserPresence(userId).catch(() => undefined);
+    if (rejectImpersonationWrites(req, res)) {
+      return;
+    }
+
+    // Do not pollute the target user's last-seen while SuperAdmin is viewing as them.
+    if (!isImpersonationReadOnly(req.user)) {
+      void touchUserPresence(userId).catch(() => undefined);
+    }
 
     next();
   } catch (err) {
@@ -179,6 +198,14 @@ export async function optionalAuthMiddleware(
       id: userId,
       roleName,
       permissions,
+      impersonation: Boolean(decoded.impersonation),
+      readOnly: Boolean(decoded.readOnly),
+      ...(decoded.impersonatorSub
+        ? { impersonatorSub: decoded.impersonatorSub }
+        : {}),
+      ...(decoded.impersonatorName
+        ? { impersonatorName: decoded.impersonatorName }
+        : {}),
     };
   } catch {
     // Public callers stay unauthenticated

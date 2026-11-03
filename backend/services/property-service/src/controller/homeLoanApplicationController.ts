@@ -1,9 +1,14 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import HomeLoanApplication from "../models/homeLoanApplicationModel";
+import User from "../models/userModel";
+import Role from "../models/roleModel";
 import { verifyToken } from "../utils/jwt";
 import { AuthRequest } from "../middlewares/authMiddleware";
 import { assignHomeLoan, ensureUnassignedHomeLoans, findLoanUser } from "../utils/homeLoanAssign";
+
+// Ensure Role is registered for populate("roleId").
+void Role;
 
 const RECENT_APPLICATION_WINDOW_HOURS = 24;
 
@@ -186,6 +191,24 @@ const canSeeAllLoans = (roleName = "") => {
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** Map stored role names to the labels ops use in the admin (Owner / Builder / Agent). */
+const accountRoleLabel = (roleName?: string | null) => {
+  const key = String(roleName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_");
+  if (!key) return null;
+  if (key === "user" || key === "owner") return "Owner";
+  if (key === "builder") return "Builder";
+  if (key === "agent") return "Agent";
+  if (key === "sales_agent" || key === "sales_executive") return "Sales Executive";
+  return key
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
+
 const accountStepLabel = (status?: string | null) => {
   if (status === "active") return "Account forms done";
   if (status === "location_pending") return "Location form not filled";
@@ -257,60 +280,130 @@ export const listHomeLoanApplicationsController = async (
       cce && !oversight ? { assignedTo: new mongoose.Types.ObjectId(actorId) } : {};
     if (dayRange) scopeFilter.createdAt = dayRange;
 
-    const [rows, total, counts] = await Promise.all([
+    const [rows, total, countFacets] = await Promise.all([
       HomeLoanApplication.find(filter)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .lean(),
       HomeLoanApplication.countDocuments(filter),
+      // Form totals + unique people (existing = distinct userId, new = distinct mobile)
       HomeLoanApplication.aggregate([
         { $match: scopeFilter },
         {
-          $group: {
-            _id: null,
-            all: { $sum: 1 },
-            existing: {
-              $sum: { $cond: [{ $ifNull: ["$userId", false] }, 1, 0] },
-            },
-            fresh: {
-              $sum: { $cond: [{ $ifNull: ["$userId", false] }, 0, 1] },
-            },
-            statusNew: { $sum: { $cond: [{ $eq: ["$status", "new"] }, 1, 0] } },
-            contacted: { $sum: { $cond: [{ $eq: ["$status", "contacted"] }, 1, 0] } },
-            followUp: { $sum: { $cond: [{ $eq: ["$status", "follow_up"] }, 1, 0] } },
-            converted: { $sum: { $cond: [{ $eq: ["$status", "converted"] }, 1, 0] } },
-            closed: { $sum: { $cond: [{ $eq: ["$status", "closed"] }, 1, 0] } },
+          $facet: {
+            forms: [
+              {
+                $group: {
+                  _id: null,
+                  all: { $sum: 1 },
+                  existing: {
+                    $sum: { $cond: [{ $ifNull: ["$userId", false] }, 1, 0] },
+                  },
+                  fresh: {
+                    $sum: { $cond: [{ $ifNull: ["$userId", false] }, 0, 1] },
+                  },
+                  statusNew: {
+                    $sum: { $cond: [{ $eq: ["$status", "new"] }, 1, 0] },
+                  },
+                  contacted: {
+                    $sum: { $cond: [{ $eq: ["$status", "contacted"] }, 1, 0] },
+                  },
+                  followUp: {
+                    $sum: { $cond: [{ $eq: ["$status", "follow_up"] }, 1, 0] },
+                  },
+                  converted: {
+                    $sum: { $cond: [{ $eq: ["$status", "converted"] }, 1, 0] },
+                  },
+                  closed: {
+                    $sum: { $cond: [{ $eq: ["$status", "closed"] }, 1, 0] },
+                  },
+                },
+              },
+            ],
+            existingPeople: [
+              { $match: { userId: { $ne: null } } },
+              { $group: { _id: "$userId" } },
+              { $count: "count" },
+            ],
+            newPeople: [
+              {
+                $match: {
+                  $or: [{ userId: null }, { userId: { $exists: false } }],
+                },
+              },
+              { $group: { _id: "$mobileNumber" } },
+              { $count: "count" },
+            ],
           },
         },
       ]),
     ]);
+    const counts = countFacets;
 
     const linkedIds = [...rows.map((row) => row.userId), ...rows.map((row) => row.assignedTo)]
       .map((id) => (id ? String(id) : ""))
       .filter((id) => mongoose.Types.ObjectId.isValid(id))
       .map((id) => new mongoose.Types.ObjectId(id));
-    const linked = await mongoose.connection
-      .collection("users")
-      .find({ _id: { $in: linkedIds } })
-      .project({
-        name: 1,
-        phone: 1,
-        email: 1,
-        accountStatus: 1,
-        state: 1,
-        city: 1,
-        locality: 1,
-        createdAt: 1,
-      })
-      .toArray();
+
+    const linked = linkedIds.length
+      ? await User.find({ _id: { $in: linkedIds } })
+          .select(
+            "name phone email accountStatus state city locality createdAt roleId",
+          )
+          .populate({ path: "roleId", select: "name label" })
+          .lean()
+      : [];
     const byId = new Map(linked.map((user) => [String(user._id), user]));
+
+    const resolveUserRole = async (user: Record<string, any> | null | undefined) => {
+      if (!user) return { roleName: null as string | null, roleLabel: null as string | null };
+
+      let roleDoc =
+        user.roleId && typeof user.roleId === "object" && "name" in user.roleId
+          ? (user.roleId as { name?: string; label?: string })
+          : null;
+
+      if (!roleDoc && user.roleId && mongoose.Types.ObjectId.isValid(String(user.roleId))) {
+        roleDoc = (await Role.findById(user.roleId).select("name label").lean()) as {
+          name?: string;
+          label?: string;
+        } | null;
+      }
+
+      const rawName = String(
+        (user as { roleName?: string }).roleName || roleDoc?.name || "",
+      )
+        .trim()
+        .toLowerCase();
+      // Marketplace accounts without a role doc are treated as Owner (role "user").
+      const roleName = rawName || (user._id ? "user" : null);
+      const roleLabel =
+        accountRoleLabel(roleName) ||
+        (roleDoc?.label ? String(roleDoc.label) : null) ||
+        (roleName ? "Owner" : null);
+      return { roleName, roleLabel };
+    };
 
     const data = await Promise.all(
       rows.map(async (row) => {
-        const linkedUser = row.userId ? byId.get(String(row.userId)) : await findLoanUser(row);
+        let linkedUser: Record<string, any> | null | undefined = row.userId
+          ? byId.get(String(row.userId))
+          : null;
+        if (!linkedUser) {
+          const matched = await findLoanUser(row);
+          if (matched?._id) {
+            linkedUser = (await User.findById(matched._id)
+              .select(
+                "name phone email accountStatus state city locality createdAt roleId",
+              )
+              .populate({ path: "roleId", select: "name label" })
+              .lean()) as Record<string, any> | null;
+          }
+        }
         const assignee = row.assignedTo ? byId.get(String(row.assignedTo)) : null;
         const metadata = (row.metadata || {}) as Record<string, any>;
+        const role = await resolveUserRole(linkedUser);
         return {
           id: String(row._id),
           fullName: row.fullName,
@@ -336,6 +429,8 @@ export const listHomeLoanApplicationsController = async (
                 name: linkedUser.name || null,
                 accountStatus: linkedUser.accountStatus || null,
                 accountStep: accountStepLabel(linkedUser.accountStatus),
+                roleName: role.roleName,
+                roleLabel: role.roleLabel,
                 state: linkedUser.state || null,
                 city: linkedUser.city || null,
                 locality: linkedUser.locality || null,
@@ -349,7 +444,19 @@ export const listHomeLoanApplicationsController = async (
       }),
     );
 
-    const summary = counts[0] || { all: 0, existing: 0, fresh: 0 };
+    const facet = counts[0] || {};
+    const summary = facet.forms?.[0] || {
+      all: 0,
+      existing: 0,
+      fresh: 0,
+      statusNew: 0,
+      contacted: 0,
+      followUp: 0,
+      converted: 0,
+      closed: 0,
+    };
+    const existingPeople = Number(facet.existingPeople?.[0]?.count || 0);
+    const newPeople = Number(facet.newPeople?.[0]?.count || 0);
     return res.json({
       success: true,
       data,
@@ -359,9 +466,13 @@ export const listHomeLoanApplicationsController = async (
         total,
         pages: Math.max(1, Math.ceil(total / limit)),
         counts: {
+          // Form totals (Applications tab)
           all: Number(summary.all || 0),
           existing: Number(summary.existing || 0),
           new: Number(summary.fresh || 0),
+          // Unique people (Home Loan Users tab)
+          existingPeople,
+          newPeople,
           statusNew: Number(summary.statusNew || 0),
           contacted: Number(summary.contacted || 0),
           followUp: Number(summary.followUp || 0),

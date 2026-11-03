@@ -22,4 +22,8 @@ export interface JwtUserPayload extends JwtPayload {
   roleId?: string | undefined; 
   roleName?: string | undefined;
   permissions: string[];
+  impersonation?: boolean;
+  readOnly?: boolean;
+  impersonatorSub?: string;
+  impersonatorName?: string;
 }

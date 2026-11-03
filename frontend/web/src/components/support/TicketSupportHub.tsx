@@ -8,6 +8,7 @@ import {
 } from "@/data/ClientData";
 import { ArrowDropdownIcon } from "@/icons/icons";
 import { useAuth } from "@/hooks/useAuth";
+import { isViewAsTokenActive } from "@/utilies/viewAsSession";
 import {
   FiAlertCircle,
   FiClock,
@@ -305,6 +306,7 @@ export default function TicketSupportHub({ role }: { role: Role }) {
     currentUser.role === "relationship_manager";
   const isAgentWorkspace =
     role === "agent" || isRelationshipManagerViewer;
+  const isReadOnlyViewAs = isViewAsTokenActive();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [ticketSummary, setTicketSummary] = useState<TicketSummary | null>(null);
   const [selectedId, setSelectedId] = useState("");
@@ -588,6 +590,10 @@ export default function TicketSupportHub({ role }: { role: Role }) {
   };
   const createTicket = async (event: FormEvent) => {
     event.preventDefault();
+    if (isReadOnlyViewAs) {
+      setError("Read-only view-as: ticket creation is disabled.");
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
@@ -666,6 +672,10 @@ export default function TicketSupportHub({ role }: { role: Role }) {
   };
 
   const sendComment = async (visibility: "public" | "internal") => {
+    if (isReadOnlyViewAs) {
+      setError("Read-only view-as: replies are disabled.");
+      return;
+    }
     const message = visibility === "internal" ? note : reply;
     if (!selected?._id || !message.trim()) return;
     setSubmitting(true);
@@ -695,6 +705,10 @@ export default function TicketSupportHub({ role }: { role: Role }) {
   };
 
   const changeStatus = async (nextStatus: Status) => {
+    if (isReadOnlyViewAs) {
+      setError("Read-only view-as: status changes are disabled.");
+      return;
+    }
     if (!selected?._id) return;
     setSubmitting(true);
     try {
@@ -738,13 +752,15 @@ export default function TicketSupportHub({ role }: { role: Role }) {
               Raise and track tickets related to your account, projects, subscription, leads, payments and other Propenu services
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowCreatePanel((prev) => !prev)}
-            className="inline-flex h-10 items-center justify-center rounded-sm bg-[#27A361] px-5 text-[14px] font-medium text-white hover:bg-[#208650]"
-          >
-            Create Ticket
-          </button>
+          {!isReadOnlyViewAs && (
+            <button
+              type="button"
+              onClick={() => setShowCreatePanel((prev) => !prev)}
+              className="inline-flex h-10 items-center justify-center rounded-sm bg-[#27A361] px-5 text-[14px] font-medium text-white hover:bg-[#208650]"
+            >
+              Create Ticket
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -754,7 +770,7 @@ export default function TicketSupportHub({ role }: { role: Role }) {
           <Metric label="Resolved" value={metrics.resolved} icon={<FiShield size={12} />} />
         </div>
 
-        {showCreatePanel && (
+        {!isReadOnlyViewAs && showCreatePanel && (
           <div className="fixed inset-0 z-120 flex items-center justify-center bg-black/25 px-4 py-6">
             <div className="absolute inset-0" onClick={() => setShowCreatePanel(false)} aria-hidden="true" />
             <form onSubmit={createTicket} className="relative z-121 max-h-[90vh] w-full max-w-[760px] overflow-y-auto rounded-[14px] border border-[#E8EFEA] bg-white p-5 shadow-[0_30px_80px_rgba(0,0,0,0.22)] sm:p-6">
@@ -1247,7 +1263,13 @@ export default function TicketSupportHub({ role }: { role: Role }) {
                 ) : tickets.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="h-56 px-4 py-6">
-                      <EmptyText text="No tickets yet. Create your first ticket from the form above." />
+                      <EmptyText
+                        text={
+                          isReadOnlyViewAs
+                            ? "No tickets yet."
+                            : "No tickets yet. Create your first ticket from the form above."
+                        }
+                      />
                     </td>
                   </tr>
                 ) : (

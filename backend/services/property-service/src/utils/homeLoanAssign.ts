@@ -125,6 +125,8 @@ export async function findLoanUser(application: {
           tempCity: 1,
           followUpAssignedTo: 1,
           createdAt: 1,
+          roleId: 1,
+          roleName: 1,
         },
       },
     );
@@ -148,6 +150,8 @@ export async function findLoanUser(application: {
         tempCity: 1,
         followUpAssignedTo: 1,
         createdAt: 1,
+        roleId: 1,
+        roleName: 1,
       },
     },
   );

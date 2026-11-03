@@ -14,6 +14,19 @@ import { AuthRequest } from "../middlewares/authMiddleware";
 import { resolveVisibleLeadLimit } from "../utils/promotionAccess";
 import { notifyLifecycleEvent } from "../services/lifecycleNotificationService";
 import { BuilderInvoiceRead } from "../models/builderPlanReadModels";
+import { findActivePlan } from "../services/planPromotionService";
+
+const INVOICE_REQUIRED_MESSAGE =
+  "Invoice required: this project has no paid invoice. Create an invoice in Builder Plans and mark it as Paid, then start the promotion.";
+
+async function invoiceRequiredResponse(res: Response, projectId: string) {
+  if (await findActivePlan(projectId)) return null;
+  return res.status(403).json({
+    success: false,
+    needsInvoice: true,
+    message: INVOICE_REQUIRED_MESSAGE,
+  });
+}
 
 type PromotionType = "normal" | "featured" | "sponsored" | "prime";
 
@@ -177,6 +190,11 @@ export const promoteProperty = async (req: AuthRequest, res: Response) => {
         success: false,
         message: "Property not found",
       });
+    }
+
+    if (type !== "normal") {
+      const blocked = await invoiceRequiredResponse(res, String(property._id));
+      if (blocked) return blocked;
     }
 
     const previousType = property.promotion?.type || "normal";
@@ -351,6 +369,9 @@ export const renewPromotion = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    const blocked = await invoiceRequiredResponse(res, String(property._id));
+    if (blocked) return blocked;
+
     const now = new Date();
     const currentExpiry = currentPromotion.boostExpiry
       ? new Date(currentPromotion.boostExpiry)
@@ -463,14 +484,15 @@ export const expirePromotion = async (req: AuthRequest, res: Response) => {
     };
 
     const cancelledPlanInvoiceId = planInvoiceIdOf(property.promotion);
+    const reasonText = sentenceCase(reason);
 
     appendPromotionHistory(
       property,
       req,
       promotion,
       cancelledPlanInvoiceId
-        ? `Builder plan promotion cancelled: ${reason}`
-        : `Promotion cancelled: ${reason}`,
+        ? `Builder plan promotion cancelled. Reason: ${reasonText}`
+        : `Promotion cancelled. Reason: ${reasonText}`,
     );
 
     property.promotion = promotion as any;
@@ -479,7 +501,11 @@ export const expirePromotion = async (req: AuthRequest, res: Response) => {
     await property.save();
 
     if (cancelledPlanInvoiceId) {
-      await markPlanInvoice(cancelledPlanInvoiceId, "cancelled", `Cancelled on the project card: ${reason}`);
+      await markPlanInvoice(
+        cancelledPlanInvoiceId,
+        "cancelled",
+        `Cancelled on the project card. Reason: ${reasonText}`,
+      );
     }
 
     void notifyLifecycleEvent({
@@ -500,6 +526,14 @@ export const expirePromotion = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ message: "Expire failed" });
   }
 };
+
+/** "date" → "Date." — capitalised first letter and a closing full stop. */
+function sentenceCase(text: string) {
+  const value = String(text || "").trim().replace(/\s+/g, " ");
+  if (!value) return value;
+  const capped = value.charAt(0).toUpperCase() + value.slice(1);
+  return /[.!?]$/.test(capped) ? capped : `${capped}.`;
+}
 
 export const resetPromotion = async (req: AuthRequest, res: Response) => {
   try {

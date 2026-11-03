@@ -12,6 +12,8 @@ import {
   getProjectPlanStatus,
   isProjectApproved,
   packageMainType,
+  planWithLabel,
+  renewWithExistingInvoice,
   syncAllPlanPromotions,
   syncProjectPlanPromotion,
 } from "../services/planPromotionService";
@@ -170,7 +172,7 @@ export const setPromotionMode = async (req: AuthRequest, res: Response) => {
       const result = await applyPlanPromotion(project, active, {
         deliveryMode: "auto",
         actor: actorFrom(req),
-        reason: `${active.pkg.title || "Builder plan"} (${describePackage(active.pkg)}) replaced the direct promotion`,
+        reason: `${planWithLabel(active.pkg.title, describePackage(active.pkg), "Builder plan")} replaced the direct promotion`,
       });
       if (!result.ok) {
         await project.save();
@@ -229,10 +231,17 @@ export const startFromPlan = async (req: AuthRequest, res: Response) => {
     }
 
     const { mainCoverage, sponsoredAd, sponsoredSameAsMain } = req.body || {};
+    const rawLeads = req.body?.visibleLeadLimit;
+    const visibleLeadLimit =
+      rawLeads === undefined || rawLeads === null || rawLeads === "" ? undefined : Number(rawLeads);
+    if (visibleLeadLimit !== undefined && (!Number.isInteger(visibleLeadLimit) || visibleLeadLimit < 0)) {
+      return res.status(400).json({ success: false, message: "Visible leads must be a whole number 0 or more." });
+    }
     project.promotionMode = "plan";
     const result = await applyPlanPromotion(project, active, {
       deliveryMode: "plan",
       actor: actorFrom(req),
+      visibleLeadLimit,
       override: {
         mainCoverage,
         sponsoredAd,
@@ -252,6 +261,82 @@ export const startFromPlan = async (req: AuthRequest, res: Response) => {
   } catch (err) {
     console.error("startFromPlan error:", err);
     return res.status(500).json({ success: false, message: "Could not start the plan promotion" });
+  }
+};
+
+/** Make a cancelled (still paid, not expired) invoice usable for promotion again. */
+export const reuseCancelledInvoice = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = validProjectId(req, res);
+    if (!id) return;
+    const invoiceId = String(req.body?.invoiceId || "");
+    if (!mongoose.Types.ObjectId.isValid(invoiceId)) {
+      return res.status(400).json({ success: false, message: "Invalid invoice id" });
+    }
+
+    const invoice: any = await BuilderInvoiceRead.findById(invoiceId)
+      .select("propertyId paymentStatus promotionStatus endDate invoiceNumber")
+      .lean();
+    if (!invoice || String(invoice.propertyId) !== id) {
+      return res.status(404).json({ success: false, message: "Invoice not found for this project" });
+    }
+    if (invoice.paymentStatus !== "paid") {
+      return res.status(400).json({ success: false, message: "Only paid invoices can be reused." });
+    }
+    if (invoice.promotionStatus !== "cancelled") {
+      return res.status(400).json({ success: false, message: "This invoice is not cancelled." });
+    }
+    if (invoice.endDate && new Date(invoice.endDate).getTime() <= Date.now()) {
+      return res.status(400).json({
+        success: false,
+        message: "This invoice period has ended. Create a new invoice to promote again.",
+      });
+    }
+
+    await BuilderInvoiceRead.updateOne(
+      { _id: new mongoose.Types.ObjectId(invoiceId) },
+      {
+        $set: {
+          promotionStatus: "not_started",
+          promotionNote: `Reused for promotion by ${actorFrom(req).name || "the team"}.`,
+        },
+        $unset: { promotionEndedAt: "" },
+      },
+    );
+
+    return res.json({
+      success: true,
+      message: `${invoice.invoiceNumber || "Invoice"} is ready to promote again`,
+      data: await getProjectPlanStatus(id),
+    });
+  } catch (err) {
+    console.error("reuseCancelledInvoice error:", err);
+    return res.status(500).json({ success: false, message: "Could not reuse the invoice" });
+  }
+};
+
+/** Renew the plan promotion with an invoice this project already paid for. */
+export const renewWithInvoice = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = validProjectId(req, res);
+    if (!id) return;
+    const invoiceId = String(req.body?.invoiceId || "");
+    if (!mongoose.Types.ObjectId.isValid(invoiceId)) {
+      return res.status(400).json({ success: false, message: "Invalid invoice id" });
+    }
+    const result = await renewWithExistingInvoice(id, invoiceId, actorFrom(req));
+    if (!result.ok) return res.status(400).json({ success: false, message: result.message });
+    const until = result.end.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+    return res.json({
+      success: true,
+      message: result.scheduled
+        ? `${result.invoiceNumber || "Invoice"} queued as renewal until ${until}`
+        : `${result.invoiceNumber || "Invoice"} applied until ${until}`,
+      data: await getProjectPlanStatus(id),
+    });
+  } catch (err) {
+    console.error("renewWithInvoice error:", err);
+    return res.status(500).json({ success: false, message: "Could not renew with this invoice" });
   }
 };
 

@@ -43,7 +43,7 @@ export const PERMISSION_CATALOG: PermissionModule[] = [
   definePermissionModule("kyc", "KYC", "Review and decide verification requests.", ["view", "update", "verify", "approve", "reject", ["request_changes", "Request changes"]]),
   definePermissionModule("location", "Locations", "Manage supported locations.", ["create", "view", "update", "delete", "activate", "deactivate"]),
   definePermissionModule("shortlist", "Shortlists", "Review customer shortlist insights.", ["view", ["view_analytics", "View analytics"], ["view_featured", "View featured"], "export"]),
-  definePermissionModule("plan", "Plans", "Manage subscription plan definitions (Builder / Agent / Owner plans).", ["create", "view", "update", "delete", "activate", "deactivate", "assign"]),
+  definePermissionModule("plan", "Plans", "Manage subscription plan definitions (Builder / Agent / Owner plans).", ["create", "view", "update", "delete", "activate", "deactivate", "assign", ["delete_history", "Delete history"]]),
   definePermissionModule("builder_invoice", "Builder invoices", "Create and manage builder plan invoices and PDFs.", ["create", "view", "update", "delete"]),
   definePermissionModule("subscription", "Subscriptions", "Manage customer subscriptions.", ["view", ["view_history", "View history"], "assign", "update", "cancel", "renew"]),
   definePermissionModule("payment", "Payments", "Manage payments and financial operations.", ["create", "view", "verify", "refund", ["view_reports", "View reports"], "export"]),

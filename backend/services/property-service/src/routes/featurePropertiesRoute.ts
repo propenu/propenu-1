@@ -15,6 +15,8 @@ import { requirePermission } from "../middlewares/requirePermission";
 import { expirePromotion, promoteProperty, renewPromotion, resetPromotion } from "../controller/promotionController";
 import {
   getPlanStatus,
+  renewWithInvoice,
+  reuseCancelledInvoice,
   setPromotionMode,
   startFromPlan,
   syncAllPlans,
@@ -83,6 +85,8 @@ router.get("/:id/plan-status", authMiddleware, getPlanStatus);
 router.patch("/:id/promotion-mode", authMiddleware, setPromotionMode);
 router.post("/:id/promote-from-plan", authMiddleware, startFromPlan);
 router.post("/:id/plan-sync", authMiddleware, syncProjectPlan);
+router.post("/:id/plan-invoice/reuse", authMiddleware, reuseCancelledInvoice);
+router.post("/:id/plan-invoice/renew", authMiddleware, renewWithInvoice);
 
 // Promotion lifecycle MUST stay before generic PATCH /:id
 router.patch("/:id/promote", authMiddleware, promoteProperty);

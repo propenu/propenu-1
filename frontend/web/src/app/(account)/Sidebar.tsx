@@ -14,6 +14,7 @@ import {
   Subscription,
 } from "@/icons/icons";
 import { getUserNotificationSummary } from "@/data/ClientData";
+import { toAdminViewHref } from "@/utilies/adminViewRoutes";
 
 const menuItems = [
   {
@@ -76,11 +77,16 @@ const Sidebar = () => {
         <nav className="px-4 space-y-1.5 mt-10">
           {menuItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.link;
+            const href = toAdminViewHref(pathname, item.link);
+            const isActive =
+              pathname === href ||
+              pathname === item.link ||
+              (item.link === "/my-properties" &&
+                (pathname === "/admin-view/owner" || pathname === "/my-properties"));
             return (
               <Link
                 key={item.link}
-                href={item.link}
+                href={href}
                 className={`group flex items-center gap-3.5 px-4 py-3 rounded-xl text-[15px] transition-all duration-200
                   ${isActive
                     ? "text-[#27A361] bg-white font-semibold shadow-sm"

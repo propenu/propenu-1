@@ -241,7 +241,12 @@ const BuilderInvoiceSchema = new Schema(
   { timestamps: true },
 );
 
+BuilderInvoiceSchema.index({ createdAt: -1, _id: -1 });
+BuilderInvoiceSchema.index({ paymentStatus: 1, createdAt: -1 });
+BuilderInvoiceSchema.index({ "builderDetails.state": 1, "builderDetails.city": 1, "builderDetails.locality": 1 });
 BuilderInvoiceSchema.index({ userId: 1, invoiceDate: -1 });
+BuilderInvoiceSchema.index({ userId: 1, createdAt: -1 });
+BuilderInvoiceSchema.index({ userId: 1, propertyId: 1, createdAt: -1 });
 BuilderInvoiceSchema.index({ propertyId: 1, servicePlanId: 1 });
 BuilderInvoiceSchema.index({ propertyId: 1, paymentStatus: 1, endDate: -1 });
 

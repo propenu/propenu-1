@@ -1,5 +1,16 @@
 import mongoose, { Schema } from "mongoose";
 
+/** Who performed an action, copied at write time so renamed or deleted users still show correctly. */
+export const PlanActorSchema = new Schema(
+  {
+    id: { type: Schema.Types.ObjectId, default: null },
+    name: { type: String, default: "" },
+    email: { type: String, default: "" },
+    role: { type: String, default: "" },
+  },
+  { _id: false },
+);
+
 const BuilderPlanSchema = new Schema(
   {
     code: {
@@ -106,6 +117,9 @@ const BuilderPlanSchema = new Schema(
       type: Boolean,
       default: true,
     },
+
+    createdBy: { type: PlanActorSchema, default: null },
+    updatedBy: { type: PlanActorSchema, default: null },
   },
   { timestamps: true },
 );

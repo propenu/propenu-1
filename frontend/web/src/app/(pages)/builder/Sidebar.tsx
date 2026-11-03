@@ -10,6 +10,7 @@ import { TbBuildingSkyscraper } from "react-icons/tb";
 import { FiBell, FiBriefcase, FiSettings, FiUsers } from "react-icons/fi";
 import { BiSupport } from "react-icons/bi";
 import { getBuilderNotificationSummary } from "@/data/ClientData";
+import { toAdminViewHref } from "@/utilies/adminViewRoutes";
 
 const menuItems = [
   {
@@ -79,9 +80,11 @@ const Sidebar = () => {
       ? menuItems.filter((item) => item.link !== "/builder/roles")
       : menuItems;
 
-  const isItemActive = (link: string) => {
-    if (link === "/builder") return pathname === "/builder";
-    return pathname === link || pathname.startsWith(`${link}/`);
+  const isItemActive = (href: string, canonical: string) => {
+    if (canonical === "/builder") {
+      return pathname === href || pathname === "/builder" || pathname === "/admin-view/builder";
+    }
+    return pathname === href || pathname.startsWith(`${href}/`);
   };
 
   return (
@@ -93,12 +96,13 @@ const Sidebar = () => {
         <nav className="mt-10 space-y-1.5 px-4">
           {visibleMenuItems.map((item) => {
             const Icon = item.icon;
-            const isActive = isItemActive(item.link);
+            const href = toAdminViewHref(pathname, item.link);
+            const isActive = isItemActive(href, item.link);
 
             return (
               <Link
                 key={item.link}
-                href={item.link}
+                href={href}
                 className={`group flex items-center gap-3.5 rounded-xl px-4 py-3 text-[15px] transition-all duration-200 ${isActive
                     ? "bg-white font-semibold text-[#27A361] shadow-sm"
                     : "text-gray-500 hover:bg-white/50 hover:text-[#27A361]"

@@ -119,8 +119,8 @@ export async function createPaymentOrder(
   }
 
   const discountPercent = Number(options.discountPercent || 0);
-  if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 50) {
-    throw new Error("Discount must be between 0% and 50%");
+  if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
+    throw new Error("Discount must be between 0% and 100%");
   }
   const listPrice = roundCurrency(finalPayable);
   const discountAmount = roundCurrency(listPrice * (discountPercent / 100));

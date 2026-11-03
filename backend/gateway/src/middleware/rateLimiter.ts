@@ -46,7 +46,7 @@ export const chatbotLimiter = rateLimit({
 export const paymentLimiter = rateLimit({
   ...commonOptions,
   windowMs: 5 * 60 * 1000,
-  max: 30,
+  max: 600,
   message: {
     success: false,
     message: "Too many payment requests. Please wait a moment and try again.",

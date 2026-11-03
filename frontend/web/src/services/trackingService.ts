@@ -33,6 +33,17 @@ export function getTrackingSessionId() {
   return sessionId;
 }
 
+function isReadOnlyViewAsToken(token: string): boolean {
+  try {
+    const claims = JSON.parse(
+      atob(token.split(".")[1] ?? ""),
+    ) as { impersonation?: boolean; readOnly?: boolean };
+    return Boolean(claims.impersonation && claims.readOnly);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Sends a business interaction without delaying the user's current action.
  * Tracking is intentionally limited to authenticated users because the
@@ -43,6 +54,9 @@ export function trackInteraction(event: InteractionPayload): void {
 
   const token = Cookies.get("token");
   if (!token) return;
+
+  // SuperAdmin read-only view-as: never POST tracking (would 403 and spam logs).
+  if (isReadOnlyViewAsToken(token)) return;
 
   const payload = {
     ...event,

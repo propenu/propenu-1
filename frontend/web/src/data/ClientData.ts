@@ -321,6 +321,31 @@ export const me = async () => {
   return res.data;
 };
 
+/** Redeem one-time SuperAdmin view-as exchange code (no auth cookie required). */
+export const exchangeImpersonation = async (code: string) => {
+  const res = await axiosInstance.post(
+    `${url}/api/users/auth/impersonate/exchange`,
+    { code },
+  );
+  return res.data;
+};
+
+/** Audit exit from read-only view-as; client still clears the cookie. */
+export const stopImpersonation = async () => {
+  const token = Cookies.get("token");
+  if (!token) return null;
+  const res = await axiosInstance.post(
+    `${url}/api/users/auth/impersonate/stop`,
+    {},
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  return res.data;
+};
+
 export const updateUser = async (payload: {
   name?: string;
   companyName?: string;

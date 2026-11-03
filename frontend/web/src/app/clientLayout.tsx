@@ -12,6 +12,7 @@ import FloatingWhatsAppButton from "@/components/FloatingWhatsAppButton";
 import HomeMateChatbot from "@/app/(pages)/chatbot/HomeMateChatbot";
 import Navbar from "@/components/Navbar";
 import MobileBottomNav from "@/components/MobileBottomNav";
+import ViewAsBanner from "@/components/impersonation/ViewAsBanner";
 import { ModalProvider, useModal } from "@/app/context/ModalContext";
 import { me } from "@/data/ClientData";
 import { getFirebaseMessaging } from "@/lib/firebase";
@@ -25,6 +26,7 @@ const HIDE_LAYOUT_ROUTES = [
   "/builder/invite",
   "/login",
   "/register",
+  "/view-as",
 ];
 
 const NOTIFICATION_QUERY_KEYS = new Set([
@@ -264,6 +266,8 @@ function ClientProvidersContent({
   useEffect(() => {
     const userId = user?.user?.id || user?.user?._id;
     if (!userId) return;
+    // Never register push tokens while SuperAdmin is in read-only view-as.
+    if (user?.user?.impersonation?.active) return;
 
     const initPush = async () => {
       try {
@@ -404,6 +408,7 @@ function ClientProvidersContent({
   return (
     <Provider store={store}>
       <QueryClientProvider client={queryClient}>
+        <ViewAsBanner />
         {!hideLayout && !isAgentRegistrationModalOpen && <Navbar />}
         <div
           suppressHydrationWarning

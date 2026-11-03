@@ -41,8 +41,8 @@ export async function createAdminSubscriptionPaymentLink(
     if (!Types.ObjectId.isValid(userId) || !Types.ObjectId.isValid(planId)) {
       return res.status(400).json({ message: "A valid user and plan are required" });
     }
-    if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 50) {
-      return res.status(400).json({ message: "Discount must be between 0% and 50%" });
+    if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
+      return res.status(400).json({ message: "Discount must be between 0% and 100%" });
     }
 
     const [target, plan] = await Promise.all([

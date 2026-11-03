@@ -303,13 +303,24 @@ function exactCaseInsensitive(value: string) {
   };
 }
 
+/** Subscription plan combinations: placement + whether the Sponsored add-on runs with it. */
+const PLAN_TYPE_MATCH: Record<string, Record<string, unknown>> = {
+  prime_only: { "promotion.type": "prime", "promotion.sponsoredEnabled": { $ne: true } },
+  prime_sponsored: { "promotion.type": "prime", "promotion.sponsoredEnabled": true },
+  featured_only: { "promotion.type": "featured", "promotion.sponsoredEnabled": { $ne: true } },
+  featured_sponsored: { "promotion.type": "featured", "promotion.sponsoredEnabled": true },
+  sponsored_only: { "promotion.type": "sponsored" },
+};
+
 function buildPromotionTypeMatch(types: string[]) {
   const normalizedTypes = types.map((type) => type.trim()).filter(Boolean);
 
   if (normalizedTypes.length === 0) return undefined;
 
-  const conditions: any[] = [];
-  const explicitTypes = normalizedTypes.filter((type) => type !== "normal");
+  const conditions: any[] = normalizedTypes
+    .filter((type) => PLAN_TYPE_MATCH[type])
+    .map((type) => PLAN_TYPE_MATCH[type]);
+  const explicitTypes = normalizedTypes.filter((type) => type !== "normal" && !PLAN_TYPE_MATCH[type]);
 
   if (explicitTypes.length > 0) {
     conditions.push({ "promotion.type": { $in: explicitTypes } });

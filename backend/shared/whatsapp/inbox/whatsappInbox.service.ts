@@ -968,6 +968,16 @@ function normalizeInboxTemplateButtons(
     .slice(0, 3) as InboxTemplateButton[];
 }
 
+/** Meta rejects newlines / tabs / long space runs in template variables (#131009). */
+function sanitizeMetaTemplateParam(value: string, fallback = "there") {
+  const cleaned = String(value || "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/ {5,}/g, "    ")
+    .trim()
+    .slice(0, 60);
+  return cleaned || fallback;
+}
+
 async function sendApprovedInboxTemplate(params: {
   waIdRaw: string;
   templateName: string;
@@ -976,6 +986,15 @@ async function sendApprovedInboxTemplate(params: {
   buttons?: Array<string | InboxTemplateButton>;
   /** Fills Meta template body variables {{1}}, {{2}}, ... */
   bodyParams?: string[];
+  /**
+   * existing_agent uses a Meta FLOW button ("More Options").
+   * Without this component Meta returns (#131009) Parameter value is not valid.
+   */
+  flowButton?: {
+    index?: number;
+    flowToken?: string;
+    navigateScreen?: string;
+  };
   dedupeHours?: number;
   /** Skip re-send if ANY attempt (incl. failed) happened in this many minutes. */
   attemptCooldownMinutes?: number;
@@ -987,9 +1006,20 @@ async function sendApprovedInboxTemplate(params: {
   if (!templateName) return false;
   const buttons = normalizeInboxTemplateButtons(params.buttons);
   const bodyParams = (params.bodyParams || [])
-    .map((value) => String(value || "").trim())
+    .map((value) => sanitizeMetaTemplateParam(value))
     .filter(Boolean)
     .slice(0, 10);
+  const flowButton = params.flowButton
+    ? {
+        index: Math.max(0, Number(params.flowButton.index) || 0),
+        flowToken: String(
+          params.flowButton.flowToken || `unused:${waId}:${Date.now()}`,
+        )
+          .trim()
+          .slice(0, 255),
+        navigateScreen: String(params.flowButton.navigateScreen || "").trim(),
+      }
+    : null;
 
   const templateLang =
     String(process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en").trim() || "en";
@@ -1021,6 +1051,8 @@ async function sendApprovedInboxTemplate(params: {
       direction: "outbound",
       "raw.source": params.source,
       "raw.dedupeInvalidated": { $ne: true },
+      // Allow immediate retry after config errors like #131009 (missing flow button).
+      error: { $not: /#131009/i },
       createdAt: { $gte: coolSince },
     });
     if (recentAttempt) {
@@ -1061,22 +1093,42 @@ async function sendApprovedInboxTemplate(params: {
       language: templateLang,
       buttons,
       bodyParams,
+      ...(flowButton ? { flowButton } : {}),
     },
   });
 
   try {
+    const components: Record<string, unknown>[] = [];
+    if (bodyParams.length) {
+      components.push({
+        type: "body",
+        parameters: bodyParams.map((text) => ({ type: "text", text })),
+      });
+    }
+    if (flowButton) {
+      const action: Record<string, unknown> = {
+        flow_token: flowButton.flowToken || "unused",
+      };
+      if (flowButton.navigateScreen) {
+        action.flow_action_data = { screen: flowButton.navigateScreen };
+      }
+      components.push({
+        type: "button",
+        sub_type: "flow",
+        index: String(flowButton.index),
+        parameters: [
+          {
+            type: "action",
+            action,
+          },
+        ],
+      });
+    }
     const templatePayload: Record<string, unknown> = {
       name: templateName,
       language: { code: templateLang },
+      ...(components.length ? { components } : {}),
     };
-    if (bodyParams.length) {
-      templatePayload.components = [
-        {
-          type: "body",
-          parameters: bodyParams.map((text) => ({ type: "text", text })),
-        },
-      ];
-    }
     const response = await axios.post(
       `https://graph.facebook.com/${API_VERSION}/${phoneNumberId}/messages`,
       {
@@ -1188,12 +1240,17 @@ function existingUserDisplayName(nameRaw: string) {
   const parts = full.split(" ").filter(Boolean);
   // Skip single-letter initials ("D V RAMANA" → "RAMANA").
   const meaningful = parts.find((part) => part.length > 1) || parts[0] || "there";
-  return meaningful.slice(0, 60);
+  return sanitizeMetaTemplateParam(meaningful, "there");
 }
 
-/** Approved Meta template for verified / existing Propenu users. */
+/**
+ * Approved Meta template for verified / existing Propenu users.
+ * Live Meta template `existing_agent` = body {{1}} + FLOW button "More Options"
+ * (navigate_screen MORE_OPTIONS). Sending without the flow button → #131009.
+ */
 async function sendExistingUserAgentTemplate(waIdRaw: string, nameRaw: string) {
   const name = existingUserDisplayName(nameRaw);
+  const waId = normalizeWaId(waIdRaw);
   return sendApprovedInboxTemplate({
     waIdRaw,
     templateName: EXISTING_USER_TEMPLATE || "existing_agent",
@@ -1201,6 +1258,11 @@ async function sendExistingUserAgentTemplate(waIdRaw: string, nameRaw: string) {
     bodyPreview: `Hello ${name},\n\nWe have received your message on Propenu.\n\nPlease select an option below to continue with your requested assistance.`,
     bodyParams: [name],
     buttons: [{ label: "More Options", kind: "quick_reply" }],
+    flowButton: {
+      index: 0,
+      flowToken: `existing_agent:${waId}:${Date.now()}`,
+      navigateScreen: "MORE_OPTIONS",
+    },
     // Successful send: 1h quiet. Failed Meta spam retries: 12m cooldown.
     dedupeHours: 1,
     attemptCooldownMinutes: 12,

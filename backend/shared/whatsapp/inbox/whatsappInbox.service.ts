@@ -919,6 +919,10 @@ const SEARCH_PROPERTY_TEMPLATE = String(
     "looking_to_buy_or_rent_a_property_choose_an_option_below",
 ).trim();
 
+const EXISTING_USER_TEMPLATE = String(
+  process.env.WHATSAPP_EXISTING_USER_TEMPLATE || "existing_agent",
+).trim();
+
 type InboxTemplateButton = {
   label: string;
   /** Matches WhatsApp: reply arrow vs visit-website / URL click. */
@@ -949,6 +953,8 @@ async function sendApprovedInboxTemplate(params: {
   source: string;
   bodyPreview: string;
   buttons?: Array<string | InboxTemplateButton>;
+  /** Fills Meta template body variables {{1}}, {{2}}, ... */
+  bodyParams?: string[];
   dedupeHours?: number;
 }) {
   const waId = normalizeWaId(params.waIdRaw);
@@ -957,6 +963,10 @@ async function sendApprovedInboxTemplate(params: {
   const templateName = String(params.templateName || "").trim();
   if (!templateName) return false;
   const buttons = normalizeInboxTemplateButtons(params.buttons);
+  const bodyParams = (params.bodyParams || [])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .slice(0, 10);
 
   const templateLang =
     String(process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en").trim() || "en";
@@ -1003,20 +1013,30 @@ async function sendApprovedInboxTemplate(params: {
       template: templateName,
       language: templateLang,
       buttons,
+      bodyParams,
     },
   });
 
   try {
+    const templatePayload: Record<string, unknown> = {
+      name: templateName,
+      language: { code: templateLang },
+    };
+    if (bodyParams.length) {
+      templatePayload.components = [
+        {
+          type: "body",
+          parameters: bodyParams.map((text) => ({ type: "text", text })),
+        },
+      ];
+    }
     const response = await axios.post(
       `https://graph.facebook.com/${API_VERSION}/${phoneNumberId}/messages`,
       {
         messaging_product: "whatsapp",
         to: waId,
         type: "template",
-        template: {
-          name: templateName,
-          language: { code: templateLang },
-        },
+        template: templatePayload,
       },
       {
         headers: {
@@ -1115,6 +1135,27 @@ async function sendSearchPropertyOptionsTemplate(waIdRaw: string) {
   });
 }
 
+function existingUserDisplayName(nameRaw: string) {
+  const full = String(nameRaw || "").trim().replace(/\s+/g, " ");
+  if (!full) return "there";
+  const first = full.split(" ")[0] || full;
+  return first.slice(0, 60);
+}
+
+/** Approved Meta template for verified / existing Propenu users. */
+async function sendExistingUserAgentTemplate(waIdRaw: string, nameRaw: string) {
+  const name = existingUserDisplayName(nameRaw);
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName: EXISTING_USER_TEMPLATE || "existing_agent",
+    source: "existing_user_agent_template",
+    bodyPreview: `Hello ${name},\n\nWe have received your message on Propenu.\n\nPlease select an option below to continue with your requested assistance.`,
+    bodyParams: [name],
+    buttons: [{ label: "More Options", kind: "quick_reply" }],
+    dedupeHours: 24,
+  });
+}
+
 /** After dashboard delete, the users row is gone but the WhatsApp chat may still be paused. */
 export async function reopenWhatsAppChatForDeletedPhone(phoneRaw: string) {
   const waId = normalizeWaId(phoneRaw);
@@ -1142,6 +1183,7 @@ export async function reopenWhatsAppChatForDeletedPhone(phoneRaw: string) {
           "new_user_registration_template",
           "account_created_successfully_template",
           "search_property_options_template",
+          "existing_user_agent_template",
         ],
       },
       "raw.dedupeInvalidated": { $ne: true },
@@ -1202,10 +1244,12 @@ async function replyToInboundMessage(waId: string, text: string) {
 
     if (paused) return;
 
-    // Existing verified users: no auto template yet (waiting for existing-user template).
-    console.log(
-      `WhatsApp inbound skipped auto-template for existing user ******${String(waId).slice(-4)} (phoneVerified)`,
-    );
+    // Existing verified users → existing_agent utility template.
+    try {
+      await sendExistingUserAgentTemplate(waId, account.name);
+    } catch (err) {
+      console.error("WhatsApp existing-user agent template failed:", err);
+    }
   } catch (err) {
     console.error("WhatsApp inbound auto-reply failed:", err);
   } finally {

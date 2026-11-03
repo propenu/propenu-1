@@ -84,7 +84,7 @@ function extractTextFromNfmReply(nfm: any): string {
     /* ignore invalid flow JSON */
   }
   const known = values.find((value) =>
-    /more\s*options|post\s*a?\s*property|manage\s+(my\s+)?propert|manage\s+my\s+leads|my\s+leads|reach\s+buyers|payment\s+support|buy\s+property|rent\s+property|buy\s+commercial|lease\s+commercial|buy\s+plot/i.test(
+    /more\s*options|buy\s*\/?\s*rent.*explore|post\s*property\s*&\s*more|post\s*a?\s*property|manage\s+(my\s+)?propert|manage\s+my\s+leads|my\s+leads|reach\s+buyers|payment\s+support|buy\s+property|rent\s+property|buy\s+commercial|lease\s+commercial|buy\s+plot/i.test(
       value,
     ),
   );
@@ -509,6 +509,18 @@ function isMarketplaceAgentRole(roleName?: string | null) {
   return key === "agent" || key === "sales_agent" || key === "agents";
 }
 
+/** Owner / end-user roles that should receive existing_owner on Hi. */
+function isMarketplaceOwnerRole(roleName?: string | null) {
+  const key = normalizeWhatsAppRoleName(roleName);
+  return (
+    key === "owner" ||
+    key === "user" ||
+    key === "owners" ||
+    key === "property_owner" ||
+    key === "property_owners"
+  );
+}
+
 async function findWhatsAppAccount(waId: string) {
   if (mongoose.connection.readyState !== 1) {
     console.error("WhatsApp welcome skipped the account lookup: database is not connected");
@@ -516,6 +528,7 @@ async function findWhatsAppAccount(waId: string) {
     return {
       isNew: true,
       isAgent: false,
+      isOwner: false,
       roleName: "",
       userId: "",
       name: "",
@@ -541,6 +554,7 @@ async function findWhatsAppAccount(waId: string) {
   return {
     isNew,
     isAgent: isMarketplaceAgentRole(roleName),
+    isOwner: isMarketplaceOwnerRole(roleName),
     roleName,
     userId: user?._id ? String(user._id) : "",
     name,
@@ -807,6 +821,42 @@ function isGetPaymentSupportChoice(text: string) {
     normalized === "get payment support" ||
     normalized === "payment support" ||
     normalized === "get paymentsupport"
+  );
+}
+
+/** Owner existing_owner CTA: Buy / Rent & Explore. */
+function isOwnerBuyRentExploreChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s*&\s*/g, " and ")
+    .replace(/\s*\/\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return (
+    normalized === "buy rent and explore" ||
+    normalized === "buy rent explore" ||
+    normalized === "buy rent explore more options" ||
+    normalized === "owner buy rent explore more options"
+  );
+}
+
+/** Owner existing_owner CTA: Post Property & More. */
+function isOwnerPostPropertyMoreChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s*&\s*/g, " and ");
+  return (
+    normalized === "post property and more" ||
+    normalized === "post property more" ||
+    normalized === "post a property and more" ||
+    normalized === "owner post property more options"
   );
 }
 
@@ -1116,6 +1166,17 @@ const SEARCH_PROPERTY_TEMPLATE = String(
 
 const EXISTING_USER_TEMPLATE = String(
   process.env.WHATSAPP_EXISTING_USER_TEMPLATE || "existing_agent",
+).trim();
+const EXISTING_OWNER_TEMPLATE = String(
+  process.env.WHATSAPP_EXISTING_OWNER_TEMPLATE || "existing_owner",
+).trim();
+const OWNER_BUY_RENT_EXPLORE_TEMPLATE = String(
+  process.env.WHATSAPP_OWNER_BUY_RENT_EXPLORE_TEMPLATE ||
+    "owner_buy__rent__explore_more_options",
+).trim();
+const OWNER_POST_PROPERTY_MORE_TEMPLATE = String(
+  process.env.WHATSAPP_OWNER_POST_PROPERTY_MORE_TEMPLATE ||
+    "owner_post_property__more_options",
 ).trim();
 
 /** Agent Post Property flow (Meta names — keep agnet_* typo as approved). */
@@ -1824,7 +1885,7 @@ function existingUserDisplayName(nameRaw: string) {
 }
 
 /**
- * Approved Meta template for verified / existing Propenu users.
+ * Approved Meta template for verified / existing Propenu agents.
  * Live Meta template `existing_agent` = body {{1}} + FLOW button "More Options"
  * (navigate_screen MORE_OPTIONS). Sending without the flow button → #131009.
  */
@@ -1846,6 +1907,65 @@ async function sendExistingUserAgentTemplate(waIdRaw: string, nameRaw: string) {
     // Successful send: 1h quiet. Failed Meta spam retries: 12m cooldown.
     dedupeHours: 1,
     attemptCooldownMinutes: 12,
+  });
+}
+
+/**
+ * Approved Meta template for verified owners / end-users on Hi.
+ * Live Meta template `existing_owner` = body {{1}} + FLOW "More Options"
+ * (same pattern as existing_agent). Missing flow → #131009.
+ */
+async function sendExistingUserOwnerTemplate(waIdRaw: string, nameRaw: string) {
+  const name = existingUserDisplayName(nameRaw);
+  const waId = normalizeWaId(waIdRaw);
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName: EXISTING_OWNER_TEMPLATE || "existing_owner",
+    source: "existing_user_owner_template",
+    bodyPreview: `Hello ${name},\n\nWe have received your message on Propenu.\n\nPlease select an option below to continue with your requested assistance.`,
+    bodyParams: [name],
+    buttons: [
+      { label: "Buy / Rent & Explore", kind: "quick_reply" },
+      { label: "Post Property & More", kind: "quick_reply" },
+    ],
+    flowButton: {
+      index: 0,
+      flowToken: `existing_owner:${waId}:${Date.now()}`,
+      navigateScreen: "MORE_OPTIONS",
+    },
+    dedupeHours: 1,
+    attemptCooldownMinutes: 12,
+  });
+}
+
+async function sendOwnerBuyRentExploreTemplate(waIdRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName:
+      OWNER_BUY_RENT_EXPLORE_TEMPLATE || "owner_buy__rent__explore_more_options",
+    source: "owner_buy_rent_explore_template",
+    bodyPreview:
+      "Explore Propenu buy and rent options. Please choose an option below to continue.",
+    buttons: [
+      { label: "Buy Property", kind: "url" },
+      { label: "Rent Property", kind: "url" },
+    ],
+    dedupeHours: 0.25,
+    attemptCooldownMinutes: 5,
+  });
+}
+
+async function sendOwnerPostPropertyMoreTemplate(waIdRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName:
+      OWNER_POST_PROPERTY_MORE_TEMPLATE || "owner_post_property__more_options",
+    source: "owner_post_property_more_template",
+    bodyPreview:
+      "Continue with posting your property on Propenu using the option below.",
+    buttons: [{ label: "Post a property", kind: "url" }],
+    dedupeHours: 0.25,
+    attemptCooldownMinutes: 5,
   });
 }
 
@@ -1877,6 +1997,9 @@ export async function reopenWhatsAppChatForDeletedPhone(phoneRaw: string) {
           "account_created_successfully_template",
           "search_property_options_template",
           "existing_user_agent_template",
+          "existing_user_owner_template",
+          "owner_buy_rent_explore_template",
+          "owner_post_property_more_template",
         ],
       },
       "raw.dedupeInvalidated": { $ne: true },
@@ -1922,6 +2045,44 @@ async function replyToInboundMessage(waId: string, text: string) {
         await sendWelcomeMenu(waId);
       } catch (err) {
         console.error("WhatsApp more-options menu failed:", err);
+      }
+      return;
+    }
+
+    // Owner CTA: Buy / Rent & Explore → owner_buy__rent__explore_more_options
+    if (isOwnerBuyRentExploreChoice(inbound)) {
+      if (!account.isOwner) {
+        console.log(
+          `WhatsApp Buy/Rent Explore skipped ******${String(waId).slice(-4)} role=${account.roleName || "unknown"}`,
+        );
+        return;
+      }
+      try {
+        console.log(
+          `WhatsApp owner Buy/Rent Explore ******${String(waId).slice(-4)}`,
+        );
+        await sendOwnerBuyRentExploreTemplate(waId);
+      } catch (err) {
+        console.error("WhatsApp owner Buy/Rent Explore template failed:", err);
+      }
+      return;
+    }
+
+    // Owner CTA: Post Property & More → owner_post_property__more_options
+    if (isOwnerPostPropertyMoreChoice(inbound)) {
+      if (!account.isOwner) {
+        console.log(
+          `WhatsApp Post Property & More skipped ******${String(waId).slice(-4)} role=${account.roleName || "unknown"}`,
+        );
+        return;
+      }
+      try {
+        console.log(
+          `WhatsApp owner Post Property & More ******${String(waId).slice(-4)}`,
+        );
+        await sendOwnerPostPropertyMoreTemplate(waId);
+      } catch (err) {
+        console.error("WhatsApp owner Post Property & More template failed:", err);
       }
       return;
     }
@@ -2058,24 +2219,36 @@ async function replyToInboundMessage(waId: string, text: string) {
 
     if (paused) return;
 
-    // existing_agent only for marketplace agents on Hi/Hello.
-    // Owners/builders/other verified roles use other templates — do not send this one.
+    // Hi/Hello → role-based existing template (agent vs owner/user).
     if (!greeting) return;
-    if (!account.isAgent) {
-      console.log(
-        `WhatsApp existing_agent skipped ******${String(waId).slice(-4)} role=${account.roleName || "unknown"}`,
-      );
+
+    if (account.isAgent) {
+      try {
+        console.log(
+          `WhatsApp realtime existing-agent template ******${String(waId).slice(-4)} role=${account.roleName} greeting=${greeting}`,
+        );
+        await sendExistingUserAgentTemplate(waId, account.name);
+      } catch (err) {
+        console.error("WhatsApp existing-agent template failed:", err);
+      }
       return;
     }
 
-    try {
-      console.log(
-        `WhatsApp realtime existing-agent template ******${String(waId).slice(-4)} role=${account.roleName} greeting=${greeting}`,
-      );
-      await sendExistingUserAgentTemplate(waId, account.name);
-    } catch (err) {
-      console.error("WhatsApp existing-agent template failed:", err);
+    if (account.isOwner) {
+      try {
+        console.log(
+          `WhatsApp realtime existing-owner template ******${String(waId).slice(-4)} role=${account.roleName} greeting=${greeting}`,
+        );
+        await sendExistingUserOwnerTemplate(waId, account.name);
+      } catch (err) {
+        console.error("WhatsApp existing-owner template failed:", err);
+      }
+      return;
     }
+
+    console.log(
+      `WhatsApp existing greeting skipped ******${String(waId).slice(-4)} role=${account.roleName || "unknown"}`,
+    );
   } catch (err) {
     console.error("WhatsApp inbound auto-reply failed:", err);
   } finally {

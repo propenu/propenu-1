@@ -1152,8 +1152,13 @@ const AGENT_REACH_BUYERS_URL_SUFFIX = String(
 )
   .trim()
   .replace(/^\/+/, "");
+/**
+ * post_a_property Meta template uses a FIXED URL button (no {{1}}).
+ * Only set WHATSAPP_AGENT_POST_PROPERTY_URL_SUFFIX if Meta adds a dynamic suffix later.
+ * Sending url params on a static-URL template → Meta (#132018).
+ */
 const AGENT_POST_PROPERTY_URL_SUFFIX = String(
-  process.env.WHATSAPP_AGENT_POST_PROPERTY_URL_SUFFIX || "postproperty",
+  process.env.WHATSAPP_AGENT_POST_PROPERTY_URL_SUFFIX || "",
 )
   .trim()
   .replace(/^\/+/, "");
@@ -1307,8 +1312,9 @@ async function sendApprovedInboxTemplate(params: {
       direction: "outbound",
       "raw.source": params.source,
       "raw.dedupeInvalidated": { $ne: true },
-      // Allow immediate retry after config errors (#131009 flow / #131008 URL param).
-      error: { $not: /#(131009|131008)/i },
+      // Allow immediate retry after template param errors.
+      // #131009 flow / #131008 missing URL / #132018 unexpected URL params.
+      error: { $not: /#(131009|131008|132018)/i },
       createdAt: { $gte: coolSince },
     });
     if (recentAttempt) {
@@ -1655,11 +1661,16 @@ async function sendAgentPostPropertyTemplate(waIdRaw: string) {
     bodyPreview:
       "Your property submission request is ready for the next step.\n\nPlease use the link below to access the property submission page.",
     buttons: [{ label: "Post a property", kind: "url" }],
-    // Meta dynamic URL: https://propenu.com/{{1}} → postproperty
-    urlButton: {
-      index: 0,
-      text: AGENT_POST_PROPERTY_URL_SUFFIX || "postproperty",
-    },
+    // Static Meta URL button — do NOT send urlButton unless env opt-in is set.
+    // Extra URL params on this template caused production (#132018).
+    ...(AGENT_POST_PROPERTY_URL_SUFFIX
+      ? {
+          urlButton: {
+            index: 0,
+            text: AGENT_POST_PROPERTY_URL_SUFFIX,
+          },
+        }
+      : {}),
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });

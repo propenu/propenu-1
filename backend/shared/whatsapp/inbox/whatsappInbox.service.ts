@@ -454,15 +454,29 @@ async function findUserByWhatsAppPhone(waId: string) {
         { phone: { $regex: `${last10}$` } },
       ],
     },
-    { projection: { phoneVerified: 1, name: 1, city: 1, state: 1 } },
+    { projection: { phoneVerified: 1, name: 1, city: 1, state: 1, roleId: 1 } },
   );
+}
+
+function normalizeWhatsAppRoleName(roleName?: string | null) {
+  return String(roleName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+/** Marketplace agent roles that should receive existing_agent on Hi. */
+function isMarketplaceAgentRole(roleName?: string | null) {
+  const key = normalizeWhatsAppRoleName(roleName);
+  return key === "agent" || key === "sales_agent" || key === "agents";
 }
 
 async function findWhatsAppAccount(waId: string) {
   if (mongoose.connection.readyState !== 1) {
     console.error("WhatsApp welcome skipped the account lookup: database is not connected");
     // Safer default: treat as new so registration template can still go out.
-    return { isNew: true, name: "", city: "", state: "" };
+    return { isNew: true, isAgent: false, roleName: "", name: "", city: "", state: "" };
   }
   const user = await findUserByWhatsAppPhone(waId);
   const isNew = user?.phoneVerified !== true;
@@ -471,8 +485,18 @@ async function findWhatsAppAccount(waId: string) {
     const conversation = await WhatsAppConversation.findOne({ waId }).select("profileName").lean();
     name = String(conversation?.profileName || "").trim();
   }
+  let roleName = "";
+  if (user?.roleId) {
+    const role = await mongoose.connection.collection("roles").findOne(
+      { _id: user.roleId },
+      { projection: { name: 1 } },
+    );
+    roleName = String(role?.name || "").trim();
+  }
   return {
     isNew,
+    isAgent: isMarketplaceAgentRole(roleName),
+    roleName,
     name,
     city: String(user?.city || "").trim(),
     state: String(user?.state || "").trim(),
@@ -1376,17 +1400,23 @@ async function replyToInboundMessage(waId: string, text: string) {
 
     if (paused) return;
 
-    // Existing users: only greetings re-open existing_agent.
-    // Repeating Hi every minute was hitting Meta spam limits → Failed bubbles.
+    // existing_agent only for marketplace agents on Hi/Hello.
+    // Owners/builders/other verified roles use other templates — do not send this one.
     if (!greeting) return;
+    if (!account.isAgent) {
+      console.log(
+        `WhatsApp existing_agent skipped ******${String(waId).slice(-4)} role=${account.roleName || "unknown"}`,
+      );
+      return;
+    }
 
     try {
       console.log(
-        `WhatsApp realtime existing-user template ******${String(waId).slice(-4)} greeting=${greeting}`,
+        `WhatsApp realtime existing-agent template ******${String(waId).slice(-4)} role=${account.roleName} greeting=${greeting}`,
       );
       await sendExistingUserAgentTemplate(waId, account.name);
     } catch (err) {
-      console.error("WhatsApp existing-user agent template failed:", err);
+      console.error("WhatsApp existing-agent template failed:", err);
     }
   } catch (err) {
     console.error("WhatsApp inbound auto-reply failed:", err);

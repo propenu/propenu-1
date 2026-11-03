@@ -42,7 +42,11 @@ export function shouldApplyStatus(current?: string, next?: string) {
   const nxt = String(next || "").toLowerCase();
   if (!nxt) return false;
   if (cur === "failed") return nxt === "failed";
-  if (nxt === "failed") return true;
+  // Never demote a message that Meta already delivered/read to failed.
+  // (Late/duplicate failure webhooks were wiping good ticks and re-opening spam retries.)
+  if (nxt === "failed") {
+    return cur === "pending" || cur === "sent";
+  }
   return (STATUS_RANK[nxt] ?? -1) >= (STATUS_RANK[cur] ?? -1);
 }
 
@@ -71,6 +75,7 @@ function extractInboundText(message: any): { type: string; body: string } {
   if (type === "button") {
     return {
       type,
+      // Prefer visible label so "More Options" / "Search Property" match handlers.
       body: String(message?.button?.text || message?.button?.payload || "[Button]"),
     };
   }
@@ -83,7 +88,7 @@ function extractInboundText(message: any): { type: string; body: string } {
     const listTitle = String(listReply?.title || "");
     return {
       type,
-      body: String(buttonId || buttonTitle || listId || listTitle || "[Interactive]"),
+      body: String(buttonTitle || listTitle || buttonId || listId || "[Interactive]"),
     };
   }
   if (type === "image") {
@@ -247,10 +252,11 @@ export async function processWhatsAppWebhookPayload(body: any) {
               ...(existing.wamid !== wamid ? { wamid } : {}),
               ...(status === "failed"
                 ? {
-                    error:
-                      statusItem?.errors?.[0]?.title ||
-                      statusItem?.errors?.[0]?.message ||
-                      "Failed",
+                    error: (() => {
+                      const e0 = statusItem?.errors?.[0];
+                      const code = e0?.code != null ? ` (#${e0.code})` : "";
+                      return `${e0?.title || e0?.message || "Failed"}${code}`.trim();
+                    })(),
                   }
                 : {}),
             },
@@ -623,6 +629,21 @@ function isContactAgentChoice(text: string) {
   );
 }
 
+/** existing_agent template quick-reply (title or payload/id). */
+function isMoreOptionsChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[_-]+/g, " ");
+  return (
+    normalized === "more options" ||
+    normalized === "more option" ||
+    normalized === "moreoptions"
+  );
+}
+
 function chatbotMessageFromInbound(text: string) {
   const choice = matchNewUserChoice(text);
   const trimmed = String(text || "").trim();
@@ -956,6 +977,8 @@ async function sendApprovedInboxTemplate(params: {
   /** Fills Meta template body variables {{1}}, {{2}}, ... */
   bodyParams?: string[];
   dedupeHours?: number;
+  /** Skip re-send if ANY attempt (incl. failed) happened in this many minutes. */
+  attemptCooldownMinutes?: number;
 }) {
   const waId = normalizeWaId(params.waIdRaw);
   if (!waId) return false;
@@ -988,6 +1011,24 @@ async function sendApprovedInboxTemplate(params: {
       `WhatsApp template ${templateName} skipped (dedupe ${dedupeHours}h) ******${waId.slice(-4)} (${params.source})`,
     );
     return true;
+  }
+
+  const cooldownMinutes = Math.max(0, Number(params.attemptCooldownMinutes) || 0);
+  if (cooldownMinutes > 0) {
+    const coolSince = new Date(Date.now() - cooldownMinutes * 60 * 1000);
+    const recentAttempt = await WhatsAppMessage.exists({
+      waId,
+      direction: "outbound",
+      "raw.source": params.source,
+      "raw.dedupeInvalidated": { $ne: true },
+      createdAt: { $gte: coolSince },
+    });
+    if (recentAttempt) {
+      console.log(
+        `WhatsApp template ${templateName} skipped (attempt cooldown ${cooldownMinutes}m) ******${waId.slice(-4)} (${params.source})`,
+      );
+      return false;
+    }
   }
 
   const { token, phoneNumberId } = getCredentials();
@@ -1066,11 +1107,11 @@ async function sendApprovedInboxTemplate(params: {
     );
     return true;
   } catch (err: any) {
+    const metaError = err?.response?.data?.error;
+    const metaCode = metaError?.code != null ? ` (#${metaError.code})` : "";
     pending.status = "failed";
     pending.error =
-      err?.response?.data?.error?.message ||
-      err?.message ||
-      "Failed to send WhatsApp template";
+      `${metaError?.message || err?.message || "Failed to send WhatsApp template"}${metaCode}`.trim();
     pending.raw = {
       ...(pending.raw as object),
       ...(err?.response?.data || {}),
@@ -1144,8 +1185,10 @@ async function sendSearchPropertyOptionsTemplate(waIdRaw: string) {
 function existingUserDisplayName(nameRaw: string) {
   const full = String(nameRaw || "").trim().replace(/\s+/g, " ");
   if (!full) return "there";
-  const first = full.split(" ")[0] || full;
-  return first.slice(0, 60);
+  const parts = full.split(" ").filter(Boolean);
+  // Skip single-letter initials ("D V RAMANA" → "RAMANA").
+  const meaningful = parts.find((part) => part.length > 1) || parts[0] || "there";
+  return meaningful.slice(0, 60);
 }
 
 /** Approved Meta template for verified / existing Propenu users. */
@@ -1158,8 +1201,9 @@ async function sendExistingUserAgentTemplate(waIdRaw: string, nameRaw: string) {
     bodyPreview: `Hello ${name},\n\nWe have received your message on Propenu.\n\nPlease select an option below to continue with your requested assistance.`,
     bodyParams: [name],
     buttons: [{ label: "More Options", kind: "quick_reply" }],
-    // Industry: greeting menu can re-fire after a short gap, not a full day.
-    dedupeHours: 0.25,
+    // Successful send: 1h quiet. Failed Meta spam retries: 12m cooldown.
+    dedupeHours: 1,
+    attemptCooldownMinutes: 12,
   });
 }
 
@@ -1225,10 +1269,23 @@ async function replyToInboundMessage(waId: string, text: string) {
       return;
     }
 
+    // existing_agent "More Options" → session list (Buy / Rent / Contact…).
+    if (isMoreOptionsChoice(inbound)) {
+      if (paused && !account.isNew) return;
+      try {
+        console.log(
+          `WhatsApp more-options menu ******${String(waId).slice(-4)} isNew=${account.isNew}`,
+        );
+        await sendWelcomeMenu(waId);
+      } catch (err) {
+        console.error("WhatsApp more-options menu failed:", err);
+      }
+      return;
+    }
+
     // Realtime industry path: classify user immediately, then send Meta utility template.
     // New (not phone-verified) → registration template.
-    // Existing verified → existing_agent template.
-    // Greetings (hi/hello) always take this path; other text does too while AI is paused.
+    // Existing verified + Hi/Hello → existing_agent template (not every message).
     if (account.isNew) {
       if (paused) {
         await WhatsAppConversation.updateOne(
@@ -1256,6 +1313,10 @@ async function replyToInboundMessage(waId: string, text: string) {
     }
 
     if (paused) return;
+
+    // Existing users: only greetings re-open existing_agent.
+    // Repeating Hi every minute was hitting Meta spam limits → Failed bubbles.
+    if (!greeting) return;
 
     try {
       console.log(

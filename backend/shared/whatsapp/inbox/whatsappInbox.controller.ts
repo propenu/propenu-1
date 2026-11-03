@@ -9,6 +9,7 @@ import {
   processWhatsAppWebhookPayload,
   registerWhatsAppWebhookOverride,
   resolveExpectedWhatsAppWebhookUrl,
+  sendInboxMediaMessage,
   sendInboxTextMessage,
   startConversation,
   syncInboxFromWhatsAppLogs,
@@ -262,10 +263,19 @@ export async function getMessageMedia(req: AuthedRequest, res: Response) {
 export async function postMessage(req: AuthedRequest, res: Response) {
   try {
     const waId = String(req.params.waId || "");
-    const text = String(req.body?.text || req.body?.message || "");
+    const text = String(req.body?.text || req.body?.message || "").trim();
     const actorId = String(req.user?.sub || req.user?.id || "").trim();
     const isHead = canAssignInboxAgent(req.user?.roleName);
     const normalized = normalizeWaId(waId);
+    const uploaded = (
+      req as AuthedRequest & {
+        file?: {
+          buffer?: Buffer;
+          mimetype?: string;
+          originalname?: string;
+        };
+      }
+    ).file;
 
     const conversation = await WhatsAppConversation.findOne({
       waId: normalized || waId,
@@ -288,6 +298,24 @@ export async function postMessage(req: AuthedRequest, res: Response) {
       return res.status(403).json({
         success: false,
         message: "Only the assigned agent or a head can reply in this chat.",
+      });
+    }
+
+    if (uploaded?.buffer?.length) {
+      const message = await sendInboxMediaMessage({
+        waIdRaw: waId,
+        buffer: uploaded.buffer,
+        mimeType: uploaded.mimetype || "application/octet-stream",
+        fileName: uploaded.originalname || "attachment",
+        caption: text,
+      });
+      return res.status(201).json({ success: true, data: message });
+    }
+
+    if (!text) {
+      return res.status(400).json({
+        success: false,
+        message: "Message text or file is required",
       });
     }
 

@@ -2093,6 +2093,232 @@ export async function sendInboxTextMessage(
   }
 }
 
+const INBOX_MEDIA_MIME: Record<string, "image" | "document" | "video" | "audio"> = {
+  "image/jpeg": "image",
+  "image/jpg": "image",
+  "image/png": "image",
+  "image/webp": "image",
+  "application/pdf": "document",
+  "application/msword": "document",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    "document",
+  "application/vnd.ms-excel": "document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "document",
+  "video/mp4": "video",
+  "video/3gpp": "video",
+  "audio/aac": "audio",
+  "audio/mp4": "audio",
+  "audio/mpeg": "audio",
+  "audio/amr": "audio",
+  "audio/ogg": "audio",
+};
+
+function resolveInboxMediaKind(mimeTypeRaw: string, fileNameRaw: string) {
+  const mime = String(mimeTypeRaw || "").trim().toLowerCase();
+  const name = String(fileNameRaw || "").trim().toLowerCase();
+  if (INBOX_MEDIA_MIME[mime]) return INBOX_MEDIA_MIME[mime];
+  if (mime.startsWith("image/")) return "image" as const;
+  if (mime.startsWith("video/")) return "video" as const;
+  if (mime.startsWith("audio/")) return "audio" as const;
+  if (name.endsWith(".pdf") || name.endsWith(".doc") || name.endsWith(".docx")) {
+    return "document" as const;
+  }
+  return null;
+}
+
+async function uploadInboxBinaryToWhatsApp(opts: {
+  buffer: Buffer;
+  mimeType: string;
+  fileName: string;
+}) {
+  const { token, phoneNumberId } = getCredentials();
+  if (!token || !phoneNumberId) {
+    throw new Error(
+      "WhatsApp credentials are missing (WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID)",
+    );
+  }
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", opts.mimeType);
+  form.append(
+    "file",
+    new Blob([new Uint8Array(opts.buffer)], { type: opts.mimeType }),
+    opts.fileName || "upload.bin",
+  );
+  const res = await axios.post(
+    `https://graph.facebook.com/${API_VERSION}/${phoneNumberId}/media`,
+    form,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+      timeout: 120000,
+    },
+  );
+  const id = String(res.data?.id || "").trim();
+  if (!id) throw new Error("Meta media upload did not return an id");
+  return id;
+}
+
+/** Staff/agent image or document reply inside the 24h customer-care window. */
+export async function sendInboxMediaMessage(params: {
+  waIdRaw: string;
+  buffer: Buffer;
+  mimeType: string;
+  fileName?: string;
+  caption?: string;
+}) {
+  const waId = normalizeWaId(params.waIdRaw);
+  if (!waId) throw new Error("Recipient phone is required");
+  if (!params.buffer?.length) throw new Error("File is required");
+
+  const mimeType = String(params.mimeType || "application/octet-stream").trim();
+  const fileName = String(params.fileName || "attachment").trim() || "attachment";
+  const caption = String(params.caption || "").trim().slice(0, 1024);
+  const kind = resolveInboxMediaKind(mimeType, fileName);
+  if (!kind) {
+    throw new Error(
+      "Unsupported file type. Upload an image (JPG/PNG/WEBP), PDF/DOC, or MP4 video.",
+    );
+  }
+
+  const maxBytes =
+    kind === "image" ? 5 * 1024 * 1024 : kind === "video" ? 16 * 1024 * 1024 : 20 * 1024 * 1024;
+  if (params.buffer.length > maxBytes) {
+    throw new Error(
+      `File is too large. Max ${Math.round(maxBytes / (1024 * 1024))}MB for ${kind}.`,
+    );
+  }
+
+  const { token, phoneNumberId } = getCredentials();
+  if (!token || !phoneNumberId) {
+    throw new Error(
+      "WhatsApp credentials are missing (WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID)",
+    );
+  }
+
+  const lastInbound = await WhatsAppMessage.findOne({
+    waId,
+    direction: "inbound",
+  })
+    .sort({ createdAt: -1 })
+    .select("createdAt")
+    .lean();
+  const lastInboundAt = lastInbound?.createdAt
+    ? new Date(lastInbound.createdAt)
+    : null;
+  const withinCareWindow =
+    !!lastInboundAt &&
+    Date.now() - lastInboundAt.getTime() <= 24 * 60 * 60 * 1000;
+  if (!withinCareWindow) {
+    throw new Error(
+      "Image/document replies are only available inside the 24-hour WhatsApp window",
+    );
+  }
+
+  const mediaId = await uploadInboxBinaryToWhatsApp({
+    buffer: params.buffer,
+    mimeType,
+    fileName,
+  });
+
+  const preview =
+    caption ||
+    (kind === "image"
+      ? "[Image]"
+      : kind === "video"
+        ? "[Video]"
+        : kind === "audio"
+          ? "[Audio]"
+          : fileName || "[Document]");
+
+  const conversation = await upsertConversation({
+    waId,
+    preview: previewFromBody(preview),
+    direction: "outbound",
+  });
+  await WhatsAppConversation.updateOne(
+    { _id: conversation._id },
+    { $set: { origin: "cloud" } },
+  );
+
+  const pending = await WhatsAppMessage.create({
+    conversationId: conversation._id,
+    waId,
+    direction: "outbound",
+    type: kind,
+    body: preview,
+    status: "pending",
+    raw: {
+      source: "dashboard_cloud_api",
+      withinCareWindow: true,
+      [kind]: {
+        id: mediaId,
+        mime_type: mimeType,
+        ...(kind === "document" ? { filename: fileName } : {}),
+        ...(caption ? { caption } : {}),
+      },
+    },
+  });
+
+  try {
+    const payload: Record<string, unknown> = {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: waId,
+      type: kind,
+      [kind]: {
+        id: mediaId,
+        ...(caption && (kind === "image" || kind === "video" || kind === "document")
+          ? { caption }
+          : {}),
+        ...(kind === "document" ? { filename: fileName } : {}),
+      },
+    };
+    const response = await axios.post(
+      `https://graph.facebook.com/${API_VERSION}/${phoneNumberId}/messages`,
+      payload,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      },
+    );
+    pending.wamid = response.data?.messages?.[0]?.id;
+    pending.status = "sent";
+    pending.raw = {
+      ...(pending.raw as object),
+      response: response.data,
+      sendMode: kind,
+      source: "dashboard_cloud_api",
+    };
+    await pending.save();
+    whatsappInboxBus.publish({
+      type: "message",
+      waId,
+      conversationId: String(conversation._id),
+      messageId: String(pending._id),
+      direction: "outbound",
+    });
+    return pending.toObject();
+  } catch (err: any) {
+    pending.status = "failed";
+    pending.error =
+      err?.response?.data?.error?.message ||
+      err?.message ||
+      "Failed to send WhatsApp media";
+    pending.raw = {
+      ...(pending.raw as object),
+      ...(err?.response?.data || {}),
+      source: "dashboard_cloud_api",
+    };
+    await pending.save();
+    throw new Error(pending.error);
+  }
+}
+
 /** Normalize webhook URLs for equality checks (trim, strip trailing slash). */
 function normalizeWebhookUrl(url: string) {
   return String(url || "")

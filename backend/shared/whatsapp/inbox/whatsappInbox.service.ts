@@ -476,7 +476,15 @@ async function findWhatsAppAccount(waId: string) {
   if (mongoose.connection.readyState !== 1) {
     console.error("WhatsApp welcome skipped the account lookup: database is not connected");
     // Safer default: treat as new so registration template can still go out.
-    return { isNew: true, isAgent: false, roleName: "", name: "", city: "", state: "" };
+    return {
+      isNew: true,
+      isAgent: false,
+      roleName: "",
+      userId: "",
+      name: "",
+      city: "",
+      state: "",
+    };
   }
   const user = await findUserByWhatsAppPhone(waId);
   const isNew = user?.phoneVerified !== true;
@@ -497,6 +505,7 @@ async function findWhatsAppAccount(waId: string) {
     isNew,
     isAgent: isMarketplaceAgentRole(roleName),
     roleName,
+    userId: user?._id ? String(user._id) : "",
     name,
     city: String(user?.city || "").trim(),
     state: String(user?.state || "").trim(),
@@ -633,6 +642,20 @@ const CHAT_OPENING_OPTIONS = [
   "Buy Plot",
 ];
 
+/** Agent More Options menu — Post / Manage first so listing templates can run. */
+const AGENT_CHAT_OPENING_OPTIONS = [
+  "Post Property",
+  "Manage Properties",
+  "Manage My Leads",
+  "Reach Buyers & Tenants",
+  "Get Payment Support",
+  "Buy Property",
+  "Rent Property",
+  "Buy Commercial",
+  "Lease Commercial",
+  "Buy Plot",
+];
+
 const CONTACT_AGENT_ID = "contact_agent";
 const CONTACT_AGENT_LABEL = "Contact our team";
 const replyInFlight = new Set<string>();
@@ -665,6 +688,85 @@ function isMoreOptionsChoice(text: string) {
     normalized === "more options" ||
     normalized === "more option" ||
     normalized === "moreoptions"
+  );
+}
+
+/** Post Property from More Options list / account-created quick reply. */
+function isPostPropertyChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[_-]+/g, " ");
+  return (
+    normalized === "post property" ||
+    normalized === "post a property" ||
+    normalized === "postproperty"
+  );
+}
+
+/** Manage Properties from agent More Options list. */
+function isManagePropertiesChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[_-]+/g, " ");
+  return (
+    normalized === "manage properties" ||
+    normalized === "manage property" ||
+    normalized === "manage my properties" ||
+    normalized === "manage all your listed properties here"
+  );
+}
+
+/** Manage My Leads from agent More Options list. */
+function isManageMyLeadsChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[_-]+/g, " ");
+  return (
+    normalized === "manage my leads" ||
+    normalized === "manage leads" ||
+    normalized === "view your leads and follow up with interested users" ||
+    normalized === "my leads"
+  );
+}
+
+/** Reach Buyers & Tenants from agent More Options list. */
+function isReachBuyersTenantsChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s*&\s*/g, " and ");
+  return (
+    normalized === "reach buyers and tenants" ||
+    normalized === "reach buyers tenants" ||
+    normalized === "reach buyers" ||
+    normalized === "reach buyers  tenants"
+  );
+}
+
+/** Get Payment Support from agent More Options list. */
+function isGetPaymentSupportChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[_-]+/g, " ");
+  return (
+    normalized === "get payment support" ||
+    normalized === "payment support" ||
+    normalized === "get paymentsupport"
   );
 }
 
@@ -899,8 +1001,9 @@ function propertyReplyText(
   return [message, ...cards].filter(Boolean).join("\n\n").trim();
 }
 
-async function openingOptions(includeCreateAccount: boolean) {
-  return withChatOptions("What would you like to do?", CHAT_OPENING_OPTIONS, includeCreateAccount);
+async function openingOptions(includeCreateAccount: boolean, forAgent = false) {
+  const options = forAgent ? AGENT_CHAT_OPENING_OPTIONS : CHAT_OPENING_OPTIONS;
+  return withChatOptions("What would you like to do?", options, includeCreateAccount);
 }
 
 async function sendChatbotReply(waId: string, text: string) {
@@ -946,7 +1049,7 @@ async function sendWelcomeMenu(waId: string) {
   await sendWhatsAppOptionList(
     waId,
     account.isNew ? NEW_USER_WELCOME : existingUserWelcome(account.name),
-    await openingOptions(account.isNew),
+    await openingOptions(account.isNew, account.isAgent),
     account.isNew ? "new_user_welcome" : "existing_user_welcome",
   );
 }
@@ -967,6 +1070,41 @@ const SEARCH_PROPERTY_TEMPLATE = String(
 const EXISTING_USER_TEMPLATE = String(
   process.env.WHATSAPP_EXISTING_USER_TEMPLATE || "existing_agent",
 ).trim();
+
+/** Agent Post Property flow (Meta names — keep agnet_* typo as approved). */
+const AGENT_POST_PROPERTY_TEMPLATE = String(
+  process.env.WHATSAPP_AGENT_POST_PROPERTY_TEMPLATE || "post_a_property",
+).trim();
+const AGENT_NO_PLAN_LIMIT_TEMPLATE = String(
+  process.env.WHATSAPP_AGENT_NO_PLAN_LIMIT_TEMPLATE || "agnet_plans_listing_limit",
+).trim();
+const AGENT_HAS_PLAN_TEMPLATE = String(
+  process.env.WHATSAPP_AGENT_HAS_PLAN_TEMPLATE || "reach_buyers__tenants",
+).trim();
+const AGENT_PLAN_BENEFITS_TEMPLATE = String(
+  process.env.WHATSAPP_AGENT_PLAN_BENEFITS_TEMPLATE || "additional_plan_benefits_update",
+).trim();
+const AGENT_MANAGE_PROPERTIES_TEMPLATE = String(
+  process.env.WHATSAPP_AGENT_MANAGE_PROPERTIES_TEMPLATE ||
+    "manage_all_your_listed_properties_here",
+).trim();
+const AGENT_MANAGE_LEADS_TEMPLATE = String(
+  process.env.WHATSAPP_AGENT_MANAGE_LEADS_TEMPLATE ||
+    "view_your_leads_and_follow_up_with_interested_users",
+).trim();
+const AGENT_PAYMENT_SUPPORT_TEMPLATE = String(
+  process.env.WHATSAPP_AGENT_PAYMENT_SUPPORT_TEMPLATE || "get_payment_support",
+).trim();
+const AGENT_MANAGE_LEADS_URL_SUFFIX = String(
+  process.env.WHATSAPP_AGENT_MANAGE_LEADS_URL_SUFFIX || "agent/leads",
+)
+  .trim()
+  .replace(/^\/+/, "");
+const AGENT_REACH_BUYERS_URL_SUFFIX = String(
+  process.env.WHATSAPP_AGENT_REACH_BUYERS_URL_SUFFIX || "agent-plan",
+)
+  .trim()
+  .replace(/^\/+/, "");
 
 type InboxTemplateButton = {
   label: string;
@@ -1019,6 +1157,11 @@ async function sendApprovedInboxTemplate(params: {
     flowToken?: string;
     navigateScreen?: string;
   };
+  /** Dynamic URL CTA suffix, e.g. agent/leads for https://propenu.com/{{1}}. */
+  urlButton?: {
+    index?: number;
+    text: string;
+  };
   dedupeHours?: number;
   /** Skip re-send if ANY attempt (incl. failed) happened in this many minutes. */
   attemptCooldownMinutes?: number;
@@ -1042,6 +1185,15 @@ async function sendApprovedInboxTemplate(params: {
           .trim()
           .slice(0, 255),
         navigateScreen: String(params.flowButton.navigateScreen || "").trim(),
+      }
+    : null;
+  const urlButton = params.urlButton?.text
+    ? {
+        index: Math.max(0, Number(params.urlButton.index) || 0),
+        text: String(params.urlButton.text || "")
+          .trim()
+          .replace(/^\/+/, "")
+          .slice(0, 2000),
       }
     : null;
 
@@ -1118,6 +1270,7 @@ async function sendApprovedInboxTemplate(params: {
       buttons,
       bodyParams,
       ...(flowButton ? { flowButton } : {}),
+      ...(urlButton ? { urlButton } : {}),
     },
   });
 
@@ -1146,6 +1299,14 @@ async function sendApprovedInboxTemplate(params: {
             action,
           },
         ],
+      });
+    }
+    if (urlButton) {
+      components.push({
+        type: "button",
+        sub_type: "url",
+        index: String(urlButton.index),
+        parameters: [{ type: "text", text: urlButton.text }],
       });
     }
     const templatePayload: Record<string, unknown> = {
@@ -1258,6 +1419,241 @@ async function sendSearchPropertyOptionsTemplate(waIdRaw: string) {
   });
 }
 
+function planFeatureNumber(features: any, key: string) {
+  if (!features) return undefined;
+  if (typeof features.get === "function") {
+    const value = features.get(key);
+    return typeof value === "number" ? value : Number(value);
+  }
+  const value = features[key] ?? features[String(key).toLowerCase()];
+  const num = Number(value);
+  return Number.isFinite(num) ? num : undefined;
+}
+
+async function countAgentActiveListings(userId: string) {
+  if (!userId || !mongoose.Types.ObjectId.isValid(userId)) return 0;
+  const createdBy = new mongoose.Types.ObjectId(userId);
+  const filter = { createdBy, status: "active" };
+  const [resCount, comCount, landCount, agriCount] = await Promise.all([
+    mongoose.connection.collection("residentials").countDocuments(filter),
+    mongoose.connection.collection("commercials").countDocuments(filter),
+    mongoose.connection.collection("landplots").countDocuments(filter),
+    mongoose.connection.collection("agriculturals").countDocuments(filter),
+  ]);
+  return resCount + comCount + landCount + agriCount;
+}
+
+type AgentPostPlanState = {
+  hasPaidPlan: boolean;
+  hasFreePlan: boolean;
+  canPostFree: boolean;
+  planNames: string;
+};
+
+/** Active agent subscription + free listing quota for Post Property branching. */
+async function getAgentPostPlanState(userId: string): Promise<AgentPostPlanState> {
+  const empty: AgentPostPlanState = {
+    hasPaidPlan: false,
+    hasFreePlan: false,
+    canPostFree: false,
+    planNames: "",
+  };
+  if (!userId || !mongoose.Types.ObjectId.isValid(userId)) return empty;
+  if (mongoose.connection.readyState !== 1) return empty;
+
+  const now = new Date();
+  const subs = await mongoose.connection
+    .collection("subscriptions")
+    .find({
+      userId: new mongoose.Types.ObjectId(userId),
+      userType: "agent",
+      status: "active",
+      $or: [{ endDate: null }, { endDate: { $exists: false } }, { endDate: { $gt: now } }],
+    })
+    .toArray();
+  if (!subs.length) return empty;
+
+  const planCodes = [
+    ...new Set(subs.map((sub) => String(sub.planCode || "").trim()).filter(Boolean)),
+  ];
+  const plans = planCodes.length
+    ? await mongoose.connection
+        .collection("plans")
+        .find({ code: { $in: planCodes } })
+        .toArray()
+    : [];
+  const planByCode = new Map(plans.map((plan) => [String(plan.code), plan]));
+
+  let paidPlan: any = null;
+  let freePlan: any = null;
+  const names: string[] = [];
+  for (const sub of subs) {
+    const plan = planByCode.get(String(sub.planCode || ""));
+    if (!plan) continue;
+    const name = String(plan.name || plan.code || "").trim();
+    if (name && !names.includes(name)) names.push(name);
+    const tier = String(plan.tier || "").toLowerCase();
+    if (tier === "free") freePlan = plan;
+    else paidPlan = plan;
+  }
+
+  const activePlan = paidPlan || freePlan;
+  const limitRaw = planFeatureNumber(activePlan?.features, "PROPERTY_LISTING_LIMIT");
+  const limit = typeof limitRaw === "number" && Number.isFinite(limitRaw) ? limitRaw : 0;
+  const listingCount = await countAgentActiveListings(userId);
+  const underLimit = limit <= 0 ? true : listingCount < limit;
+
+  return {
+    hasPaidPlan: Boolean(paidPlan),
+    hasFreePlan: Boolean(freePlan) && !paidPlan,
+    canPostFree: Boolean(activePlan) && underLimit,
+    planNames: names.join(", ") || String(activePlan?.name || activePlan?.code || "Propenu plan"),
+  };
+}
+
+async function sendAgentPostPropertyTemplate(waIdRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName: AGENT_POST_PROPERTY_TEMPLATE || "post_a_property",
+    source: "agent_post_property_template",
+    bodyPreview:
+      "Your property submission request is ready for the next step.\n\nPlease use the link below to access the property submission page.",
+    buttons: [{ label: "Post a property", kind: "url" }],
+    dedupeHours: 0.25,
+    attemptCooldownMinutes: 5,
+  });
+}
+
+async function sendAgentManagePropertiesTemplate(waIdRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName:
+      AGENT_MANAGE_PROPERTIES_TEMPLATE || "manage_all_your_listed_properties_here",
+    source: "agent_manage_properties_template",
+    bodyPreview:
+      "Your property listings are available in your Propenu account.\n\nYou can access and review your listed properties using the link below.",
+    buttons: [{ label: "Click Here", kind: "url" }],
+    dedupeHours: 0.25,
+    attemptCooldownMinutes: 5,
+  });
+}
+
+async function sendAgentManageLeadsTemplate(waIdRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName:
+      AGENT_MANAGE_LEADS_TEMPLATE ||
+      "view_your_leads_and_follow_up_with_interested_users",
+    source: "agent_manage_leads_template",
+    bodyPreview:
+      "Your property lead details are available in your Propenu account.\n\nYou can review the interested users and their enquiry details using the option below.",
+    buttons: [{ label: "Click Here", kind: "url" }],
+    // Meta dynamic URL: https://propenu.com/{{1}} → agent/leads
+    urlButton: {
+      index: 0,
+      text: AGENT_MANAGE_LEADS_URL_SUFFIX || "agent/leads",
+    },
+    dedupeHours: 0.25,
+    attemptCooldownMinutes: 5,
+  });
+}
+
+async function sendAgentNoPlanLimitTemplate(waIdRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName: AGENT_NO_PLAN_LIMIT_TEMPLATE || "agnet_plans_listing_limit",
+    source: "agent_no_plan_limit_template",
+    bodyPreview:
+      "Your current Propenu subscription has reached its property listing limit.\n\nAdditional property listings are not available under your current plan.\n\nPlease review your subscription details using the link below.",
+    buttons: [{ label: "Click Here", kind: "url" }],
+    dedupeHours: 0.25,
+    attemptCooldownMinutes: 5,
+  });
+}
+
+async function sendAgentReachBuyersTemplate(waIdRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName: AGENT_HAS_PLAN_TEMPLATE || "reach_buyers__tenants",
+    source: "agent_reach_buyers_template",
+    bodyPreview:
+      "Your current Propenu plan details are available. Please review your plan information using the option below.",
+    buttons: [{ label: "Click Here", kind: "url" }],
+    // Meta dynamic URL: https://propenu.com/plans/pricing/{{1}} → agent-plan
+    urlButton: {
+      index: 0,
+      text: AGENT_REACH_BUYERS_URL_SUFFIX || "agent-plan",
+    },
+    dedupeHours: 0.25,
+    attemptCooldownMinutes: 5,
+  });
+}
+
+async function sendAgentPaymentSupportTemplate(waIdRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName: AGENT_PAYMENT_SUPPORT_TEMPLATE || "get_payment_support",
+    source: "agent_payment_support_template",
+    bodyPreview:
+      "Need help with a Propenu payment or invoice?\n\nUse the option below to get payment support from our team.",
+    buttons: [{ label: "Click Here", kind: "url" }],
+    dedupeHours: 0.25,
+    attemptCooldownMinutes: 5,
+  });
+}
+
+async function sendAgentHasPlanTemplates(waIdRaw: string, planNames: string) {
+  const names = sanitizeMetaTemplateParam(planNames, "Propenu plan");
+  await sendAgentReachBuyersTemplate(waIdRaw);
+  await sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName: AGENT_PLAN_BENEFITS_TEMPLATE || "additional_plan_benefits_update",
+    source: "agent_plan_benefits_template",
+    bodyPreview: `The additional Propenu plan details requested are available in your account.\n\nPlan Names: ${names}\n\nYou can access the plan details and included benefits using the link below.`,
+    bodyParams: [names],
+    buttons: [{ label: "Click Here", kind: "url" }],
+    dedupeHours: 0.25,
+    attemptCooldownMinutes: 5,
+  });
+}
+
+/**
+ * Agent taps Post Property (More Options):
+ * - Free plan + remaining quota → post_a_property
+ * - No plan / free quota used up → agnet_plans_listing_limit
+ * - Paid plan → reach_buyers__tenants + additional_plan_benefits_update
+ */
+async function handleAgentPostPropertyFlow(waId: string, account: {
+  userId: string;
+  isAgent: boolean;
+}) {
+  if (!account.isAgent || !account.userId) return false;
+  const state = await getAgentPostPlanState(account.userId);
+  console.log(
+    `WhatsApp agent Post Property ******${String(waId).slice(-4)} paid=${state.hasPaidPlan} free=${state.hasFreePlan} canPost=${state.canPostFree}`,
+  );
+
+  if (state.hasPaidPlan) {
+    await sendAgentHasPlanTemplates(waId, state.planNames);
+    if (state.canPostFree) {
+      try {
+        await sendAgentPostPropertyTemplate(waId);
+      } catch (err) {
+        console.error("WhatsApp agent post_a_property after paid plan failed:", err);
+      }
+    }
+    return true;
+  }
+
+  if (state.canPostFree) {
+    await sendAgentPostPropertyTemplate(waId);
+    return true;
+  }
+
+  await sendAgentNoPlanLimitTemplate(waId);
+  return true;
+}
+
 function existingUserDisplayName(nameRaw: string) {
   const full = String(nameRaw || "").trim().replace(/\s+/g, " ");
   if (!full) return "there";
@@ -1365,6 +1761,90 @@ async function replyToInboundMessage(waId: string, text: string) {
         await sendWelcomeMenu(waId);
       } catch (err) {
         console.error("WhatsApp more-options menu failed:", err);
+      }
+      return;
+    }
+
+    // Agent Manage Properties (More Options) → manage listings template.
+    if (isManagePropertiesChoice(inbound)) {
+      if (paused && !account.isNew) return;
+      if (!account.isAgent) return;
+      try {
+        console.log(
+          `WhatsApp agent Manage Properties ******${String(waId).slice(-4)}`,
+        );
+        await sendAgentManagePropertiesTemplate(waId);
+      } catch (err) {
+        console.error("WhatsApp agent Manage Properties template failed:", err);
+      }
+      return;
+    }
+
+    // Agent Manage My Leads (More Options) → leads follow-up template.
+    if (isManageMyLeadsChoice(inbound)) {
+      if (paused && !account.isNew) return;
+      if (!account.isAgent) return;
+      try {
+        console.log(
+          `WhatsApp agent Manage My Leads ******${String(waId).slice(-4)}`,
+        );
+        await sendAgentManageLeadsTemplate(waId);
+      } catch (err) {
+        console.error("WhatsApp agent Manage My Leads template failed:", err);
+      }
+      return;
+    }
+
+    // Agent Reach Buyers & Tenants (More Options) → plan pricing template.
+    if (isReachBuyersTenantsChoice(inbound)) {
+      if (paused && !account.isNew) return;
+      if (!account.isAgent) return;
+      try {
+        console.log(
+          `WhatsApp agent Reach Buyers & Tenants ******${String(waId).slice(-4)}`,
+        );
+        await sendAgentReachBuyersTemplate(waId);
+      } catch (err) {
+        console.error("WhatsApp agent Reach Buyers template failed:", err);
+      }
+      return;
+    }
+
+    // Agent Get Payment Support (More Options) → payment support template.
+    if (isGetPaymentSupportChoice(inbound)) {
+      if (paused && !account.isNew) return;
+      if (!account.isAgent) return;
+      try {
+        console.log(
+          `WhatsApp agent Get Payment Support ******${String(waId).slice(-4)}`,
+        );
+        await sendAgentPaymentSupportTemplate(waId);
+      } catch (err) {
+        console.error("WhatsApp agent Get Payment Support template failed:", err);
+      }
+      return;
+    }
+
+    // Agent Post Property (More Options / account-created button) → plan/limit templates.
+    if (isPostPropertyChoice(inbound)) {
+      if (paused && !account.isNew) return;
+      if (account.isAgent) {
+        try {
+          await handleAgentPostPropertyFlow(waId, account);
+        } catch (err) {
+          console.error("WhatsApp agent Post Property flow failed:", err);
+        }
+        return;
+      }
+      // Non-agents: keep a simple post link session reply.
+      try {
+        const content = newUserChoiceContent("post_property");
+        await sendInboxTextMessage(waId, `${content.text}\n${content.url}`, {
+          source: "post_property_link",
+          sessionTextOnly: true,
+        });
+      } catch (err) {
+        console.error("WhatsApp post property link failed:", err);
       }
       return;
     }

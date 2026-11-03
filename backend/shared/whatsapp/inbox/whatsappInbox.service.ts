@@ -1178,6 +1178,25 @@ const OWNER_POST_PROPERTY_MORE_TEMPLATE = String(
   process.env.WHATSAPP_OWNER_POST_PROPERTY_MORE_TEMPLATE ||
     "owner_post_property__more_options",
 ).trim();
+/**
+ * Optional dynamic URL suffixes for owner follow-up templates.
+ * Default empty — only set env if Meta template URL uses {{1}}.
+ * Do not combine with FLOW unless the Meta template has both.
+ */
+const OWNER_BUY_URL_SUFFIX = String(process.env.WHATSAPP_OWNER_BUY_URL_SUFFIX || "")
+  .trim()
+  .replace(/^\/+/, "");
+const OWNER_RENT_URL_SUFFIX = String(process.env.WHATSAPP_OWNER_RENT_URL_SUFFIX || "")
+  .trim()
+  .replace(/^\/+/, "");
+const OWNER_POST_PROPERTY_MORE_URL_SUFFIX = String(
+  process.env.WHATSAPP_OWNER_POST_PROPERTY_MORE_URL_SUFFIX || "",
+)
+  .trim()
+  .replace(/^\/+/, "");
+/** Set to "0" to skip FLOW params on owner follow-up templates. */
+const OWNER_FOLLOWUP_USE_FLOW =
+  String(process.env.WHATSAPP_OWNER_FOLLOWUP_USE_FLOW || "1").trim() !== "0";
 
 /** Agent Post Property flow (Meta names — keep agnet_* typo as approved). */
 const AGENT_POST_PROPERTY_TEMPLATE = String(
@@ -1323,6 +1342,11 @@ async function sendApprovedInboxTemplate(params: {
     index?: number;
     text: string;
   };
+  /** Multiple dynamic URL CTAs (Buy + Rent, etc.). */
+  urlButtons?: Array<{
+    index?: number;
+    text: string;
+  }>;
   dedupeHours?: number;
   /** Skip re-send if ANY attempt (incl. failed) happened in this many minutes. */
   attemptCooldownMinutes?: number;
@@ -1348,15 +1372,32 @@ async function sendApprovedInboxTemplate(params: {
         navigateScreen: String(params.flowButton.navigateScreen || "").trim(),
       }
     : null;
-  const urlButton = params.urlButton?.text
-    ? {
-        index: Math.max(0, Number(params.urlButton.index) || 0),
-        text: String(params.urlButton.text || "")
+  const urlButtons = [
+    ...(params.urlButton?.text
+      ? [
+          {
+            index: Math.max(0, Number(params.urlButton.index) || 0),
+            text: String(params.urlButton.text || "")
+              .trim()
+              .replace(/^\/+/, "")
+              .slice(0, 2000),
+          },
+        ]
+      : []),
+    ...(params.urlButtons || [])
+      .map((item, i) => {
+        const text = String(item?.text || "")
           .trim()
           .replace(/^\/+/, "")
-          .slice(0, 2000),
-      }
-    : null;
+          .slice(0, 2000);
+        if (!text) return null;
+        return {
+          index: Math.max(0, Number(item.index) || i),
+          text,
+        };
+      })
+      .filter(Boolean),
+  ] as Array<{ index: number; text: string }>;
 
   const templateLang =
     String(process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en").trim() || "en";
@@ -1432,7 +1473,7 @@ async function sendApprovedInboxTemplate(params: {
       buttons,
       bodyParams,
       ...(flowButton ? { flowButton } : {}),
-      ...(urlButton ? { urlButton } : {}),
+      ...(urlButtons.length ? { urlButtons } : {}),
     },
   });
 
@@ -1463,7 +1504,7 @@ async function sendApprovedInboxTemplate(params: {
         ],
       });
     }
-    if (urlButton) {
+    for (const urlButton of urlButtons) {
       components.push({
         type: "button",
         sub_type: "url",
@@ -1933,7 +1974,14 @@ async function sendExistingUserOwnerTemplate(waIdRaw: string, nameRaw: string) {
   });
 }
 
+/**
+ * Owner Buy / Rent & Explore follow-up.
+ * Meta `owner_buy__rent__explore_more_options` → (#131009) without FLOW token
+ * (same class of error as existing_agent). No navigate_screen (avoids invalid screen).
+ * Optional URL suffixes only via env if Meta also has dynamic URL buttons.
+ */
 async function sendOwnerBuyRentExploreTemplate(waIdRaw: string) {
+  const waId = normalizeWaId(waIdRaw);
   return sendApprovedInboxTemplate({
     waIdRaw,
     templateName:
@@ -1945,12 +1993,33 @@ async function sendOwnerBuyRentExploreTemplate(waIdRaw: string) {
       { label: "Buy Property", kind: "url" },
       { label: "Rent Property", kind: "url" },
     ],
+    ...(OWNER_FOLLOWUP_USE_FLOW
+      ? {
+          flowButton: {
+            index: 0,
+            flowToken: `owner_buy_rent_explore:${waId}:${Date.now()}`,
+          },
+        }
+      : {}),
+    urlButtons: [
+      ...(OWNER_BUY_URL_SUFFIX
+        ? [{ index: 0, text: OWNER_BUY_URL_SUFFIX }]
+        : []),
+      ...(OWNER_RENT_URL_SUFFIX
+        ? [{ index: 1, text: OWNER_RENT_URL_SUFFIX }]
+        : []),
+    ],
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
 }
 
+/**
+ * Owner Post Property & More follow-up.
+ * Meta `owner_post_property__more_options` → (#131009) without FLOW token.
+ */
 async function sendOwnerPostPropertyMoreTemplate(waIdRaw: string) {
+  const waId = normalizeWaId(waIdRaw);
   return sendApprovedInboxTemplate({
     waIdRaw,
     templateName:
@@ -1959,6 +2028,15 @@ async function sendOwnerPostPropertyMoreTemplate(waIdRaw: string) {
     bodyPreview:
       "Continue with posting your property on Propenu using the option below.",
     buttons: [{ label: "Post a property", kind: "url" }],
+    ...(OWNER_FOLLOWUP_USE_FLOW
+      ? {
+          flowButton: {
+            index: 0,
+            flowToken: `owner_post_property_more:${waId}:${Date.now()}`,
+          },
+        }
+      : {}),
+    ...optionalUrlButton(OWNER_POST_PROPERTY_MORE_URL_SUFFIX),
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });

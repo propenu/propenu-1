@@ -323,12 +323,21 @@ export const promoteProperty = async (req: AuthRequest, res: Response) => {
 export const renewPromotion = async (req: AuthRequest, res: Response) => {
   try {
     const { type, days, visibleLeadLimit } = req.body;
-    const renewalDays = typeof days === "number" ? days : 10;
+    const parsedDays = Math.trunc(Number(days ?? 10));
+    const renewalDays =
+      Number.isFinite(parsedDays) && parsedDays > 0 ? parsedDays : NaN;
 
     if (!Number.isFinite(renewalDays) || renewalDays <= 0) {
       return res.status(400).json({
         success: false,
         message: "Renewal days must be a positive number",
+      });
+    }
+
+    if (renewalDays > 365) {
+      return res.status(400).json({
+        success: false,
+        message: "Renewal days cannot exceed 365",
       });
     }
 

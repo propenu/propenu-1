@@ -151,12 +151,15 @@ export const promoteProperty = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    const parsedPromoteDays =
+      days == null || days === ""
+        ? null
+        : Math.trunc(Number(days));
     if (
-      days != null &&
-      (typeof days !== "number" ||
-        !Number.isFinite(days) ||
-        days <= 0 ||
-        days > MAX_PROMOTION_DAYS)
+      parsedPromoteDays != null &&
+      (!Number.isFinite(parsedPromoteDays) ||
+        parsedPromoteDays <= 0 ||
+        parsedPromoteDays > MAX_PROMOTION_DAYS)
     ) {
       return res.status(400).json({
         success: false,
@@ -226,7 +229,10 @@ export const promoteProperty = async (req: AuthRequest, res: Response) => {
         startDate = requested;
       }
     }
-    const durationDays = typeof days === "number" ? days : 10;
+    const durationDays =
+      parsedPromoteDays != null && Number.isFinite(parsedPromoteDays)
+        ? parsedPromoteDays
+        : 10;
     promotion.startDate = startDate;
     if (type !== "normal") {
       promotion.boostExpiry = new Date(

@@ -31,8 +31,8 @@ const FORCE_MANUAL_PROMOTION_ROLES = new Set([
 ]);
 
 /**
- * Super Admin, Admin, and main heads may renew or extend promotions directly
- * without a paid Builder Plans invoice (manual override for production ops).
+ * Super Admin, Admin, and main heads may promote, renew, or set Normal
+ * directly without a paid Builder Plans invoice (manual override for ops).
  */
 export function canForceManualPromotion(roleName?: string | null) {
   return FORCE_MANUAL_PROMOTION_ROLES.has(normalizeRoleName(roleName));

@@ -125,6 +125,12 @@ export function describePackage(pkg: PlanPackage) {
   return pkg.sponsoredEnabled ? "Sponsored" : "Listing only";
 }
 
+export function planWithLabel(title?: string, label?: string, fallback = "Builder plan") {
+  const name = String(title || "").trim() || fallback;
+  const detail = String(label || "").trim();
+  return detail ? `${name} (${detail})` : name;
+}
+
 export function isProjectApproved(project: any) {
   const status = String(project?.status || "").toLowerCase();
   if (["inactive", "deleted", "draft", "rejected", "archived"].includes(status)) return false;
@@ -394,6 +400,7 @@ export async function applyPlanPromotion(
     actor?: PlanActor | undefined;
     override?: CoverageOverride | undefined;
     reason?: string | undefined;
+    visibleLeadLimit?: number | undefined;
   },
 ): Promise<{ ok: true; scheduled: boolean } | { ok: false; code: string; message: string }> {
   const type = packageMainType(active.pkg);
@@ -409,6 +416,10 @@ export async function applyPlanPromotion(
   const scheduled = startDate.getTime() > now.getTime() + 30_000;
   const previousType = project.promotion?.type || "normal";
   const isMain = type === "prime" || type === "featured";
+  const visibleLeadLimit =
+    opts.visibleLeadLimit !== undefined
+      ? Math.max(0, Math.trunc(Number(opts.visibleLeadLimit) || 0))
+      : active.pkg.visibleLeadLimit;
 
   const promotion = {
     type,
@@ -416,7 +427,7 @@ export async function applyPlanPromotion(
     source: "subscription" as const,
     startDate,
     boostExpiry: active.periodEnd,
-    visibleLeadLimit: active.pkg.visibleLeadLimit,
+    visibleLeadLimit,
     enquiryLimit: 0,
     enquiriesUsed: 0,
     mainCoverage: isMain ? coverage.mainCoverage : {},
@@ -688,6 +699,75 @@ export async function syncAllPlanPromotions() {
     }
   }
   return processed;
+}
+
+/** Renew / apply promotion using a specific paid invoice already on this project. */
+export async function renewWithExistingInvoice(
+  projectId: string,
+  invoiceId: string,
+  actor: PlanActor,
+): Promise<
+  | { ok: true; scheduled: boolean; end: Date; invoiceNumber?: string }
+  | { ok: false; message: string }
+> {
+  const project: any = await FeaturedProject.findById(projectId);
+  if (!project) return { ok: false, message: "Project not found" };
+  if (!isProjectApproved(project)) {
+    return {
+      ok: false,
+      message: "Approve the project first. Only Active / Approved projects can be promoted.",
+    };
+  }
+
+  const invoice: any = await BuilderInvoiceRead.findById(invoiceId).lean();
+  if (!invoice || String(invoice.propertyId) !== String(projectId)) {
+    return { ok: false, message: "Invoice not found for this project" };
+  }
+  if (invoice.paymentStatus !== "paid") {
+    return { ok: false, message: "Only paid invoices can renew a promotion." };
+  }
+  if (invoice.promotionStatus === "cancelled") {
+    return { ok: false, message: "This invoice is cancelled. Reuse it first." };
+  }
+
+  const planDoc =
+    invoice.servicePlanId && !invoice.planSnapshot
+      ? await BuilderPlanRead.findById(invoice.servicePlanId).lean()
+      : null;
+  const pkg = packageFromInvoice(invoice, planDoc);
+  const start = invoiceStart(invoice);
+  const end = invoice.endDate
+    ? new Date(invoice.endDate)
+    : new Date(start.getTime() + pkg.durationDays * DAY_MS);
+  if (end.getTime() <= Date.now()) {
+    return {
+      ok: false,
+      message: "This invoice period has ended. Create a new invoice to promote again.",
+    };
+  }
+
+  const active: ActivePlan = {
+    invoice,
+    pkg,
+    periodStart: start,
+    periodEnd: end,
+    chain: [{ id: String(invoice._id), start, end }],
+    chainIds: [String(invoice._id)],
+  };
+
+  if (!project.promotionMode) project.promotionMode = "plan";
+  const result = await applyPlanPromotion(project, active, {
+    deliveryMode: "plan",
+    actor,
+    reason: `Renewed with ${invoice.invoiceNumber || "invoice"} (${describePackage(pkg)})`,
+  });
+  if (!result.ok) return { ok: false, message: result.message };
+  return {
+    ok: true,
+    scheduled: result.scheduled,
+    end,
+    invoiceNumber: invoice.invoiceNumber,
+  };
 }
 
 export async function getProjectPlanStatus(projectId: string) {

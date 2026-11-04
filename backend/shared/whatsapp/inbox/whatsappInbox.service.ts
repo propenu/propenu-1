@@ -860,6 +860,36 @@ function isOwnerPostPropertyMoreChoice(text: string) {
   );
 }
 
+/** Owner explore CTA: Buy a Property → buy_a_property. */
+function isOwnerBuyAPropertyChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[_-]+/g, " ");
+  return (
+    normalized === "buy a property" ||
+    normalized === "buy property" ||
+    normalized === "buy aproperty"
+  );
+}
+
+/** Owner explore CTA: Rent a Property → rent_a_property. */
+function isOwnerRentAPropertyChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[_-]+/g, " ");
+  return (
+    normalized === "rent a property" ||
+    normalized === "rent property" ||
+    normalized === "rent aproperty"
+  );
+}
+
 function chatbotMessageFromInbound(text: string) {
   const choice = matchNewUserChoice(text);
   const trimmed = String(text || "").trim();
@@ -1178,10 +1208,17 @@ const OWNER_POST_PROPERTY_MORE_TEMPLATE = String(
   process.env.WHATSAPP_OWNER_POST_PROPERTY_MORE_TEMPLATE ||
     "owner_post_property__more_options",
 ).trim();
+const OWNER_BUY_A_PROPERTY_TEMPLATE = String(
+  process.env.WHATSAPP_OWNER_BUY_A_PROPERTY_TEMPLATE || "buy_a_property",
+).trim();
+const OWNER_RENT_A_PROPERTY_TEMPLATE = String(
+  process.env.WHATSAPP_OWNER_RENT_A_PROPERTY_TEMPLATE || "rent_a_property",
+).trim();
 /**
- * Optional dynamic URL suffixes for owner follow-up templates.
- * Default empty — only set env if Meta template URL uses {{1}}.
- * Do not combine with FLOW unless the Meta template has both.
+ * Optional dynamic URL suffixes — only set env when Meta template URL uses {{1}}.
+ * Explore CTAs are quick-replies (Buy a Property / Rent a Property) that trigger
+ * buy_a_property / rent_a_property — do NOT send FLOW/URL params on explore
+ * (wrong params → #131009 / #132018).
  */
 const OWNER_BUY_URL_SUFFIX = String(process.env.WHATSAPP_OWNER_BUY_URL_SUFFIX || "")
   .trim()
@@ -1194,9 +1231,16 @@ const OWNER_POST_PROPERTY_MORE_URL_SUFFIX = String(
 )
   .trim()
   .replace(/^\/+/, "");
-/** Set to "0" to skip FLOW params on owner follow-up templates. */
-const OWNER_FOLLOWUP_USE_FLOW =
-  String(process.env.WHATSAPP_OWNER_FOLLOWUP_USE_FLOW || "1").trim() !== "0";
+const OWNER_BUY_A_PROPERTY_URL_SUFFIX = String(
+  process.env.WHATSAPP_OWNER_BUY_A_PROPERTY_URL_SUFFIX || "",
+)
+  .trim()
+  .replace(/^\/+/, "");
+const OWNER_RENT_A_PROPERTY_URL_SUFFIX = String(
+  process.env.WHATSAPP_OWNER_RENT_A_PROPERTY_URL_SUFFIX || "",
+)
+  .trim()
+  .replace(/^\/+/, "");
 
 /** Agent Post Property flow (Meta names — keep agnet_* typo as approved). */
 const AGENT_POST_PROPERTY_TEMPLATE = String(
@@ -1976,12 +2020,11 @@ async function sendExistingUserOwnerTemplate(waIdRaw: string, nameRaw: string) {
 
 /**
  * Owner Buy / Rent & Explore follow-up.
- * Meta `owner_buy__rent__explore_more_options` → (#131009) without FLOW token
- * (same class of error as existing_agent). No navigate_screen (avoids invalid screen).
- * Optional URL suffixes only via env if Meta also has dynamic URL buttons.
+ * Quick-reply CTAs: "Buy a Property" / "Rent a Property" → handled inbound as
+ * buy_a_property / rent_a_property. Send with no FLOW / no URL params by default
+ * (same safe pattern as search-property + post_a_property).
  */
 async function sendOwnerBuyRentExploreTemplate(waIdRaw: string) {
-  const waId = normalizeWaId(waIdRaw);
   return sendApprovedInboxTemplate({
     waIdRaw,
     templateName:
@@ -1990,17 +2033,9 @@ async function sendOwnerBuyRentExploreTemplate(waIdRaw: string) {
     bodyPreview:
       "Explore Propenu buy and rent options. Please choose an option below to continue.",
     buttons: [
-      { label: "Buy Property", kind: "url" },
-      { label: "Rent Property", kind: "url" },
+      { label: "Buy a Property", kind: "quick_reply" },
+      { label: "Rent a Property", kind: "quick_reply" },
     ],
-    ...(OWNER_FOLLOWUP_USE_FLOW
-      ? {
-          flowButton: {
-            index: 0,
-            flowToken: `owner_buy_rent_explore:${waId}:${Date.now()}`,
-          },
-        }
-      : {}),
     urlButtons: [
       ...(OWNER_BUY_URL_SUFFIX
         ? [{ index: 0, text: OWNER_BUY_URL_SUFFIX }]
@@ -2016,10 +2051,10 @@ async function sendOwnerBuyRentExploreTemplate(waIdRaw: string) {
 
 /**
  * Owner Post Property & More follow-up.
- * Meta `owner_post_property__more_options` → (#131009) without FLOW token.
+ * Static CTA by default (same pattern as post_a_property) — no FLOW / no URL param
+ * unless env opt-in is set (avoids #131009 / #132018).
  */
 async function sendOwnerPostPropertyMoreTemplate(waIdRaw: string) {
-  const waId = normalizeWaId(waIdRaw);
   return sendApprovedInboxTemplate({
     waIdRaw,
     templateName:
@@ -2028,15 +2063,37 @@ async function sendOwnerPostPropertyMoreTemplate(waIdRaw: string) {
     bodyPreview:
       "Continue with posting your property on Propenu using the option below.",
     buttons: [{ label: "Post a property", kind: "url" }],
-    ...(OWNER_FOLLOWUP_USE_FLOW
-      ? {
-          flowButton: {
-            index: 0,
-            flowToken: `owner_post_property_more:${waId}:${Date.now()}`,
-          },
-        }
-      : {}),
     ...optionalUrlButton(OWNER_POST_PROPERTY_MORE_URL_SUFFIX),
+    dedupeHours: 0.25,
+    attemptCooldownMinutes: 5,
+  });
+}
+
+/** Owner tapped Buy a Property on explore template. */
+async function sendOwnerBuyAPropertyTemplate(waIdRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName: OWNER_BUY_A_PROPERTY_TEMPLATE || "buy_a_property",
+    source: "owner_buy_a_property_template",
+    bodyPreview:
+      "Your property buy request is ready. Please use the option below to continue exploring properties to buy.",
+    buttons: [{ label: "Buy a Property", kind: "url" }],
+    ...optionalUrlButton(OWNER_BUY_A_PROPERTY_URL_SUFFIX),
+    dedupeHours: 0.25,
+    attemptCooldownMinutes: 5,
+  });
+}
+
+/** Owner tapped Rent a Property on explore template. */
+async function sendOwnerRentAPropertyTemplate(waIdRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName: OWNER_RENT_A_PROPERTY_TEMPLATE || "rent_a_property",
+    source: "owner_rent_a_property_template",
+    bodyPreview:
+      "Your property rent request is ready. Please use the option below to continue exploring properties to rent.",
+    buttons: [{ label: "Rent a Property", kind: "url" }],
+    ...optionalUrlButton(OWNER_RENT_A_PROPERTY_URL_SUFFIX),
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
@@ -2073,6 +2130,8 @@ export async function reopenWhatsAppChatForDeletedPhone(phoneRaw: string) {
           "existing_user_owner_template",
           "owner_buy_rent_explore_template",
           "owner_post_property_more_template",
+          "owner_buy_a_property_template",
+          "owner_rent_a_property_template",
         ],
       },
       "raw.dedupeInvalidated": { $ne: true },
@@ -2156,6 +2215,32 @@ async function replyToInboundMessage(waId: string, text: string) {
         await sendOwnerPostPropertyMoreTemplate(waId);
       } catch (err) {
         console.error("WhatsApp owner Post Property & More template failed:", err);
+      }
+      return;
+    }
+
+    // Owner explore CTA: Buy a Property → buy_a_property
+    if (isOwnerBuyAPropertyChoice(inbound) && account.isOwner) {
+      try {
+        console.log(
+          `WhatsApp owner Buy a Property ******${String(waId).slice(-4)}`,
+        );
+        await sendOwnerBuyAPropertyTemplate(waId);
+      } catch (err) {
+        console.error("WhatsApp owner buy_a_property template failed:", err);
+      }
+      return;
+    }
+
+    // Owner explore CTA: Rent a Property → rent_a_property
+    if (isOwnerRentAPropertyChoice(inbound) && account.isOwner) {
+      try {
+        console.log(
+          `WhatsApp owner Rent a Property ******${String(waId).slice(-4)}`,
+        );
+        await sendOwnerRentAPropertyTemplate(waId);
+      } catch (err) {
+        console.error("WhatsApp owner rent_a_property template failed:", err);
       }
       return;
     }

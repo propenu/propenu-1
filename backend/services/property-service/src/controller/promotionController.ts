@@ -142,12 +142,21 @@ export const promoteProperty = async (req: AuthRequest, res: Response) => {
       mainCoverage,
       sponsoredEnabled,
       sponsoredSameAsMain,
+      basis,
     } = req.body;
 
     if (!type || !ALLOWED_TYPES.includes(type)) {
       return res.status(400).json({
         success: false,
         message: "Invalid promotion type",
+      });
+    }
+
+    const isDemo = basis === "demo" && type !== "normal";
+    if (isDemo && !canForceManualPromotion(req.user?.roleName)) {
+      return res.status(403).json({
+        success: false,
+        message: "Demo promotions can only be started by Super Admin or a main head",
       });
     }
 
@@ -232,8 +241,11 @@ export const promoteProperty = async (req: AuthRequest, res: Response) => {
     const durationDays =
       parsedPromoteDays != null && Number.isFinite(parsedPromoteDays)
         ? parsedPromoteDays
-        : 30;
+        : isDemo
+          ? 7
+          : 30;
     promotion.startDate = startDate;
+    if (type !== "normal") promotion.basis = isDemo ? "demo" : "invoice";
     if (type !== "normal") {
       promotion.boostExpiry = new Date(
         startDate.getTime() + durationDays * 24 * 60 * 60 * 1000,
@@ -267,13 +279,14 @@ export const promoteProperty = async (req: AuthRequest, res: Response) => {
     promotion.promotedBy = buildPromotedBy(req);
 
     const label = describePromotion(promotion);
+    const demoSuffix = isDemo ? ` (demo, ${durationDays} day${durationDays === 1 ? "" : "s"})` : "";
     appendPromotionHistory(
       property,
       req,
       promotion,
       isScheduled
-        ? `Promotion scheduled as ${label}`
-        : `Promotion changed to ${label}`,
+        ? `Promotion scheduled as ${label}${demoSuffix}`
+        : `Promotion changed to ${label}${demoSuffix}`,
     );
 
     const replacedPlanInvoiceId = planInvoiceIdOf(property.promotion);
@@ -325,8 +338,12 @@ export const promoteProperty = async (req: AuthRequest, res: Response) => {
     return res.status(200).json({
       success: true,
       message: isScheduled
-        ? "Promotion scheduled"
-        : "Property promoted successfully",
+        ? isDemo
+          ? "Demo promotion scheduled"
+          : "Promotion scheduled"
+        : isDemo
+          ? `Demo promotion started for ${durationDays} day${durationDays === 1 ? "" : "s"}`
+          : "Property promoted successfully",
       data: property,
     });
   } catch (err) {
@@ -422,6 +439,7 @@ export const renewPromotion = async (req: AuthRequest, res: Response) => {
         baseDate.getTime() + renewalDays * 24 * 60 * 60 * 1000,
       ),
       promotedBy: buildPromotedBy(req),
+      basis: currentPromotion.basis === "demo" && !previousPlanInvoiceId ? "demo" : "invoice",
     };
     if (keepPlacement) {
       promotion.mainCoverage = cloneCoverage(currentPromotion.mainCoverage);

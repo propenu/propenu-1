@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { Types } from "mongoose";
-import { BuilderInvoice } from "../models/builderInvoiceModel";
+import { BuilderInvoice, INVOICE_PAYMENT_METHODS } from "../models/builderInvoiceModel";
 import User from "../../../user-service/src/models/userModel";
 import FeaturedProject from "../../../user-service/src/models/featurePropertiesModel";
 import { BuilderPlan } from "../models/builderPlanModel";
@@ -18,7 +18,7 @@ function getRoleNameFromUser(user: any) {
   return undefined;
 }
 
-function buildBuilderDetails(user: any) {
+export function buildBuilderDetails(user: any) {
   return {
     name: user?.name,
     companyName: user?.companyName,
@@ -81,7 +81,7 @@ function readDeliveryMode(value: unknown, fallback: "auto" | "team") {
 }
 
 /** A new paid period for a project that is still covered starts when the current one ends. */
-async function resolveRenewalWindow(params: {
+export async function resolveRenewalWindow(params: {
   propertyId: string;
   durationDays: number;
   requestedStart: Date;
@@ -104,7 +104,7 @@ async function resolveRenewalWindow(params: {
   };
 }
 
-async function resolveInvoiceDependencies(params: {
+export async function resolveInvoiceDependencies(params: {
   userId?: string;
   propertyId?: string;
   servicePlanId?: string;
@@ -746,7 +746,7 @@ export async function getBuilderSpendSummary(req: Request, res: Response) {
   }
 }
 
-const PAYMENT_METHODS = ["razorpay", "upi", "card", "netbanking", "cheque", "cash"];
+const PAYMENT_METHODS: readonly string[] = INVOICE_PAYMENT_METHODS;
 
 /** New invoice for the same project and plan as an old one; it starts when the current paid period ends. */
 export async function renewBuilderInvoice(req: AuthRequest, res: Response) {
@@ -875,8 +875,12 @@ export async function updateBuilderInvoice(req: AuthRequest, res: Response) {
       promotionStartedAt: _ignoredStarted,
       promotionEndedAt: _ignoredEnded,
       renewalOf: _ignoredRenewal,
+      payments: _ignoredPayments,
+      proformaId: _ignoredProforma,
+      proformaNumber: _ignoredProformaNumber,
       ...body
     } = req.body || {};
+    const hasRecordedPayments = Array.isArray((invoice as any).payments) && (invoice as any).payments.length > 0;
     const planChanged = String((invoice as any).servicePlanId) !== String(resolved.planDoc._id);
     const snapshot =
       planChanged || !(invoice as any).planSnapshot
@@ -936,12 +940,13 @@ export async function updateBuilderInvoice(req: AuthRequest, res: Response) {
       gstRate: toNumberOrUndefined(req.body.gstRate) ?? (invoice as any).gstRate ?? 0,
       gstAmount:
         toNumberOrUndefined(req.body.gstAmount) ?? (invoice as any).gstAmount ?? 0,
-      paidAmount:
-        toNumberOrUndefined(req.body.paidAmount) ??
-        (invoice as any).paidAmount ??
-        (invoice as any).totalAmount ??
-        resolved.planDoc.finalPrice ??
-        resolved.planDoc.price,
+      paidAmount: hasRecordedPayments
+        ? (invoice as any).paidAmount
+        : toNumberOrUndefined(req.body.paidAmount) ??
+          (invoice as any).paidAmount ??
+          (invoice as any).totalAmount ??
+          resolved.planDoc.finalPrice ??
+          resolved.planDoc.price,
     });
     await invoice.save();
 

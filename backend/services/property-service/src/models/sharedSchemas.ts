@@ -201,6 +201,8 @@ export interface IPromotion {
   };
   /** auto: started by the plan sync · plan: one-button start from a plan · manual: set directly. */
   deliveryMode?: "auto" | "plan" | "manual" | undefined;
+  /** demo: free trial run by Super Admin / main heads, no invoice behind it. */
+  basis?: "invoice" | "demo" | undefined;
   /** Builder plan invoice that pays for this promotion (source "subscription"). */
   plan?: {
     invoiceId?: Types.ObjectId | undefined;
@@ -295,6 +297,11 @@ export const PromotionSchema = new Schema(
     deliveryMode: {
       type: String,
       enum: ["auto", "plan", "manual"],
+    },
+
+    basis: {
+      type: String,
+      enum: ["invoice", "demo"],
     },
 
     plan: {

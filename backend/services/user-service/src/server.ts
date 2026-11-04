@@ -11,6 +11,7 @@ import seedRolesRoute from "./routes/seedRolesRoute";
 import shortlistRoutes from "./routes/shortlistRoute";
 import roleRoute from "./routes/roleRoute";
 import userRoutes from "./routes/userRoutes";
+import festivalIconRoute from "./routes/festivalIconRoute";
 import { startNotificationJob } from "./jobs/notification.job";
 import { startEmailJob } from "./jobs/email.job";
 import emailRouter from "./routes/emailRoute";
@@ -98,6 +99,7 @@ async function start() {
       res.json({ message: "User Service is running" });
     });
 
+    app.use("/api/users/festival-icon", festivalIconRoute);
     app.use("/api/users/auth", authRoute);
     app.use("/api/users/field-meetings", fieldMeetingRoute);
     app.use("/api/users/location", nominatimRoute);

@@ -28,6 +28,7 @@ export interface IPromotion {
   source: "manual" | "subscription";
   startDate?: Date;
   boostExpiry?: Date;
+  sponsoredEnabled?: boolean;
   enquiryLimit?: number;
   enquiriesUsed?: number;
   features?: {
@@ -380,6 +381,10 @@ const FeaturedPropertyCard: React.FC<{ p: Property; vertical?: boolean }> = ({
   );
 
   const promotionType = p?.promotion?.type || "normal";
+  const isSponsored =
+    p.isSponsored === true ||
+    (p.promotion?.sponsoredEnabled === true &&
+      (promotionType === "prime" || promotionType === "featured"));
 
   const promotionConfig: Partial<
     Record<IPromotion["type"], { label: string; className: string }>
@@ -449,6 +454,12 @@ const FeaturedPropertyCard: React.FC<{ p: Property; vertical?: boolean }> = ({
             isShortlistLoading={isShortlistLoading}
             onToggleShortlist={toggleShortlist}
           />
+
+          {isSponsored && (
+            <span className="absolute left-3 top-3 z-10 rounded-md bg-black/70 px-2 py-1 text-xs font-semibold text-white">
+              Sponsored
+            </span>
+          )}
 
       
 

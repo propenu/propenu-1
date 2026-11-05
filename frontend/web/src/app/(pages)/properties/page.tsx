@@ -93,7 +93,11 @@ function getPropertyId(property: Property) {
 function isSponsoredPromotion(property: Property) {
   const promotionType = String(property.promotion?.type || "").toLowerCase();
 
-  return promotionType === "sponsored";
+  return (
+    promotionType === "sponsored" ||
+    ((promotionType === "prime" || promotionType === "featured") &&
+      property.promotion?.sponsoredEnabled === true)
+  );
 }
 
 function isFeaturedProject(property: Property) {
@@ -456,7 +460,8 @@ const PropertiesPageContent: React.FC<{ hydrationId: string }> = ({ hydrationId 
       listingType: p.listingType || params.listingType,
     };
     const type = (propertyForCard.type || "").toLowerCase();
-    const isSponsored = propertyForCard.promotion?.type === "sponsored";
+    const isSponsored =
+      propertyForCard.isSponsored === true || isSponsoredPromotion(propertyForCard);
 
     switch (type) {
       case "featuredproject":

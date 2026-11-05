@@ -1266,6 +1266,12 @@ const OWNER_SHORTLISTED_PROPERTIES_TEMPLATE = String(
   process.env.WHATSAPP_OWNER_SHORTLISTED_PROPERTIES_TEMPLATE ||
     "owner_shortlisted_properties_",
 ).trim();
+/**
+ * Testing: every owner Hi sends existing_owner immediately (no 1h dedupe, no cooldown,
+ * even if the chat is paused). Set WHATSAPP_OWNER_GREETING_ALWAYS_SEND=0 to restore limits.
+ */
+const OWNER_GREETING_ALWAYS_SEND =
+  String(process.env.WHATSAPP_OWNER_GREETING_ALWAYS_SEND || "1").trim() !== "0";
 /** Optional dynamic URL suffixes — only set env when Meta template URL uses {{1}}. */
 const OWNER_BUY_A_PROPERTY_URL_SUFFIX = String(
   process.env.WHATSAPP_OWNER_BUY_A_PROPERTY_URL_SUFFIX || "",
@@ -1499,18 +1505,22 @@ async function sendApprovedInboxTemplate(params: {
   const templateLang =
     String(process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en").trim() || "en";
   // Allow sub-hour windows (e.g. 0.25 = 15 minutes) for greeting re-tries.
-  const dedupeHours = Math.max(0.05, Number(params.dedupeHours) || 24);
+  // Explicit 0 = no dedupe (send every time).
+  const dedupeHours =
+    params.dedupeHours === 0 ? 0 : Math.max(0.05, Number(params.dedupeHours) || 24);
   const since = new Date(Date.now() - dedupeHours * 60 * 60 * 1000);
   // Only treat real Meta deliveries as "already sent".
   // Stuck "pending" rows (deploy restart mid-send) must not block later retries.
-  const alreadySent = await WhatsAppMessage.exists({
-    waId,
-    direction: "outbound",
-    "raw.source": params.source,
-    "raw.dedupeInvalidated": { $ne: true },
-    status: { $in: ["sent", "delivered", "read"] },
-    createdAt: { $gte: since },
-  });
+  const alreadySent =
+    dedupeHours > 0 &&
+    (await WhatsAppMessage.exists({
+      waId,
+      direction: "outbound",
+      "raw.source": params.source,
+      "raw.dedupeInvalidated": { $ne: true },
+      status: { $in: ["sent", "delivered", "read"] },
+      createdAt: { $gte: since },
+    }));
   if (alreadySent) {
     console.log(
       `WhatsApp template ${templateName} skipped (dedupe ${dedupeHours}h) ******${waId.slice(-4)} (${params.source})`,
@@ -2067,8 +2077,8 @@ async function sendExistingUserOwnerTemplate(waIdRaw: string, nameRaw: string) {
       { label: "Buy / Rent & Explore", kind: "quick_reply" },
       { label: "Post Property & More", kind: "quick_reply" },
     ],
-    dedupeHours: 1,
-    attemptCooldownMinutes: 12,
+    dedupeHours: OWNER_GREETING_ALWAYS_SEND ? 0 : 1,
+    attemptCooldownMinutes: OWNER_GREETING_ALWAYS_SEND ? 0 : 12,
   });
 }
 
@@ -2618,7 +2628,9 @@ async function replyToInboundMessage(waId: string, text: string) {
       return;
     }
 
-    if (paused) return;
+    const ownerGreetingAlways =
+      OWNER_GREETING_ALWAYS_SEND && greeting && account.isOwner && !account.isAgent;
+    if (paused && !ownerGreetingAlways) return;
 
     // Hi/Hello → role-based existing template (agent vs owner/user).
     if (!greeting) return;

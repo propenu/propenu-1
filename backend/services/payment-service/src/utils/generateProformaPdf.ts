@@ -83,11 +83,17 @@ export function generateProformaPdf(data: ProformaPdfData): Promise<Buffer> {
     const billW = right - billX;
     doc.font("Helvetica-Bold").fontSize(11).fillColor(TEXT).text("BILL TO", billX, metaY);
     let billY = metaY + 24;
-    const clientLabel = [data.clientName, data.companyName].filter(Boolean).join(" / ");
-    billY = labelValue("Client / Builder Name:", clientLabel, billX, billY, billW) + 6;
-    billY = labelValue("Project Name:", data.projectName || "", billX, billY, billW) + 6;
-    billY = labelValue("Client Address:", data.clientAddress || "", billX, billY, billW) + 6;
-    billY = labelValue("GSTIN:", data.gstin || "", billX, billY, billW) + 6;
+    const billRows: [string, string][] = [
+      ["Client / Builder Name:", [data.clientName, data.companyName].filter(Boolean).join(" / ")],
+      ["Project Name:", data.projectName || ""],
+      ["Client Address:", data.clientAddress || ""],
+      ["GSTIN:", data.gstin || ""],
+    ];
+    billRows
+      .filter(([, value]) => value.trim())
+      .forEach(([label, value]) => {
+        billY = labelValue(label, value, billX, billY, billW) + 6;
+      });
 
     // Items table
     let y = Math.max(billY + 18, metaY + 140);
@@ -114,11 +120,10 @@ export function generateProformaPdf(data: ProformaPdfData): Promise<Buffer> {
     cell("Amount", x.amount, w.amount, y + 10, "right");
     y += headerH;
 
-    const rows = Math.max(5, data.items.length);
+    const items = data.items.filter((item) => String(item.productName || "").trim());
     doc.font("Helvetica").fontSize(9);
-    for (let i = 0; i < rows; i += 1) {
-      const item = data.items[i];
-      const nameH = item ? doc.heightOfString(item.productName || "", { width: w.name - 16 }) : 0;
+    items.forEach((item, i) => {
+      const nameH = doc.heightOfString(item.productName || "", { width: w.name - 16 });
       const rowH = Math.max(28, nameH + 14);
       if (y + rowH > pageH - 60) {
         doc.addPage({ size: "A4", margin: 0 });
@@ -128,18 +133,14 @@ export function generateProformaPdf(data: ProformaPdfData): Promise<Buffer> {
       [x.name, x.sac, x.qty, x.days, x.amount].forEach((lineX) => doc.moveTo(lineX, y).lineTo(lineX, y + rowH).stroke());
       doc.fillColor(MUTED);
       cell(String(i + 1).padStart(2, "0"), x.sno, w.sno, y + 10);
-      if (item) {
-        doc.fillColor(TEXT);
-        cell(item.productName || "", x.name, w.name, y + 8);
-        cell(item.sacCode || "", x.sac, w.sac, y + 10);
-        cell(item.qty ? String(item.qty) : "", x.qty, w.qty, y + 10);
-        cell(item.days ? String(item.days) : "", x.days, w.days, y + 10);
-        cell(money(item.amount || 0), x.amount, w.amount, y + 10, "right");
-      } else {
-        cell("Rs.", x.amount, w.amount, y + 10);
-      }
+      doc.fillColor(TEXT);
+      cell(item.productName || "", x.name, w.name, y + 8);
+      cell(item.sacCode || "", x.sac, w.sac, y + 10);
+      cell(item.qty ? String(item.qty) : "", x.qty, w.qty, y + 10);
+      cell(item.days ? String(item.days) : "", x.days, w.days, y + 10);
+      cell(money(item.amount || 0), x.amount, w.amount, y + 10, "right");
       y += rowH;
-    }
+    });
 
     // Bank details + totals
     const notesH = data.notes ? doc.fontSize(8.5).heightOfString(`Notes: ${data.notes}`, { width: contentW }) + 10 : 0;

@@ -5,7 +5,7 @@ export const PROFORMA_STATUSES = ["draft", "sent", "accepted", "converted", "can
 const ProformaItemSchema = new Schema(
   {
     productName: { type: String, required: true, trim: true, maxlength: 200 },
-    sacCode: { type: String, trim: true, maxlength: 20, default: "998365" },
+    sacCode: { type: String, trim: true, maxlength: 20, default: "998362" },
     qty: { type: Number, min: 0, default: 1 },
     days: { type: Number, min: 0, default: 0 },
     amount: { type: Number, min: 0, default: 0 },

@@ -853,8 +853,9 @@ export const sendWhatsAppCSV = async (req: Request, res: Response) => {
       ).catch(() => undefined);
       return res.status(503).json({
         success: false,
-        message:
-          "Could not accept CSV WhatsApp campaign. Check that Redis is running.",
+        message: queueErr?.message
+          ? `Could not accept CSV WhatsApp campaign: ${queueErr.message}`
+          : "Could not accept CSV WhatsApp campaign. Check that Redis is running.",
         error: queueErr?.message,
         campaignId,
       });

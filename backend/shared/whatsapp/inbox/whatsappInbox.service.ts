@@ -84,7 +84,7 @@ function extractTextFromNfmReply(nfm: any): string {
     /* ignore invalid flow JSON */
   }
   const known = values.find((value) =>
-    /more\s*options|buy\s*\/?\s*rent.*explore|post\s*property\s*&\s*more|post\s*a?\s*property|manage\s+(my\s+)?propert|manage\s+my\s+leads|my\s+leads|reach\s+buyers|payment\s+support|buy\s+property|rent\s+property|buy\s+commercial|lease\s+commercial|buy\s+plot/i.test(
+    /more\s*options|buy\s*\/?\s*rent.*explore|post\s*property\s*&\s*more|shortlisted\s+propert|explore\s+plans|post\s*a?\s*property|manage\s+(my\s+)?propert|manage\s+my\s+leads|my\s+leads|reach\s+buyers|payment\s+support|talk\s+to\s+(an?\s+)?expert|buy\s+property|rent\s+property|buy\s+commercial|lease\s+commercial|buy\s+plot/i.test(
       value,
     ),
   );
@@ -809,7 +809,7 @@ function isReachBuyersTenantsChoice(text: string) {
   );
 }
 
-/** Get Payment Support from agent More Options list. */
+/** Get Payment Support / Talk to an Expert → get_payment_support. */
 function isGetPaymentSupportChoice(text: string) {
   const normalized = String(text || "")
     .trim()
@@ -820,7 +820,10 @@ function isGetPaymentSupportChoice(text: string) {
   return (
     normalized === "get payment support" ||
     normalized === "payment support" ||
-    normalized === "get paymentsupport"
+    normalized === "get paymentsupport" ||
+    normalized === "talk to an expert" ||
+    normalized === "talk to expert" ||
+    normalized === "talk to a expert"
   );
 }
 
@@ -887,6 +890,48 @@ function isOwnerRentAPropertyChoice(text: string) {
     normalized === "rent a property" ||
     normalized === "rent property" ||
     normalized === "rent aproperty"
+  );
+}
+
+/** Owner CTA: Explore Plans → session list of owner plans. */
+function isOwnerExplorePlansChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[_-]+/g, " ");
+  return (
+    normalized === "explore plans" ||
+    normalized === "explore plan" ||
+    normalized === "view plans" ||
+    normalized === "owner plans"
+  );
+}
+
+const OWNER_PLAN_ROW_PREFIX = "owner_plan:";
+
+/** Plan code from an Explore Plans list row id (`owner_plan:CODE`). */
+function ownerPlanCodeFromChoice(text: string) {
+  const value = String(text || "").trim();
+  if (!value.toLowerCase().startsWith(OWNER_PLAN_ROW_PREFIX)) return "";
+  return value.slice(OWNER_PLAN_ROW_PREFIX.length).trim();
+}
+
+/** Owner CTA: Shortlisted Properties → owner_shortlisted_properties_. */
+function isOwnerShortlistedPropertiesChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[_-]+/g, " ");
+  return (
+    normalized === "shortlisted properties" ||
+    normalized === "shortlisted property" ||
+    normalized === "shortlist properties" ||
+    normalized === "my shortlisted properties" ||
+    normalized === "owner shortlisted properties"
   );
 }
 
@@ -1214,6 +1259,10 @@ const OWNER_BUY_A_PROPERTY_TEMPLATE = String(
 const OWNER_RENT_A_PROPERTY_TEMPLATE = String(
   process.env.WHATSAPP_OWNER_RENT_A_PROPERTY_TEMPLATE || "rent_a_property",
 ).trim();
+const OWNER_SHORTLISTED_PROPERTIES_TEMPLATE = String(
+  process.env.WHATSAPP_OWNER_SHORTLISTED_PROPERTIES_TEMPLATE ||
+    "owner_shortlisted_properties_",
+).trim();
 /**
  * Optional dynamic URL suffixes — only set env when Meta template URL uses {{1}}.
  * Explore CTAs are quick-replies (Buy a Property / Rent a Property) that trigger
@@ -1238,6 +1287,20 @@ const OWNER_BUY_A_PROPERTY_URL_SUFFIX = String(
   .replace(/^\/+/, "");
 const OWNER_RENT_A_PROPERTY_URL_SUFFIX = String(
   process.env.WHATSAPP_OWNER_RENT_A_PROPERTY_URL_SUFFIX || "",
+)
+  .trim()
+  .replace(/^\/+/, "");
+const OWNER_SHORTLISTED_PROPERTIES_URL_SUFFIX = String(
+  process.env.WHATSAPP_OWNER_SHORTLISTED_PROPERTIES_URL_SUFFIX || "",
+)
+  .trim()
+  .replace(/^\/+/, "");
+const OWNER_PLAN_DETAILS_TEMPLATE = String(
+  process.env.WHATSAPP_OWNER_PLAN_DETAILS_TEMPLATE || "available_subscription_plans",
+).trim();
+/** Only set if the Meta "Visit website" button URL ends with {{1}}. */
+const OWNER_PLAN_DETAILS_URL_SUFFIX = String(
+  process.env.WHATSAPP_OWNER_PLAN_DETAILS_URL_SUFFIX || "",
 )
   .trim()
   .replace(/^\/+/, "");
@@ -2099,6 +2162,149 @@ async function sendOwnerRentAPropertyTemplate(waIdRaw: string) {
   });
 }
 
+function ownerPlanCategoryLabel(category: unknown) {
+  const key = String(category || "").toLowerCase();
+  if (key === "sell") return "Sell";
+  if (key === "rent") return "Rent";
+  return key ? key.charAt(0).toUpperCase() + key.slice(1) : "Plan";
+}
+
+function ownerPlanPriceLabel(price: unknown) {
+  const amount = Number(price);
+  if (!Number.isFinite(amount) || amount <= 0) return "Free";
+  return `₹${amount.toLocaleString("en-IN")}`;
+}
+
+function ownerPlanDurationLabel(durationDays: unknown) {
+  const days = Number(durationDays);
+  const value = Number.isFinite(days) && days > 0 ? days : 30;
+  return `${value} days`;
+}
+
+async function loadOwnerPlans() {
+  if (mongoose.connection.readyState !== 1) return [];
+  const plans = await mongoose.connection
+    .collection("plans")
+    .find({ userType: "owner" })
+    .toArray();
+  const categoryOrder = (category: unknown) =>
+    String(category || "").toLowerCase() === "sell" ? 0 : 1;
+  return plans
+    .sort(
+      (left, right) =>
+        categoryOrder(left.category) - categoryOrder(right.category) ||
+        Number(left.price || 0) - Number(right.price || 0),
+    )
+    .slice(0, 10);
+}
+
+/** Owner tapped Explore Plans → WhatsApp list (max 10 rows) grouped by Sell / Rent. */
+async function sendOwnerPlansList(waId: string) {
+  const plans = await loadOwnerPlans();
+  const body = "Here are the available Propenu owner plans. Tap a plan to see its details.";
+  if (!plans.length) {
+    await sendInboxTextMessage(
+      waId,
+      "Owner plans are not available right now. Please try again later.",
+      { source: "owner_plans_list", sessionTextOnly: true },
+    );
+    return;
+  }
+  if (await sentSameBodyRecently(waId, body)) return;
+
+  const sections = new Map<string, Array<{ id: string; title: string; description: string }>>();
+  for (const plan of plans) {
+    const category = ownerPlanCategoryLabel(plan.category);
+    const name = String(plan.name || plan.code || "Plan").trim();
+    const rows = sections.get(category) || [];
+    rows.push({
+      id: `${OWNER_PLAN_ROW_PREFIX}${String(plan.code)}`.slice(0, 200),
+      title: `${category} · ${name}`.slice(0, 24),
+      description: `${ownerPlanPriceLabel(plan.price)} / ${ownerPlanDurationLabel(plan.durationDays)}`.slice(0, 72),
+    });
+    sections.set(category, rows);
+  }
+
+  const listPayload = {
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: { text: body },
+      action: {
+        button: "View plans",
+        sections: [...sections.entries()].map(([title, rows]) => ({
+          title: `${title} plans`.slice(0, 24),
+          rows,
+        })),
+      },
+    },
+  };
+
+  try {
+    await sendInboxSessionPayload(waId, body, listPayload, "owner_plans_list");
+  } catch (err) {
+    console.error("WhatsApp owner plans list failed, sending session text:", err);
+    const lines = plans.map(
+      (plan, index) =>
+        `${index + 1}. ${ownerPlanCategoryLabel(plan.category)} · ${plan.name || plan.code} — ${ownerPlanPriceLabel(plan.price)} / ${ownerPlanDurationLabel(plan.durationDays)}`,
+    );
+    await sendInboxTextMessage(waId, `${body}\n\n${lines.join("\n")}`, {
+      source: "owner_plans_list",
+      sessionTextOnly: true,
+    });
+  }
+}
+
+/** Owner picked a plan row → available_subscription_plans with name / price / duration. */
+async function sendOwnerPlanDetailsTemplate(waIdRaw: string, planCode: string) {
+  if (mongoose.connection.readyState !== 1) return false;
+  const plan = await mongoose.connection
+    .collection("plans")
+    .findOne({ code: planCode, userType: "owner" });
+  if (!plan) {
+    console.log(`WhatsApp owner plan not found: ${planCode}`);
+    return false;
+  }
+  const name = sanitizeMetaTemplateParam(
+    `${plan.name || plan.code} (${ownerPlanCategoryLabel(plan.category)})`,
+    "Propenu plan",
+  );
+  const price = sanitizeMetaTemplateParam(ownerPlanPriceLabel(plan.price), "Free");
+  const duration = sanitizeMetaTemplateParam(
+    ownerPlanDurationLabel(plan.durationDays),
+    "30 days",
+  );
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName: OWNER_PLAN_DETAILS_TEMPLATE || "available_subscription_plans",
+    // Per-plan source so tapping a second plan is not blocked by dedupe.
+    source: `owner_plan_details_template:${String(plan.code)}`,
+    bodyPreview: `As requested, the available Propenu plan details are provided below.\n\nPlan Name: ${name}\nPlan Price: ${price}\nPlan Duration: ${duration}\n\nYou can access the requested plan details using the link below.`,
+    bodyParams: [name, price, duration],
+    buttons: [{ label: "Visit website", kind: "url" }],
+    ...optionalUrlButton(OWNER_PLAN_DETAILS_URL_SUFFIX),
+    dedupeHours: 0.25,
+    attemptCooldownMinutes: 1,
+  });
+}
+
+/** Owner tapped Shortlisted Properties → owner_shortlisted_properties_. */
+async function sendOwnerShortlistedPropertiesTemplate(waIdRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName:
+      OWNER_SHORTLISTED_PROPERTIES_TEMPLATE || "owner_shortlisted_properties_",
+    source: "owner_shortlisted_properties_template",
+    bodyPreview:
+      "Your shortlisted properties are available in your Propenu account.\n\nYou can review them using the option below.",
+    buttons: [{ label: "Click Here", kind: "url" }],
+    // No FLOW / no URL param by default (avoids #131009 / #132018).
+    ...optionalUrlButton(OWNER_SHORTLISTED_PROPERTIES_URL_SUFFIX),
+    dedupeHours: 0.25,
+    attemptCooldownMinutes: 5,
+  });
+}
+
 /** After dashboard delete, the users row is gone but the WhatsApp chat may still be paused. */
 export async function reopenWhatsAppChatForDeletedPhone(phoneRaw: string) {
   const waId = normalizeWaId(phoneRaw);
@@ -2132,6 +2338,8 @@ export async function reopenWhatsAppChatForDeletedPhone(phoneRaw: string) {
           "owner_post_property_more_template",
           "owner_buy_a_property_template",
           "owner_rent_a_property_template",
+          "owner_shortlisted_properties_template",
+          /^owner_plan_details_template:/,
         ],
       },
       "raw.dedupeInvalidated": { $ne: true },
@@ -2245,6 +2453,47 @@ async function replyToInboundMessage(waId: string, text: string) {
       return;
     }
 
+    // Owner CTA: Explore Plans → list of owner plans (session message).
+    if (isOwnerExplorePlansChoice(inbound) && account.isOwner) {
+      try {
+        console.log(`WhatsApp owner Explore Plans ******${String(waId).slice(-4)}`);
+        await sendOwnerPlansList(waId);
+      } catch (err) {
+        console.error("WhatsApp owner plans list failed:", err);
+      }
+      return;
+    }
+
+    // Owner picked a plan row → available_subscription_plans.
+    const ownerPlanCode = ownerPlanCodeFromChoice(inbound);
+    if (ownerPlanCode && account.isOwner) {
+      try {
+        console.log(
+          `WhatsApp owner plan details ${ownerPlanCode} ******${String(waId).slice(-4)}`,
+        );
+        await sendOwnerPlanDetailsTemplate(waId, ownerPlanCode);
+      } catch (err) {
+        console.error("WhatsApp owner plan details template failed:", err);
+      }
+      return;
+    }
+
+    // Owner CTA: Shortlisted Properties → owner_shortlisted_properties_
+    if (isOwnerShortlistedPropertiesChoice(inbound) && account.isOwner) {
+      try {
+        console.log(
+          `WhatsApp owner Shortlisted Properties ******${String(waId).slice(-4)}`,
+        );
+        await sendOwnerShortlistedPropertiesTemplate(waId);
+      } catch (err) {
+        console.error(
+          "WhatsApp owner shortlisted properties template failed:",
+          err,
+        );
+      }
+      return;
+    }
+
     // Agent self-serve More Options templates — do not block on botPaused.
     // Agent Manage Properties (More Options) → manage listings template.
     if (isManagePropertiesChoice(inbound)) {
@@ -2303,9 +2552,9 @@ async function replyToInboundMessage(waId: string, text: string) {
       return;
     }
 
-    // Agent Get Payment Support (More Options) → payment support template.
+    // Get Payment Support / Talk to an Expert (agent or owner) → get_payment_support.
     if (isGetPaymentSupportChoice(inbound)) {
-      if (!account.isAgent) {
+      if (!account.isAgent && !account.isOwner) {
         console.log(
           `WhatsApp Get Payment Support skipped ******${String(waId).slice(-4)} role=${account.roleName || "unknown"}`,
         );
@@ -2313,7 +2562,7 @@ async function replyToInboundMessage(waId: string, text: string) {
       }
       try {
         console.log(
-          `WhatsApp agent Get Payment Support ******${String(waId).slice(-4)}`,
+          `WhatsApp Get Payment Support / Talk to an Expert ******${String(waId).slice(-4)} role=${account.roleName || "unknown"}`,
         );
         await sendAgentPaymentSupportTemplate(waId);
       } catch (err) {

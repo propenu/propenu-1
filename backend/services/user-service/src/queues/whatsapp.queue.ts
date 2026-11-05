@@ -1,5 +1,9 @@
 import { Queue } from "bullmq";
-import { bindRedisErrors, redisConnection } from "../lib/redis.connection";
+import {
+  bindRedisErrors,
+  isRedisQuotaPaused,
+  redisConnection,
+} from "../lib/redis.connection";
 
 /** Per-recipient Meta send */
 export interface WhatsAppSendJobData {
@@ -82,7 +86,8 @@ bindRedisErrors(whatsappQueue);
 export async function addWhatsAppJobWithTimeout(
   ...args: Parameters<typeof whatsappQueue.add>
 ) {
-  const timeoutMs = Number(process.env.QUEUE_ADD_TIMEOUT_MS || 10000);
+  // Must stay above the 5s max reconnect delay and below nginx's 60s timeout.
+  const timeoutMs = Number(process.env.QUEUE_ADD_TIMEOUT_MS || 20000);
   let timer: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([
@@ -92,7 +97,9 @@ export async function addWhatsAppJobWithTimeout(
           () =>
             reject(
               new Error(
-                `Redis did not respond within ${timeoutMs / 1000}s — check REDIS_URL and that Redis is reachable from this server`,
+                isRedisQuotaPaused()
+                  ? "Upstash Redis monthly request limit is used up — upgrade the Upstash plan or point REDIS_URL to another Redis"
+                  : `Redis did not respond within ${timeoutMs / 1000}s — check REDIS_URL and that Redis is reachable from this server`,
               ),
             ),
           timeoutMs,

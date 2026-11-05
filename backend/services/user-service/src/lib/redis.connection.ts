@@ -16,23 +16,33 @@ function wantsTls(hostname: string, protocol: string): boolean {
 }
 
 const QUOTA_RETRY_MS = 5 * 60 * 1000;
-let quotaPaused = false;
+const MAX_RECONNECT_DELAY_MS = 5000;
+const ERROR_LOG_INTERVAL_MS = 60 * 1000;
+let lastQuotaErrorAt = 0;
 let lastQuotaLogAt = 0;
+const lastErrorLogAt = new Map<string, number>();
 
 function isQuotaError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err || "");
   return message.includes("max requests limit");
 }
 
-/** One line, then wait. Stops the reconnect loop from dumping the BullMQ script. */
+/** Clears on its own once no quota error has been seen for QUOTA_RETRY_MS. */
+export function isRedisQuotaPaused(): boolean {
+  return lastQuotaErrorAt > 0 && Date.now() - lastQuotaErrorAt < QUOTA_RETRY_MS;
+}
+
+/** One line per message per minute. Stops the reconnect loop from dumping the BullMQ script. */
 export function noteRedisError(err: unknown) {
+  const now = Date.now();
   if (!isQuotaError(err)) {
     const message = err instanceof Error ? err.message : String(err || "Redis error");
+    if (now - (lastErrorLogAt.get(message) || 0) < ERROR_LOG_INTERVAL_MS) return;
+    lastErrorLogAt.set(message, now);
     console.error("Redis error:", message);
     return;
   }
-  quotaPaused = true;
-  const now = Date.now();
+  lastQuotaErrorAt = now;
   if (now - lastQuotaLogAt < QUOTA_RETRY_MS) return;
   lastQuotaLogAt = now;
   console.warn(
@@ -46,9 +56,10 @@ export function bindRedisErrors(client: {
   client.on("error", (err) => noteRedisError(err));
 }
 
+/** Long wait only while Upstash is over quota; otherwise reconnect within 5s. */
 function retryStrategy(times: number): number {
-  if (quotaPaused || times > 2) return QUOTA_RETRY_MS;
-  return Math.min(times * 1000, 5000);
+  if (isRedisQuotaPaused()) return QUOTA_RETRY_MS;
+  return Math.min(times * 1000, MAX_RECONNECT_DELAY_MS);
 }
 
 // Local campaigns use REDIS_URL. Upstash queue traffic stays off while that database is over its monthly limit.

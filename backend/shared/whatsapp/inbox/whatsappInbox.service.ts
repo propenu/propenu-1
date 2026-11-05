@@ -72,6 +72,9 @@ function extractTextFromNfmReply(nfm: any): string {
   const values: string[] = [];
   try {
     const parsed = JSON.parse(String(nfm?.response_json || "{}"));
+    // Propenu Flows return the RadioButtonsGroup id (e.g. buy_property, explore_plans).
+    const selected = String(parsed?.selected_option || "").trim();
+    if (selected) return selected;
     const walk = (value: unknown) => {
       if (typeof value === "string" && value.trim()) values.push(value.trim());
       else if (Array.isArray(value)) value.forEach(walk);
@@ -1263,23 +1266,7 @@ const OWNER_SHORTLISTED_PROPERTIES_TEMPLATE = String(
   process.env.WHATSAPP_OWNER_SHORTLISTED_PROPERTIES_TEMPLATE ||
     "owner_shortlisted_properties_",
 ).trim();
-/**
- * Optional dynamic URL suffixes — only set env when Meta template URL uses {{1}}.
- * Explore CTAs are quick-replies (Buy a Property / Rent a Property) that trigger
- * buy_a_property / rent_a_property — do NOT send FLOW/URL params on explore
- * (wrong params → #131009 / #132018).
- */
-const OWNER_BUY_URL_SUFFIX = String(process.env.WHATSAPP_OWNER_BUY_URL_SUFFIX || "")
-  .trim()
-  .replace(/^\/+/, "");
-const OWNER_RENT_URL_SUFFIX = String(process.env.WHATSAPP_OWNER_RENT_URL_SUFFIX || "")
-  .trim()
-  .replace(/^\/+/, "");
-const OWNER_POST_PROPERTY_MORE_URL_SUFFIX = String(
-  process.env.WHATSAPP_OWNER_POST_PROPERTY_MORE_URL_SUFFIX || "",
-)
-  .trim()
-  .replace(/^\/+/, "");
+/** Optional dynamic URL suffixes — only set env when Meta template URL uses {{1}}. */
 const OWNER_BUY_A_PROPERTY_URL_SUFFIX = String(
   process.env.WHATSAPP_OWNER_BUY_A_PROPERTY_URL_SUFFIX || "",
 )
@@ -1298,7 +1285,10 @@ const OWNER_SHORTLISTED_PROPERTIES_URL_SUFFIX = String(
 const OWNER_PLAN_DETAILS_TEMPLATE = String(
   process.env.WHATSAPP_OWNER_PLAN_DETAILS_TEMPLATE || "available_subscription_plans",
 ).trim();
-/** Only set if the Meta "Visit website" button URL ends with {{1}}. */
+/**
+ * Meta "Visit website" URL is dynamic ({{1}}) — a suffix is required (#131008 without it).
+ * Defaults to owner-sell / owner-rent by plan category; env overrides for every plan.
+ */
 const OWNER_PLAN_DETAILS_URL_SUFFIX = String(
   process.env.WHATSAPP_OWNER_PLAN_DETAILS_URL_SUFFIX || "",
 )
@@ -1976,7 +1966,8 @@ async function sendAgentHasPlanTemplates(waIdRaw: string, planNames: string) {
     bodyPreview: `The additional Propenu plan details requested are available in your account.\n\nPlan Names: ${names}\n\nYou can access the plan details and included benefits using the link below.`,
     bodyParams: [names],
     buttons: [{ label: "Click Here", kind: "url" }],
-    ...optionalUrlButton(AGENT_PLAN_BENEFITS_URL_SUFFIX),
+    // Meta URL is dynamic ({{1}}) — suffix required (#131008 without it).
+    ...optionalUrlButton(AGENT_PLAN_BENEFITS_URL_SUFFIX || "agent-plan"),
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
@@ -2083,11 +2074,12 @@ async function sendExistingUserOwnerTemplate(waIdRaw: string, nameRaw: string) {
 
 /**
  * Owner Buy / Rent & Explore follow-up.
- * Quick-reply CTAs: "Buy a Property" / "Rent a Property" → handled inbound as
- * buy_a_property / rent_a_property. Send with no FLOW / no URL params by default
- * (same safe pattern as search-property + post_a_property).
+ * Live Meta template = no body vars + FLOW button "More Options"
+ * (navigate_screen MORE_OPTIONS). Without the flow param Meta returns #131009.
+ * Flow options (buy_property, rent_property, explore_plans, …) come back as nfm_reply.
  */
 async function sendOwnerBuyRentExploreTemplate(waIdRaw: string) {
+  const waId = normalizeWaId(waIdRaw);
   return sendApprovedInboxTemplate({
     waIdRaw,
     templateName:
@@ -2095,18 +2087,12 @@ async function sendOwnerBuyRentExploreTemplate(waIdRaw: string) {
     source: "owner_buy_rent_explore_template",
     bodyPreview:
       "Explore Propenu buy and rent options. Please choose an option below to continue.",
-    buttons: [
-      { label: "Buy a Property", kind: "quick_reply" },
-      { label: "Rent a Property", kind: "quick_reply" },
-    ],
-    urlButtons: [
-      ...(OWNER_BUY_URL_SUFFIX
-        ? [{ index: 0, text: OWNER_BUY_URL_SUFFIX }]
-        : []),
-      ...(OWNER_RENT_URL_SUFFIX
-        ? [{ index: 1, text: OWNER_RENT_URL_SUFFIX }]
-        : []),
-    ],
+    buttons: [{ label: "More Options", kind: "quick_reply" }],
+    flowButton: {
+      index: 0,
+      flowToken: `owner_buy_rent_explore:${waId}:${Date.now()}`,
+      navigateScreen: "MORE_OPTIONS",
+    },
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
@@ -2114,10 +2100,11 @@ async function sendOwnerBuyRentExploreTemplate(waIdRaw: string) {
 
 /**
  * Owner Post Property & More follow-up.
- * Static CTA by default (same pattern as post_a_property) — no FLOW / no URL param
- * unless env opt-in is set (avoids #131009 / #132018).
+ * Live Meta template = no body vars + FLOW button "More Options"
+ * (navigate_screen MORE_OPTIONS). Without the flow param Meta returns #131009.
  */
 async function sendOwnerPostPropertyMoreTemplate(waIdRaw: string) {
+  const waId = normalizeWaId(waIdRaw);
   return sendApprovedInboxTemplate({
     waIdRaw,
     templateName:
@@ -2125,8 +2112,12 @@ async function sendOwnerPostPropertyMoreTemplate(waIdRaw: string) {
     source: "owner_post_property_more_template",
     bodyPreview:
       "Continue with posting your property on Propenu using the option below.",
-    buttons: [{ label: "Post a property", kind: "url" }],
-    ...optionalUrlButton(OWNER_POST_PROPERTY_MORE_URL_SUFFIX),
+    buttons: [{ label: "More Options", kind: "quick_reply" }],
+    flowButton: {
+      index: 0,
+      flowToken: `owner_post_property_more:${waId}:${Date.now()}`,
+      navigateScreen: "MORE_OPTIONS",
+    },
     dedupeHours: 0.25,
     attemptCooldownMinutes: 5,
   });
@@ -2282,7 +2273,10 @@ async function sendOwnerPlanDetailsTemplate(waIdRaw: string, planCode: string) {
     bodyPreview: `As requested, the available Propenu plan details are provided below.\n\nPlan Name: ${name}\nPlan Price: ${price}\nPlan Duration: ${duration}\n\nYou can access the requested plan details using the link below.`,
     bodyParams: [name, price, duration],
     buttons: [{ label: "Visit website", kind: "url" }],
-    ...optionalUrlButton(OWNER_PLAN_DETAILS_URL_SUFFIX),
+    ...optionalUrlButton(
+      OWNER_PLAN_DETAILS_URL_SUFFIX ||
+        (String(plan.category || "").toLowerCase() === "rent" ? "owner-rent" : "owner-sell"),
+    ),
     dedupeHours: 0.25,
     attemptCooldownMinutes: 1,
   });

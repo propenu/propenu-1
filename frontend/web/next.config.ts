@@ -57,6 +57,10 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        source: "/icons/amenities/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex" }],
+      },
+      {
         source: "/.well-known/apple-app-site-association",
         headers: [
           { key: "Content-Type", value: "application/json" },

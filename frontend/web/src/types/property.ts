@@ -44,6 +44,7 @@ export interface Property {
     fourWheeler?: number;
   }
   promotion?:IPromotion;
+  isSponsored?: boolean;
   createdAt?: string;
   floorNumber?:number | string;
   totalFloors?:number | string;

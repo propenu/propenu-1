@@ -1,9 +1,5 @@
-import FeaturedProjectsClient from "./FeaturedProjectsClient";
+import { permanentRedirect } from "next/navigation";
 
 export default function PrimeProjectsPage() {
-  return (
-    <div className="container mx-auto py-8">
-      <FeaturedProjectsClient />
-    </div>
-  );
+  permanentRedirect("/new-projects");
 }

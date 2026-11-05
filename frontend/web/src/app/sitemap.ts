@@ -9,6 +9,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 type SitemapEntity = {
   slug?: string;
+  type?: string;
+  listingSource?: string;
+  promotion?: { type?: string };
   createdAt?: string;
   updatedAt?: string;
   publishedAt?: string;
@@ -36,6 +39,13 @@ function normalizeSlug(value?: string) {
   return String(value || "").trim().replace(/^\/+|\/+$/g, "");
 }
 
+function isFeaturedProject(entry: SitemapEntity) {
+  return (
+    entry.type?.toLowerCase() === "featuredproject" ||
+    entry.listingSource?.toLowerCase() === "featured"
+  );
+}
+
 function toSitemapEntries(
   entries: SitemapEntity[],
   routePrefix: string,
@@ -59,6 +69,30 @@ function toSitemapEntries(
         priority,
       },
     ];
+  });
+}
+
+function toProjectSearchEntries(entries: SitemapEntity[]): MetadataRoute.Sitemap {
+  const seen = new Set<string>();
+
+  return entries.flatMap((entry) => {
+    if (!isFeaturedProject(entry)) return [];
+
+    const slug = normalizeSlug(entry.slug);
+    if (!slug) return [];
+
+    const routePrefix =
+      entry.promotion?.type?.toLowerCase() === "prime" ? "/prime" : "/project";
+    const key = `${routePrefix}/${slug}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+
+    return [{
+      url: buildAbsoluteUrl(key),
+      lastModified: getLastModified(entry),
+      changeFrequency: "weekly" as const,
+      priority: 0.9,
+    }];
   });
 }
 
@@ -182,7 +216,6 @@ async function getSearchProperties(category: string) {
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticPages = [
     "",
-    "/prime",
     "/blogs",
     "/postproperty",
     "/plans",
@@ -232,34 +265,48 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const primePages = toSitemapEntries(primeProjects, "/prime", 0.9);
   const blogPages = toSitemapEntries(blogs, "/blogs", 0.7);
   const residentialPages = toSitemapEntries(
-    residentialProperties,
+    residentialProperties.filter((entry) => !isFeaturedProject(entry)),
     "/properties/residential",
     0.85,
   );
   const commercialPages = toSitemapEntries(
-    commercialProperties,
+    commercialProperties.filter((entry) => !isFeaturedProject(entry)),
     "/properties/commercial",
     0.85,
   );
   const landPages = toSitemapEntries(
-    landProperties,
+    landProperties.filter((entry) => !isFeaturedProject(entry)),
     "/properties/land",
     0.8,
   );
   const agriculturalPages = toSitemapEntries(
-    agriculturalProperties,
+    agriculturalProperties.filter((entry) => !isFeaturedProject(entry)),
     "/properties/agricultural",
     0.8,
   );
+  const projectSearchPages = toProjectSearchEntries([
+    ...residentialProperties,
+    ...commercialProperties,
+    ...landProperties,
+    ...agriculturalProperties,
+  ]);
 
-  return [
+  const entries = [
     ...staticPages,
     ...projectPages,
     ...primePages,
+    ...projectSearchPages,
     ...blogPages,
     ...residentialPages,
     ...commercialPages,
     ...landPages,
     ...agriculturalPages,
   ];
+
+  const seenUrls = new Set<string>();
+  return entries.filter((entry) => {
+    if (seenUrls.has(entry.url)) return false;
+    seenUrls.add(entry.url);
+    return true;
+  });
 }

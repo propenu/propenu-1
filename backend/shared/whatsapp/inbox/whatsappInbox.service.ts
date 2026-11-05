@@ -1268,10 +1268,19 @@ const OWNER_SHORTLISTED_PROPERTIES_TEMPLATE = String(
 ).trim();
 /**
  * Testing: every owner Hi sends existing_owner immediately (no 1h dedupe, no cooldown,
- * even if the chat is paused). Set WHATSAPP_OWNER_GREETING_ALWAYS_SEND=0 to restore limits.
+ * even if the chat is paused). Also removes repeat limits on every owner follow-up
+ * template (Buy / Rent & Explore, Post Property & More, Flow options, plans).
+ * Set WHATSAPP_OWNER_GREETING_ALWAYS_SEND=0 to restore limits.
  */
 const OWNER_GREETING_ALWAYS_SEND =
   String(process.env.WHATSAPP_OWNER_GREETING_ALWAYS_SEND || "1").trim() !== "0";
+
+/** Owner template repeat limits — none while OWNER_GREETING_ALWAYS_SEND is on. */
+function ownerTemplateLimits(dedupeHours: number, attemptCooldownMinutes: number) {
+  return OWNER_GREETING_ALWAYS_SEND
+    ? { dedupeHours: 0, attemptCooldownMinutes: 0 }
+    : { dedupeHours, attemptCooldownMinutes };
+}
 /** Optional dynamic URL suffixes — only set env when Meta template URL uses {{1}}. */
 const OWNER_BUY_A_PROPERTY_URL_SUFFIX = String(
   process.env.WHATSAPP_OWNER_BUY_A_PROPERTY_URL_SUFFIX || "",
@@ -1952,7 +1961,10 @@ async function sendAgentReachBuyersTemplate(waIdRaw: string) {
   });
 }
 
-async function sendAgentPaymentSupportTemplate(waIdRaw: string) {
+async function sendAgentPaymentSupportTemplate(waIdRaw: string, forOwner = false) {
+  const limits = forOwner
+    ? ownerTemplateLimits(0.25, 5)
+    : { dedupeHours: 0.25, attemptCooldownMinutes: 5 };
   return sendApprovedInboxTemplate({
     waIdRaw,
     templateName: AGENT_PAYMENT_SUPPORT_TEMPLATE || "get_payment_support",
@@ -1961,8 +1973,7 @@ async function sendAgentPaymentSupportTemplate(waIdRaw: string) {
       "Need help with a Propenu payment or invoice?\n\nUse the option below to get payment support from our team.",
     buttons: [{ label: "Click Here", kind: "url" }],
     ...optionalUrlButton(AGENT_PAYMENT_SUPPORT_URL_SUFFIX),
-    dedupeHours: 0.25,
-    attemptCooldownMinutes: 5,
+    ...limits,
   });
 }
 
@@ -2077,8 +2088,7 @@ async function sendExistingUserOwnerTemplate(waIdRaw: string, nameRaw: string) {
       { label: "Buy / Rent & Explore", kind: "quick_reply" },
       { label: "Post Property & More", kind: "quick_reply" },
     ],
-    dedupeHours: OWNER_GREETING_ALWAYS_SEND ? 0 : 1,
-    attemptCooldownMinutes: OWNER_GREETING_ALWAYS_SEND ? 0 : 12,
+    ...ownerTemplateLimits(1, 12),
   });
 }
 
@@ -2103,8 +2113,7 @@ async function sendOwnerBuyRentExploreTemplate(waIdRaw: string) {
       flowToken: `owner_buy_rent_explore:${waId}:${Date.now()}`,
       navigateScreen: "MORE_OPTIONS",
     },
-    dedupeHours: 0.25,
-    attemptCooldownMinutes: 5,
+    ...ownerTemplateLimits(0.25, 5),
   });
 }
 
@@ -2128,8 +2137,7 @@ async function sendOwnerPostPropertyMoreTemplate(waIdRaw: string) {
       flowToken: `owner_post_property_more:${waId}:${Date.now()}`,
       navigateScreen: "MORE_OPTIONS",
     },
-    dedupeHours: 0.25,
-    attemptCooldownMinutes: 5,
+    ...ownerTemplateLimits(0.25, 5),
   });
 }
 
@@ -2143,8 +2151,7 @@ async function sendOwnerBuyAPropertyTemplate(waIdRaw: string) {
       "Your property buy request is ready. Please use the option below to continue exploring properties to buy.",
     buttons: [{ label: "Buy a Property", kind: "url" }],
     ...optionalUrlButton(OWNER_BUY_A_PROPERTY_URL_SUFFIX),
-    dedupeHours: 0.25,
-    attemptCooldownMinutes: 5,
+    ...ownerTemplateLimits(0.25, 5),
   });
 }
 
@@ -2158,8 +2165,7 @@ async function sendOwnerRentAPropertyTemplate(waIdRaw: string) {
       "Your property rent request is ready. Please use the option below to continue exploring properties to rent.",
     buttons: [{ label: "Rent a Property", kind: "url" }],
     ...optionalUrlButton(OWNER_RENT_A_PROPERTY_URL_SUFFIX),
-    dedupeHours: 0.25,
-    attemptCooldownMinutes: 5,
+    ...ownerTemplateLimits(0.25, 5),
   });
 }
 
@@ -2211,7 +2217,7 @@ async function sendOwnerPlansList(waId: string) {
     );
     return;
   }
-  if (await sentSameBodyRecently(waId, body)) return;
+  if (!OWNER_GREETING_ALWAYS_SEND && (await sentSameBodyRecently(waId, body))) return;
 
   const sections = new Map<string, Array<{ id: string; title: string; description: string }>>();
   for (const plan of plans) {
@@ -2287,8 +2293,7 @@ async function sendOwnerPlanDetailsTemplate(waIdRaw: string, planCode: string) {
       OWNER_PLAN_DETAILS_URL_SUFFIX ||
         (String(plan.category || "").toLowerCase() === "rent" ? "owner-rent" : "owner-sell"),
     ),
-    dedupeHours: 0.25,
-    attemptCooldownMinutes: 1,
+    ...ownerTemplateLimits(0.25, 1),
   });
 }
 
@@ -2304,8 +2309,7 @@ async function sendOwnerShortlistedPropertiesTemplate(waIdRaw: string) {
     buttons: [{ label: "Click Here", kind: "url" }],
     // No FLOW / no URL param by default (avoids #131009 / #132018).
     ...optionalUrlButton(OWNER_SHORTLISTED_PROPERTIES_URL_SUFFIX),
-    dedupeHours: 0.25,
-    attemptCooldownMinutes: 5,
+    ...ownerTemplateLimits(0.25, 5),
   });
 }
 
@@ -2568,7 +2572,7 @@ async function replyToInboundMessage(waId: string, text: string) {
         console.log(
           `WhatsApp Get Payment Support / Talk to an Expert ******${String(waId).slice(-4)} role=${account.roleName || "unknown"}`,
         );
-        await sendAgentPaymentSupportTemplate(waId);
+        await sendAgentPaymentSupportTemplate(waId, !account.isAgent);
       } catch (err) {
         console.error("WhatsApp agent Get Payment Support template failed:", err);
       }

@@ -5,6 +5,7 @@ import { Types } from "mongoose";
 import {
   whatsappQueue,
   addWhatsAppJobWithTimeout,
+  addWhatsAppJobsWithTimeout,
 } from "../../../services/user-service/src/queues";
 import User from "../../../services/user-service/src/models/userModel";
 import Role from "../../../services/user-service/src/models/roleModel";
@@ -849,6 +850,272 @@ export const sendWhatsAppCampaignDynamic = async (
     return res.status(500).json({
       success: false,
       message: error?.message || "WhatsApp campaign failed",
+    });
+  }
+};
+
+/** Queue an approved template for selected existing users at a future time. */
+export const scheduleWhatsAppUsers = async (req: Request, res: Response) => {
+  try {
+    const {
+      userIds: rawUserIds,
+      audience: rawAudience,
+      dryRun: rawDryRun,
+      templateName: rawTemplateName,
+      scheduledAt: rawScheduledAt,
+      headerImageUrl: rawHeaderImageUrl,
+    } = req.body || {};
+    const templateName = String(rawTemplateName || "").trim();
+    const scheduledAt = new Date(String(rawScheduledAt || ""));
+    const userIds = Array.isArray(rawUserIds)
+      ? [...new Set(rawUserIds.map((id: unknown) => String(id).trim()).filter(Boolean))]
+      : [];
+    const audience = String(rawAudience || "").trim();
+    const dryRun = rawDryRun === true;
+
+    if (!templateName && !dryRun) {
+      return res
+        .status(400)
+        .json({ success: false, message: "templateName is required" });
+    }
+    const isAutomaticAudience =
+      audience === "whatsapp_opted_in" || (audience === "verified_phones" && dryRun);
+    if (!isAutomaticAudience && (!userIds.length || userIds.length > 1000)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provide between 1 and 1000 userIds, or use an allowed automatic audience',
+      });
+    }
+    if (
+      audience &&
+      audience !== "whatsapp_opted_in" &&
+      !(audience === "verified_phones" && dryRun)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'audience must be "whatsapp_opted_in"; "verified_phones" is preview-only',
+      });
+    }
+    if (audience === "verified_phones" && !dryRun) {
+      return res.status(400).json({
+        success: false,
+        message: '"verified_phones" is available only when dryRun is true',
+      });
+    }
+    if (audience && userIds.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Provide either userIds or audience, not both",
+      });
+    }
+    if (userIds.some((id: string) => !Types.ObjectId.isValid(id))) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Every userId must be a valid user ID" });
+    }
+    if (dryRun) {
+      const previewQuery: Record<string, any> = {
+        phone: { $exists: true, $nin: [null, ""] },
+        isActive: { $ne: false },
+      };
+      if (audience === "whatsapp_opted_in") {
+        previewQuery.whatsappMarketingOptIn = true;
+        previewQuery.phoneVerified = true;
+      } else if (audience === "verified_phones") {
+        previewQuery.phoneVerified = true;
+      } else {
+        previewQuery._id = { $in: userIds.map((id: string) => new Types.ObjectId(id)) };
+      }
+      const matchedRecipients = await User.countDocuments(previewQuery);
+      return res.status(200).json({
+        success: true,
+        dryRun: true,
+        sent: false,
+        audience: audience || "userIds",
+        matchedRecipients,
+        message: "Preview complete. No messages were scheduled or sent.",
+      });
+    }
+    // Require an explicit zone so a local timestamp cannot be interpreted differently by servers.
+    if (
+      typeof rawScheduledAt !== "string" ||
+      !/(Z|[+-]\d{2}:?\d{2})$/i.test(rawScheduledAt)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "scheduledAt must be an ISO 8601 timestamp with a timezone, such as 2026-11-06T10:00:00+05:30",
+      });
+    }
+    const delay = scheduledAt.getTime() - Date.now();
+    if (!Number.isFinite(scheduledAt.getTime()) || delay <= 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "scheduledAt must be a valid future time" });
+    }
+
+    let templatesRes: any;
+    try {
+      templatesRes = await getTemplatesService();
+    } catch (metaErr: any) {
+      return res.status(502).json({
+        success: false,
+        message: "Could not load WhatsApp templates from Meta",
+        error: metaErr?.message,
+      });
+    }
+    const template = (templatesRes?.data || []).find(
+      (item: any) =>
+        item.name?.toLowerCase().trim() === templateName.toLowerCase(),
+    );
+    if (!template) {
+      return res
+        .status(404)
+        .json({ success: false, message: `Template "${templateName}" not found on Meta` });
+    }
+    if (String(template.status || "").toUpperCase() !== "APPROVED") {
+      return res.status(400).json({
+        success: false,
+        message: `Template "${template.name}" is ${template.status || "not approved"}. Only approved templates can be scheduled.`,
+      });
+    }
+
+    const headerFormat = resolveHeaderFormat(template);
+    const headerImageUrl = String(rawHeaderImageUrl || "").trim();
+    if (
+      ["IMAGE", "VIDEO", "DOCUMENT"].includes(headerFormat) &&
+      !headerImageUrl.startsWith("https://")
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: `This template requires a public HTTPS headerImageUrl for its ${headerFormat.toLowerCase()} header`,
+      });
+    }
+
+    const recipientQuery: Record<string, any> = {
+      phone: { $exists: true, $nin: [null, ""] },
+      isActive: { $ne: false },
+    };
+    if (audience === "whatsapp_opted_in") {
+      recipientQuery.whatsappMarketingOptIn = true;
+      recipientQuery.phoneVerified = true;
+    } else if (audience === "verified_phones") {
+      recipientQuery.phoneVerified = true;
+    } else {
+      recipientQuery._id = { $in: userIds.map((id: string) => new Types.ObjectId(id)) };
+    }
+    const users = await User.find(recipientQuery)
+      .select("_id name phone email city state locality")
+      .limit(1001)
+      .lean();
+    if (audience === "whatsapp_opted_in" && users.length > 1000) {
+      return res.status(413).json({
+        success: false,
+        message: "This audience exceeds the 1000-recipient limit; use smaller opted-in segments",
+      });
+    }
+    if (!users.length) {
+      return res.status(404).json({
+        success: false,
+        message:
+          audience === "whatsapp_opted_in"
+            ? "No active users with a verified phone number and WhatsApp marketing opt-in were found"
+            : "No active users with phone numbers were found",
+      });
+    }
+
+    const campaignId = (await import("uuid")).v4();
+    const language = templateLanguageCode(template, "en");
+    const bodyComponent = template.components?.find(
+      (component: any) => String(component.type || "").toUpperCase() === "BODY",
+    );
+    const variableCount = getVariableCount(bodyComponent?.text || "");
+    const logRows = users.map((user: any) => ({
+      to: String(user.phone),
+      templateName: template.name || templateName,
+      status: "pending",
+      campaignId,
+      scheduledAt,
+      variables: buildCampaignVariables(user, variableCount),
+      language,
+      ...(headerImageUrl ? { headerImageUrl } : {}),
+    }));
+
+    const logs = await WhatsAppLog.insertMany(logRows);
+    await WhatsAppCampaignRun.create({
+      campaignId,
+      source: "scheduled",
+      templateName: template.name || templateName,
+      status: "scheduled",
+      estimatedRecipients: users.length,
+      scheduledAt,
+      filter: { userIds: users.map((user: any) => String(user._id)) },
+      ...(headerImageUrl ? { headerImageUrl } : {}),
+    });
+
+    try {
+      await addWhatsAppJobsWithTimeout(
+        users.map((user: any, index: number) => ({
+          name: "send-message",
+          data: {
+            to: String(user.phone),
+            templateName: template.name || templateName,
+            variables: logRows[index]!.variables,
+            language,
+            campaignId,
+            logId: String(logs[index]!._id),
+            ...(headerImageUrl ? { headerImageUrl, headerFormat } : {}),
+          },
+          opts: {
+            delay,
+            jobId: `scheduled-${campaignId}-${String(user._id)}`,
+            attempts: 2,
+            backoff: { type: "exponential", delay: 8000 },
+            removeOnComplete: 100,
+            removeOnFail: 200,
+          },
+        })),
+      );
+    } catch (queueErr: any) {
+      await Promise.all([
+        WhatsAppLog.updateMany(
+          { campaignId },
+          {
+            status: "failed",
+            error: queueErr?.message || "Could not queue scheduled message",
+          },
+        ),
+        WhatsAppCampaignRun.updateOne(
+          { campaignId },
+          {
+            status: "failed",
+            error: queueErr?.message || "Could not queue scheduled message",
+          },
+        ),
+      ]);
+      return res.status(503).json({
+        success: false,
+        message: "Could not schedule WhatsApp messages. Check that Redis is running.",
+        campaignId,
+      });
+    }
+
+    return res.status(202).json({
+      success: true,
+      accepted: true,
+      status: "scheduled",
+      campaignId,
+      templateName: template.name || templateName,
+      scheduledAt: scheduledAt.toISOString(),
+      estimatedRecipients: users.length,
+      skippedCount: audience ? undefined : userIds.length - users.length,
+      message: `WhatsApp message scheduled for ${users.length} existing user(s).`,
+    });
+  } catch (error: any) {
+    console.error("WhatsApp scheduled message error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "WhatsApp message could not be scheduled",
     });
   }
 };

@@ -9,7 +9,8 @@
     "start": "node dist/services/user-service/src/server.js",
     "worker": "concurrently \"node dist/services/user-service/src/workers/email.worker.js\" \"node dist/services/user-service/src/workers/whatsapp.worker.js\"",
     "worker:dev": "concurrently \"ts-node src/workers/email.worker.ts\" \"ts-node src/workers/whatsapp.worker.ts\"",
-    "dev:worker": "concurrently \"ts-node-dev --respawn src/workers/email.worker.ts\" \"ts-node-dev --respawn src/workers/whatsapp.worker.ts\""
+    "dev:worker": "concurrently \"ts-node-dev --respawn src/workers/email.worker.ts\" \"ts-node-dev --respawn src/workers/whatsapp.worker.ts\"",
+    "migrate:whatsapp-opt-in-preview": "node scripts/migrateWhatsAppMarketingOptIn.cjs"
   },
   "keywords": [],
   "author": "",

@@ -18,6 +18,8 @@ export interface IUser extends mongoose.Document {
   pincode?: string;
   address?: string;
   phoneVerified?: boolean;
+  /** Explicit opt-in for WhatsApp marketing messages; defaults false for existing users. */
+  whatsappMarketingOptIn?: boolean;
   welcomeEmailSent?: boolean;
   /** Extended org profile for builder accounts (RERA, GST, media, etc.). */
   builderProfile?: {
@@ -209,6 +211,11 @@ const UserSchema = new mongoose.Schema(
     phoneVerified: {
       type: Boolean,
       default: false,
+    },
+    whatsappMarketingOptIn: {
+      type: Boolean,
+      default: false,
+      index: true,
     },
     welcomeEmailSent: {
       type: Boolean,

@@ -110,3 +110,29 @@ export async function addWhatsAppJobWithTimeout(
     if (timer) clearTimeout(timer);
   }
 }
+
+/** Add a scheduled batch atomically, failing fast when Redis is unavailable. */
+export async function addWhatsAppJobsWithTimeout(
+  jobs: Parameters<typeof whatsappQueue.addBulk>[0],
+) {
+  const timeoutMs = Number(process.env.QUEUE_ADD_TIMEOUT_MS || 10000);
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      whatsappQueue.addBulk(jobs),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `Redis did not respond within ${timeoutMs / 1000}s — check REDIS_URL and that Redis is reachable from this server`,
+              ),
+            ),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}

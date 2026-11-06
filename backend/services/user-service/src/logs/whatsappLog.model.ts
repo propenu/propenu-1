@@ -25,6 +25,7 @@ const schema = new mongoose.Schema(
 
     recordId: String,
     campaignId: { type: String, index: true },
+    scheduledAt: { type: Date, index: true },
   },
   { timestamps: true },
 );

@@ -5,12 +5,16 @@ import {
   getWhatsAppTemplates,
 } from "../../../../shared/whatsapp/templates/whatsappTemplate.controller";
 import whatsappLogRouter from "../logs/whatsappLog.routes";
-import { sendWhatsAppCampaignDynamic } from "../../../../shared/whatsapp/templates/whatsappTemplate.service";
+import {
+  scheduleWhatsAppUsers,
+  sendWhatsAppCampaignDynamic,
+} from "../../../../shared/whatsapp/templates/whatsappTemplate.service";
 import { upload, uploadNotificationImage, uploadWhatsAppTemplateMediaMulter } from "../middlewares/upload";
 import { sendWhatsAppCSV } from "../../../../shared/email/templates/template.controller";
 import whatsappRoutes from "../whatsapp/whatsapp.routes";
 import { whatsappInboxRouter } from "../../../../shared/whatsapp/inbox";
 import { authMiddleware } from "../middlewares/authMiddleware";
+import { requirePermission } from "../middlewares/requirePermission";
 import {
   uploadWhatsAppCampaignImage,
   uploadWhatsAppTemplateMedia,
@@ -25,6 +29,16 @@ whatsappRouter.use("/whatsapp-logs", whatsappLogRouter);
 whatsappRouter.post("/", createWhatsAppTemplate);
 whatsappRouter.get("/", getWhatsAppTemplates);
 whatsappRouter.post("/send-whatsapp", sendWhatsAppCampaignDynamic);
+/**
+ * Schedule a template for user IDs or the opted-in audience.
+ * Body: { userIds?: string[], audience?: "whatsapp_opted_in", templateName: string, scheduledAt: ISO-8601 with timezone }
+ */
+whatsappRouter.post(
+  "/schedule-users",
+  authMiddleware,
+  requirePermission("whatsapp_campaign:send"),
+  scheduleWhatsAppUsers,
+);
 whatsappRouter.post(
   "/upload-campaign-image",
   uploadNotificationImage.single("image"),

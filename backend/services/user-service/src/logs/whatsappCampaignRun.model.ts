@@ -7,15 +7,16 @@ import mongoose from "mongoose";
 const schema = new mongoose.Schema(
   {
     campaignId: { type: String, required: true, unique: true, index: true },
-    source: { type: String, enum: ["crm", "csv"], required: true },
+    source: { type: String, enum: ["crm", "csv", "scheduled"], required: true },
     templateName: { type: String, required: true },
     status: {
       type: String,
-      enum: ["accepted", "preparing", "queuing", "queued", "failed"],
+      enum: ["accepted", "scheduled", "preparing", "queuing", "queued", "failed"],
       default: "accepted",
       index: true,
     },
     estimatedRecipients: { type: Number, default: 0 },
+    scheduledAt: { type: Date },
     queued: { type: Number, default: 0 },
     skipped: { type: Number, default: 0 },
     headerMediaId: { type: String },

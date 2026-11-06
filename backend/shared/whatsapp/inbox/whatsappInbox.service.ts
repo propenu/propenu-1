@@ -896,6 +896,36 @@ function isOwnerRentAPropertyChoice(text: string) {
   );
 }
 
+/** Owner Post Property & More Flow: View My Properties → owner_post_property__more_options. */
+function isOwnerViewMyPropertiesChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[_-]+/g, " ");
+  return (
+    normalized === "view my properties" ||
+    normalized === "view my property" ||
+    normalized === "my properties"
+  );
+}
+
+/** Owner Flow: Contacted Properties → owner_contacted_properties. */
+function isOwnerContactedPropertiesChoice(text: string) {
+  const normalized = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,?]+/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[_-]+/g, " ");
+  return (
+    normalized === "contacted properties" ||
+    normalized === "contacted property" ||
+    normalized === "owner contacted properties"
+  );
+}
+
 /** Owner CTA: Explore Plans → session list of owner plans. */
 function isOwnerExplorePlansChoice(text: string) {
   const normalized = String(text || "")
@@ -1297,6 +1327,12 @@ const OWNER_SHORTLISTED_PROPERTIES_URL_SUFFIX = String(
 )
   .trim()
   .replace(/^\/+/, "");
+const OWNER_POST_PROPERTY_TEMPLATE = String(
+  process.env.WHATSAPP_OWNER_POST_PROPERTY_TEMPLATE || "post_a_property",
+).trim();
+const OWNER_CONTACTED_PROPERTIES_TEMPLATE = String(
+  process.env.WHATSAPP_OWNER_CONTACTED_PROPERTIES_TEMPLATE || "owner_contacted_properties",
+).trim();
 const OWNER_PLAN_DETAILS_TEMPLATE = String(
   process.env.WHATSAPP_OWNER_PLAN_DETAILS_TEMPLATE || "available_subscription_plans",
 ).trim();
@@ -2206,9 +2242,11 @@ async function loadOwnerPlans() {
 }
 
 /** Owner tapped Explore Plans → WhatsApp list (max 10 rows) grouped by Sell / Rent. */
-async function sendOwnerPlansList(waId: string) {
+async function sendOwnerPlansList(
+  waId: string,
+  body = "Here are the available Propenu owner plans. Tap a plan to see its details.",
+) {
   const plans = await loadOwnerPlans();
-  const body = "Here are the available Propenu owner plans. Tap a plan to see its details.";
   if (!plans.length) {
     await sendInboxTextMessage(
       waId,
@@ -2297,6 +2335,69 @@ async function sendOwnerPlanDetailsTemplate(waIdRaw: string, planCode: string) {
   });
 }
 
+/** Active paid owner plan (free plans do not count). Plan type comes from the plans collection. */
+async function ownerHasPaidPlan(userId: string) {
+  if (!userId || !mongoose.Types.ObjectId.isValid(userId)) return false;
+  if (mongoose.connection.readyState !== 1) return false;
+  const now = new Date();
+  const subs = await mongoose.connection
+    .collection("subscriptions")
+    .find({
+      userId: new mongoose.Types.ObjectId(userId),
+      status: "active",
+      $or: [{ endDate: null }, { endDate: { $exists: false } }, { endDate: { $gt: now } }],
+    })
+    .project({ planCode: 1 })
+    .toArray();
+  const planCodes = [
+    ...new Set(subs.map((sub) => String(sub.planCode || "").trim()).filter(Boolean)),
+  ];
+  if (!planCodes.length) return false;
+  const paid = await mongoose.connection.collection("plans").findOne({
+    code: { $in: planCodes },
+    userType: "owner",
+    price: { $gt: 0 },
+  });
+  return Boolean(paid);
+}
+
+/** Owner Post Property (Post Property & More Flow) → post_a_property. */
+async function sendOwnerPostPropertyTemplate(waIdRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName: OWNER_POST_PROPERTY_TEMPLATE || "post_a_property",
+    source: "owner_post_property_template",
+    bodyPreview:
+      "Your property submission request is ready for the next step.\n\nPlease use the link below to access the property submission page.",
+    buttons: [{ label: "Post a property", kind: "url" }],
+    ...ownerTemplateLimits(0.25, 5),
+  });
+}
+
+/** post_a_property, then the owner plans list when the owner has no paid plan. */
+async function handleOwnerPostPropertyFlow(waId: string, userId: string) {
+  await sendOwnerPostPropertyTemplate(waId);
+  const hasPlan = await ownerHasPaidPlan(userId).catch(() => false);
+  if (hasPlan) return;
+  await sendOwnerPlansList(
+    waId,
+    "You don't have an active Propenu owner plan yet. Choose a plan to get more listings and better visibility.",
+  );
+}
+
+/** Owner Manage My Leads / Contacted Properties → owner_contacted_properties. */
+async function sendOwnerContactedPropertiesTemplate(waIdRaw: string) {
+  return sendApprovedInboxTemplate({
+    waIdRaw,
+    templateName: OWNER_CONTACTED_PROPERTIES_TEMPLATE || "owner_contacted_properties",
+    source: "owner_contacted_properties_template",
+    bodyPreview:
+      "Your previously contacted properties are available in your Propenu account.\n\nYou can access the details of these properties using the link below.",
+    buttons: [{ label: "Click Here", kind: "url" }],
+    ...ownerTemplateLimits(0.25, 5),
+  });
+}
+
 /** Owner tapped Shortlisted Properties → owner_shortlisted_properties_. */
 async function sendOwnerShortlistedPropertiesTemplate(waIdRaw: string) {
   return sendApprovedInboxTemplate({
@@ -2347,6 +2448,8 @@ export async function reopenWhatsAppChatForDeletedPhone(phoneRaw: string) {
           "owner_buy_a_property_template",
           "owner_rent_a_property_template",
           "owner_shortlisted_properties_template",
+          "owner_post_property_template",
+          "owner_contacted_properties_template",
           /^owner_plan_details_template:/,
         ],
       },
@@ -2502,6 +2605,36 @@ async function replyToInboundMessage(waId: string, text: string) {
       return;
     }
 
+    // Owner Post Property & More Flow: View My Properties → owner_post_property__more_options
+    if (isOwnerViewMyPropertiesChoice(inbound) && account.isOwner && !account.isAgent) {
+      try {
+        console.log(
+          `WhatsApp owner View My Properties ******${String(waId).slice(-4)}`,
+        );
+        await sendOwnerPostPropertyMoreTemplate(waId);
+      } catch (err) {
+        console.error("WhatsApp owner View My Properties template failed:", err);
+      }
+      return;
+    }
+
+    // Owner Manage My Leads / Contacted Properties → owner_contacted_properties
+    if (
+      (isOwnerContactedPropertiesChoice(inbound) || isManageMyLeadsChoice(inbound)) &&
+      account.isOwner &&
+      !account.isAgent
+    ) {
+      try {
+        console.log(
+          `WhatsApp owner Contacted Properties / Manage My Leads ******${String(waId).slice(-4)}`,
+        );
+        await sendOwnerContactedPropertiesTemplate(waId);
+      } catch (err) {
+        console.error("WhatsApp owner contacted properties template failed:", err);
+      }
+      return;
+    }
+
     // Agent self-serve More Options templates — do not block on botPaused.
     // Agent Manage Properties (More Options) → manage listings template.
     if (isManagePropertiesChoice(inbound)) {
@@ -2589,7 +2722,19 @@ async function replyToInboundMessage(waId: string, text: string) {
         }
         return;
       }
-      // Non-agents: keep a simple post link session reply.
+      // Owners: post_a_property, plus owner plans list when there is no paid plan.
+      if (account.isOwner) {
+        try {
+          console.log(
+            `WhatsApp owner Post Property ******${String(waId).slice(-4)}`,
+          );
+          await handleOwnerPostPropertyFlow(waId, String(account.userId || ""));
+        } catch (err) {
+          console.error("WhatsApp owner Post Property flow failed:", err);
+        }
+        return;
+      }
+      // Other non-agents: keep a simple post link session reply.
       if (paused && !account.isNew) return;
       try {
         const content = newUserChoiceContent("post_property");

@@ -6,6 +6,14 @@ import {
 } from "./whatsappInbox.model";
 import { whatsappInboxBus } from "./whatsappInbox.events";
 import { searchInboxAssignableAgents } from "./whatsappInbox.assign";
+import {
+  buildTemplatePreview,
+  getTemplateDefinition,
+  templatePreviewText,
+  templatesLoaded,
+  type TemplatePreview,
+  type TemplatePreviewCardInput,
+} from "./templatePreview";
 
 const API_VERSION = process.env.WHATSAPP_API_VERSION || "v23.0";
 
@@ -496,6 +504,140 @@ async function findUserByWhatsAppPhone(waId: string) {
     },
     { projection: { phoneVerified: 1, name: 1, city: 1, state: 1, roleId: 1 } },
   );
+}
+
+export type InboxContact = {
+  /** Phone-verified Propenu account (same rule the bot uses for "existing" users). */
+  registered: boolean;
+  userId: string;
+  name: string;
+  roleKey: string;
+  roleLabel: string;
+  /** Builder company (for builders) or the builder a staff member works for. */
+  orgName: string;
+};
+
+/** Inbox list tag. Only the plain "agent" role is shown as Agent (sales_agent keeps its own name). */
+function inboxRoleLabel(roleKey: string) {
+  const labels: Record<string, string> = {
+    agent: "Agent",
+    agents: "Agent",
+    owner: "Owner",
+    owners: "Owner",
+    property_owner: "Owner",
+    property_owners: "Owner",
+    user: "User",
+    users: "User",
+    builder: "Builder",
+    builders: "Builder",
+    builder_staff: "Builder Staff",
+  };
+  if (labels[roleKey]) return labels[roleKey];
+  return roleKey
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+/** Batch lookup of dashboard users for inbox chats (by WhatsApp number). */
+async function resolveInboxContacts(waIds: string[]) {
+  const contacts = new Map<string, InboxContact>();
+  const db = mongoose.connection?.db;
+  if (!db || mongoose.connection.readyState !== 1 || !waIds.length) return contacts;
+
+  const last10ByWaId = new Map<string, string>();
+  const phoneValues = new Set<string>();
+  for (const waId of waIds) {
+    const values = phoneLookupValues(waId);
+    const last10 = values[0];
+    if (!last10) continue;
+    last10ByWaId.set(waId, last10);
+    values.forEach((value) => phoneValues.add(value));
+  }
+  if (!phoneValues.size) return contacts;
+
+  const users = await db
+    .collection("users")
+    .find({ phone: { $in: [...phoneValues] } })
+    .project({ name: 1, phone: 1, phoneVerified: 1, roleId: 1, companyName: 1 })
+    .toArray();
+  // Prefer the verified account when several share a number.
+  const userByLast10 = new Map<string, any>();
+  for (const user of users) {
+    const last10 = String(user.phone || "").replace(/\D/g, "").slice(-10);
+    const existing = userByLast10.get(last10);
+    if (!existing || (user.phoneVerified === true && existing.phoneVerified !== true)) {
+      userByLast10.set(last10, user);
+    }
+  }
+
+  const roleIds = [...new Set(users.map((u) => String(u.roleId || "")).filter(Boolean))]
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  const roles = roleIds.length
+    ? await db.collection("roles").find({ _id: { $in: roleIds } }).project({ name: 1 }).toArray()
+    : [];
+  const roleKeyById = new Map(
+    roles.map((role) => [String(role._id), normalizeWhatsAppRoleName(role.name)]),
+  );
+
+  const staffIds = users
+    .filter((u) => roleKeyById.get(String(u.roleId || "")) === "builder_staff")
+    .map((u) => u._id);
+  const builderByStaffId = new Map<string, string>();
+  if (staffIds.length) {
+    const members = await db
+      .collection("buildermembers")
+      .find({ userId: { $in: staffIds }, isActive: { $ne: false } })
+      .project({ userId: 1, builderId: 1 })
+      .toArray();
+    const builderIds = [...new Set(members.map((m) => String(m.builderId || "")).filter(Boolean))]
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+    const builders = builderIds.length
+      ? await db
+          .collection("users")
+          .find({ _id: { $in: builderIds } })
+          .project({ name: 1, companyName: 1 })
+          .toArray()
+      : [];
+    const builderNameById = new Map(
+      builders.map((b) => [String(b._id), String(b.companyName || b.name || "").trim()]),
+    );
+    for (const member of members) {
+      const name = builderNameById.get(String(member.builderId || ""));
+      if (name) builderByStaffId.set(String(member.userId), name);
+    }
+  }
+
+  for (const waId of waIds) {
+    const user = userByLast10.get(last10ByWaId.get(waId) || "");
+    if (!user || user.phoneVerified !== true) {
+      contacts.set(waId, {
+        registered: false,
+        userId: user?._id ? String(user._id) : "",
+        name: "",
+        roleKey: "",
+        roleLabel: "",
+        orgName: "",
+      });
+      continue;
+    }
+    const roleKey = roleKeyById.get(String(user.roleId || "")) || "";
+    contacts.set(waId, {
+      registered: true,
+      userId: String(user._id),
+      name: String(user.name || "").trim(),
+      roleKey,
+      roleLabel: roleKey ? inboxRoleLabel(roleKey) : "",
+      orgName:
+        roleKey === "builder" || roleKey === "builders"
+          ? String(user.companyName || "").trim()
+          : builderByStaffId.get(String(user._id)) || "",
+    });
+  }
+  return contacts;
 }
 
 function normalizeWhatsAppRoleName(roleName?: string | null) {
@@ -3008,7 +3150,7 @@ export async function listConversations(params?: {
     delete filter.assignedAgentId;
   }
 
-  return WhatsAppConversation.aggregate([
+  const conversations = await WhatsAppConversation.aggregate([
     { $match: filter },
     {
       $addFields: {
@@ -3021,6 +3163,42 @@ export async function listConversations(params?: {
     { $limit: limit },
     { $project: { _rank: 0 } },
   ]);
+
+  await refreshTemplateListPreviews(conversations).catch((err) =>
+    console.error("WhatsApp inbox list preview refresh failed:", err),
+  );
+  const contacts = await resolveInboxContacts(
+    conversations.map((conversation: any) => String(conversation.waId || "")),
+  ).catch((err) => {
+    console.error("WhatsApp inbox contact lookup failed:", err);
+    return new Map<string, InboxContact>();
+  });
+  return conversations.map((conversation: any) => ({
+    ...conversation,
+    contact: contacts.get(String(conversation.waId || "")) || null,
+  }));
+}
+
+/** List rows still showing "Template: name" → rebuild the latest template message once. */
+async function refreshTemplateListPreviews(conversations: any[]) {
+  const stale = conversations
+    .filter((conversation) => /^Template:\s*\S/.test(String(conversation.lastMessagePreview || "")))
+    .slice(0, 30);
+  for (const conversation of stale) {
+    const latest = await WhatsAppMessage.findOne({
+      conversationId: conversation._id,
+      direction: "outbound",
+      type: "template",
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+    if (!latest || latest.raw?.templatePreviewMissing) continue;
+    await backfillCampaignTemplatePreviews([latest]);
+    const preview = previewFromBody(String(latest.body || ""));
+    if (preview && !/^Template:\s*/.test(preview)) {
+      conversation.lastMessagePreview = preview;
+    }
+  }
 }
 
 /**
@@ -3125,6 +3303,24 @@ export async function syncInboxFromWhatsAppLogs() {
   return { conversationsTouched, messagesCreated, logsScanned: logs.length };
 }
 
+/** Rebuilt template content for the inbox bubble; null if Meta has no such template. */
+async function resolveTemplatePreview(params: {
+  templateName: string;
+  language?: string | undefined;
+  variables?: string[] | undefined;
+  headerImageUrl?: string | undefined;
+  carouselCards?: TemplatePreviewCardInput[] | undefined;
+}): Promise<TemplatePreview | null> {
+  try {
+    const template = await getTemplateDefinition(params.templateName, params.language);
+    if (!template) return null;
+    return buildTemplatePreview(template, params);
+  } catch (err) {
+    console.error("WhatsApp template preview failed:", err);
+    return null;
+  }
+}
+
 /** Record an outbound template send into the inbox (used by campaign worker). */
 export async function recordOutboundTemplateMessage(params: {
   to: string;
@@ -3134,6 +3330,10 @@ export async function recordOutboundTemplateMessage(params: {
   response?: unknown;
   error?: string;
   at?: Date;
+  language?: string | undefined;
+  variables?: string[] | undefined;
+  headerImageUrl?: string | undefined;
+  carouselCards?: TemplatePreviewCardInput[] | undefined;
 }) {
   const waId = normalizeWaId(params.to);
   if (!waId) return null;
@@ -3167,7 +3367,16 @@ export async function recordOutboundTemplateMessage(params: {
     }
   }
 
-  const body = `Template: ${params.templateName || "message"}`;
+  const templatePreview = await resolveTemplatePreview({
+    templateName: params.templateName,
+    language: params.language,
+    variables: params.variables || [],
+    headerImageUrl: params.headerImageUrl,
+    carouselCards: params.carouselCards,
+  });
+  const body =
+    (templatePreview && templatePreviewText(templatePreview)) ||
+    `Template: ${params.templateName || "message"}`;
   const at = params.at || new Date();
   const conversation = await upsertConversation({
     waId,
@@ -3197,12 +3406,102 @@ export async function recordOutboundTemplateMessage(params: {
     error: params.error,
     raw: {
       fromCampaign: true,
+      templateName: params.templateName,
+      ...(templatePreview ? { templatePreview } : {}),
       logId: params.logId ? String(params.logId) : undefined,
       response: params.response,
     },
     createdAt: at,
     updatedAt: at,
   });
+}
+
+/**
+ * Campaign rows only stored "Template: name", and bot rows only the body text.
+ * Rebuild the exact Meta template content once (campaign log / bodyParams values)
+ * and save it on the message.
+ */
+async function backfillCampaignTemplatePreviews(messages: any[]) {
+  const pending = messages.filter(
+    (msg) =>
+      msg?.direction === "outbound" &&
+      msg?.type === "template" &&
+      (msg?.raw?.fromCampaign ||
+        msg?.raw?.fromLog ||
+        typeof msg?.raw?.template === "string") &&
+      !msg?.raw?.templatePreview &&
+      !msg?.raw?.templatePreviewMissing,
+  );
+  if (!pending.length) return;
+
+  const logIds = pending
+    .map((msg) => String(msg.raw?.logId || ""))
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  const logs = logIds.length && mongoose.connection.db
+    ? await mongoose.connection.db
+        .collection("whatsapplogs")
+        .find({ _id: { $in: logIds } })
+        .project({ templateName: 1, variables: 1, language: 1, headerImageUrl: 1 })
+        .toArray()
+    : [];
+  const logById = new Map(logs.map((log: any) => [String(log._id), log]));
+
+  for (const msg of pending) {
+    const fromCampaign = Boolean(msg.raw?.fromCampaign || msg.raw?.fromLog);
+    const log: any = logById.get(String(msg.raw?.logId || ""));
+    const templateName = String(
+      msg.raw?.templateName ||
+        (typeof msg.raw?.template === "string" ? msg.raw.template : "") ||
+        log?.templateName ||
+        String(msg.body || "").replace(/^Template:\s*/i, ""),
+    ).trim();
+    if (!templateName) continue;
+    const variables = fromCampaign
+      ? Array.isArray(log?.variables)
+        ? log.variables
+        : undefined
+      : Array.isArray(msg.raw?.bodyParams)
+        ? msg.raw.bodyParams
+        : [];
+    const preview = await resolveTemplatePreview({
+      templateName,
+      language: log?.language || msg.raw?.language,
+      variables,
+      headerImageUrl: log?.headerImageUrl,
+    });
+    if (!preview) {
+      // Meta unreachable → retry on a later open.
+      if (!templatesLoaded()) continue;
+      // Template deleted on Meta — stop retrying on every open.
+      await WhatsAppMessage.updateOne(
+        { _id: msg._id },
+        { $set: { "raw.templatePreviewMissing": true } },
+      ).catch(() => undefined);
+      continue;
+    }
+    // Bot rows already have readable body text; only replace the campaign placeholder.
+    const oldBody = String(msg.body || "");
+    const body = fromCampaign ? templatePreviewText(preview) || msg.body : msg.body;
+    msg.raw = { ...(msg.raw || {}), templateName, templatePreview: preview };
+    msg.body = body;
+    if (body !== oldBody && msg.waId) {
+      await WhatsAppConversation.updateOne(
+        { waId: msg.waId, lastMessagePreview: previewFromBody(oldBody) },
+        { $set: { lastMessagePreview: previewFromBody(body) } },
+      ).catch(() => undefined);
+    }
+    await WhatsAppMessage.updateOne(
+      { _id: msg._id },
+      {
+        $set: {
+          body,
+          "raw.templateName": templateName,
+          "raw.templatePreview": preview,
+        },
+      },
+    ).catch((err) => console.error("WhatsApp template preview save failed:", err));
+  }
 }
 
 export async function getConversationMessages(
@@ -3231,6 +3530,10 @@ export async function getConversationMessages(
     .sort({ createdAt: -1 })
     .limit(limit)
     .lean();
+
+  await backfillCampaignTemplatePreviews(messages).catch((err) =>
+    console.error("WhatsApp campaign preview backfill failed:", err),
+  );
 
   return {
     conversation,

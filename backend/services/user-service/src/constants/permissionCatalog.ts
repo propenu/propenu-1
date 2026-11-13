@@ -40,6 +40,7 @@ export const PERMISSION_CATALOG: PermissionModule[] = [
   definePermissionModule("lead", "Leads", "Manage enquiries, ownership and exports.", ["create", "view", "edit", "update", "delete", "assign", "transfer", "import", "export", "download", ["update_status", "Update status"], ["add_note", "Add note"], ["view_contacts", "View contacts"]]),
   definePermissionModule("blog", "Blogs", "Create and publish editorial content.", ["create", "view", "edit", "update", "delete", "publish", "unpublish"]),
   definePermissionModule("site_banner", "Site banner & logo", "Manage website banners (multi-size WebP) and company GIF logo.", ["create", "view", "update", "delete"]),
+  definePermissionModule("data_library", "Data library", "Upload PDFs, sheets, docs and form links; filter by date and download.", ["create", "view", "update", "delete", "download"]),
   definePermissionModule("kyc", "KYC", "Review and decide verification requests.", ["view", "update", "verify", "approve", "reject", ["request_changes", "Request changes"]]),
   definePermissionModule("location", "Locations", "Manage supported locations.", ["create", "view", "update", "delete", "activate", "deactivate"]),
   definePermissionModule("shortlist", "Shortlists", "Review customer shortlist insights.", ["view", ["view_analytics", "View analytics"], ["view_featured", "View featured"], "export"]),

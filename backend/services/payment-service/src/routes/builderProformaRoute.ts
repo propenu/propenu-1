@@ -4,6 +4,7 @@ import {
   createProforma,
   deleteProforma,
   deleteProformaAttachment,
+  duplicateProforma,
   getProforma,
   getProformaPdf,
   listProformas,
@@ -33,6 +34,7 @@ router.delete(
   requirePermission("builder_invoice:update"),
   deleteProformaAttachment,
 );
+router.post("/:id/duplicate", authMiddleware, requirePermission("builder_invoice:create"), duplicateProforma);
 router.post("/:id/convert", authMiddleware, requirePermission("builder_invoice:create"), convertProformaToInvoice);
 router.patch("/:id", authMiddleware, requirePermission("builder_invoice:update"), updateProforma);
 router.delete("/:id", authMiddleware, requirePermission("builder_invoice:delete"), deleteProforma);

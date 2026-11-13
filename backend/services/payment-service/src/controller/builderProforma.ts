@@ -42,6 +42,15 @@ const validId = (value: unknown) => {
   return id && Types.ObjectId.isValid(id) ? id : null;
 };
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const OPEN_STATUSES = ["draft", "sent", "accepted"];
+/** A pro-forma stays usable through the whole of its valid-until day. */
+const expiryCutoff = () => new Date(Date.now() - DAY_MS);
+const isExpired = (proforma: any) =>
+  OPEN_STATUSES.includes(proforma?.status) && proforma?.validUntil && new Date(proforma.validUntil) < expiryCutoff();
+const expiredMessage = (proforma: any) =>
+  `This pro-forma expired on ${new Date(proforma.validUntil).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}. Duplicate it to quote again with new dates.`;
+const checkDates = (proformaDate?: Date | null, validUntil?: Date | null) =>
+  proformaDate && validUntil && validUntil < proformaDate ? "Valid until must be on or after the pro-forma date" : "";
 const actorId = (req: AuthRequest) => (req.user?.id && Types.ObjectId.isValid(req.user.id) ? req.user.id : undefined);
 
 function readItems(raw: unknown) {
@@ -145,7 +154,9 @@ export async function listProformas(req: AuthRequest, res: Response) {
     const limit = Math.min(50, Math.max(1, Math.floor(Number(req.query.limit) || 12)));
     const filter: Record<string, unknown> = {};
     const status = String(req.query.status || "").toLowerCase();
-    if ((PROFORMA_STATUSES as readonly string[]).includes(status)) filter.status = status;
+    const expiredFilter = { status: { $in: OPEN_STATUSES }, validUntil: { $lt: expiryCutoff() } };
+    if (status === "expired") Object.assign(filter, expiredFilter);
+    else if ((PROFORMA_STATUSES as readonly string[]).includes(status)) filter.status = status;
     const userId = validId(req.query.userId);
     if (userId) filter.userId = userId;
     const q = String(req.query.q || "").trim().slice(0, 80);
@@ -156,7 +167,7 @@ export async function listProformas(req: AuthRequest, res: Response) {
       );
     }
 
-    const [total, proformas, counts] = await Promise.all([
+    const [total, proformas, counts, expiredCount] = await Promise.all([
       BuilderProforma.countDocuments(filter),
       BuilderProforma.find(filter)
         .populate("convertedInvoiceId", "invoiceNumber paymentStatus paidAmount totalAmount")
@@ -165,12 +176,14 @@ export async function listProformas(req: AuthRequest, res: Response) {
         .limit(limit)
         .lean(),
       BuilderProforma.aggregate([{ $group: { _id: "$status", count: { $sum: 1 }, amount: { $sum: "$totalAmount" } } }]),
+      BuilderProforma.countDocuments(expiredFilter),
     ]);
     const pages = Math.max(1, Math.ceil(total / limit));
     return res.json({
       success: true,
       proformas,
       counts: Object.fromEntries(counts.map((row: any) => [row._id, { count: row.count, amount: row.amount }])),
+      expiredCount,
       meta: { total, page, limit, pages, hasNextPage: page < pages, hasPreviousPage: page > 1 },
     });
   } catch (error) {
@@ -204,11 +217,14 @@ export async function createProforma(req: AuthRequest, res: Response) {
     if (items.length > MAX_ITEMS) return res.status(400).json({ success: false, message: `Up to ${MAX_ITEMS} product lines are allowed` });
 
     const proformaDate = dateOrUndefined(body.proformaDate) || new Date();
+    const validUntil = dateOrUndefined(body.validUntil) || new Date(proformaDate.getTime() + 15 * DAY_MS);
+    const dateProblem = checkDates(proformaDate, validUntil);
+    if (dateProblem) return res.status(400).json({ success: false, message: dateProblem });
     const status = (PROFORMA_STATUSES as readonly string[]).includes(body.status) && body.status !== "converted" ? body.status : "draft";
     const proforma = await BuilderProforma.create({
       proformaNumber: await nextProformaNumber(),
       proformaDate,
-      validUntil: dateOrUndefined(body.validUntil) || new Date(proformaDate.getTime() + 15 * DAY_MS),
+      validUntil,
       userId: links.userId,
       client: links.client,
       propertyId: links.propertyId,
@@ -243,6 +259,18 @@ export async function updateProforma(req: AuthRequest, res: Response) {
       await proforma.save();
       return res.json({ success: true, message: "Pro-forma already converted; only notes were updated", proforma });
     }
+    if (isExpired(proforma)) {
+      if (body.status !== "cancelled") return res.status(400).json({ success: false, message: expiredMessage(proforma) });
+      proforma.status = "cancelled";
+      proforma.updatedBy = actorId(req);
+      await proforma.save();
+      return res.json({ success: true, message: "Expired pro-forma cancelled", proforma });
+    }
+
+    const nextProformaDate = dateOrUndefined(body.proformaDate) || proforma.proformaDate;
+    const nextValidUntil = body.validUntil === null ? null : dateOrUndefined(body.validUntil) || proforma.validUntil;
+    const dateProblem = checkDates(nextProformaDate, nextValidUntil);
+    if (dateProblem) return res.status(400).json({ success: false, message: dateProblem });
 
     const links = await resolveLinks(body, proforma);
     if ("error" in links) return res.status(400).json({ success: false, message: links.error });
@@ -255,8 +283,8 @@ export async function updateProforma(req: AuthRequest, res: Response) {
     if (items.length > MAX_ITEMS) return res.status(400).json({ success: false, message: `Up to ${MAX_ITEMS} product lines are allowed` });
 
     Object.assign(proforma, {
-      proformaDate: dateOrUndefined(body.proformaDate) || proforma.proformaDate,
-      validUntil: body.validUntil === null ? null : dateOrUndefined(body.validUntil) || proforma.validUntil,
+      proformaDate: nextProformaDate,
+      validUntil: nextValidUntil,
       userId: links.userId,
       client: links.client,
       propertyId: links.propertyId,
@@ -275,6 +303,54 @@ export async function updateProforma(req: AuthRequest, res: Response) {
   } catch (error: any) {
     console.error("[proforma] update failed", error);
     return res.status(400).json({ success: false, message: error?.message || "Could not update pro-forma" });
+  }
+}
+
+export async function duplicateProforma(req: AuthRequest, res: Response) {
+  try {
+    const id = validId(req.params.id);
+    if (!id) return res.status(400).json({ success: false, message: "Invalid pro-forma id" });
+    const source: any = await BuilderProforma.findById(id).lean();
+    if (!source) return res.status(404).json({ success: false, message: "Pro-forma not found" });
+
+    const body = req.body || {};
+    const sourceDays =
+      source.proformaDate && source.validUntil
+        ? Math.round((new Date(source.validUntil).getTime() - new Date(source.proformaDate).getTime()) / DAY_MS)
+        : 0;
+    const proformaDate = dateOrUndefined(body.proformaDate) || new Date();
+    const validUntil = dateOrUndefined(body.validUntil) || new Date(proformaDate.getTime() + (sourceDays > 0 ? sourceDays : 15) * DAY_MS);
+    const dateProblem = checkDates(proformaDate, validUntil);
+    if (dateProblem) return res.status(400).json({ success: false, message: dateProblem });
+
+    const items = (source.items || []).map(({ productName, sacCode, qty, days, amount }: any) => ({ productName, sacCode, qty, days, amount }));
+    const proforma = await BuilderProforma.create({
+      proformaNumber: await nextProformaNumber(),
+      proformaDate,
+      validUntil,
+      userId: source.userId,
+      client: source.client,
+      propertyId: source.propertyId,
+      projectName: source.projectName,
+      projectCode: source.projectCode,
+      servicePlanId: source.servicePlanId,
+      servicePlanName: source.servicePlanName,
+      items,
+      ...computeTotals(items, source.gstRate),
+      notes: source.notes,
+      status: "draft",
+      duplicatedFrom: source._id,
+      createdBy: actorId(req),
+      createdByName: req.user?.name,
+    });
+    return res.status(201).json({
+      success: true,
+      message: `Pro-forma ${proforma.proformaNumber} created from ${source.proformaNumber}`,
+      proforma,
+    });
+  } catch (error: any) {
+    console.error("[proforma] duplicate failed", error);
+    return res.status(400).json({ success: false, message: error?.message || "Could not duplicate pro-forma" });
   }
 }
 
@@ -381,6 +457,7 @@ export async function convertProformaToInvoice(req: AuthRequest, res: Response) 
     if (proforma.status === "cancelled") {
       return res.status(400).json({ success: false, message: "Cancelled pro-forma cannot be converted" });
     }
+    if (isExpired(proforma)) return res.status(400).json({ success: false, message: expiredMessage(proforma) });
 
     const body = req.body || {};
     const resolved = await resolveInvoiceDependencies({

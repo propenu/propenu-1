@@ -5,7 +5,7 @@ export type Festival = {
 };
 
 export const FESTIVALS: Festival[] = [
-  { date: "2026-11-06", occasion: "Diwali", id: "diwali" },
+  { date: "2026-11-08", occasion: "Diwali", id: "diwali" },
   { date: "2026-12-25", occasion: "Christmas", id: "christmas" },
   { date: "2027-01-01", occasion: "New Year", id: "new-year-2027" },
   {

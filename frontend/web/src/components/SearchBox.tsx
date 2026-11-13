@@ -108,6 +108,7 @@ const SearchBox = ({
   const [open, setOpen] = useState(false);
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [showCityRequiredMessage, setShowCityRequiredMessage] = useState(false);
   const [typedSuggestions, setTypedSuggestions] = useState<SearchSuggestion[]>([]);
   const [recentSearches, setRecentSearches] = useState<RecentSearchItem[]>([]);
   const [activeSearchCity, setActiveSearchCity] = useState<SearchCityContext | null>(null);
@@ -643,6 +644,8 @@ const SearchBox = ({
     : "Popular Cities";
 
   const handleSuggestionSelect = (suggestion: SearchSuggestion) => {
+    setShowCityRequiredMessage(false);
+
     if (suggestion.kind === "city") {
       saveRecentSearch(suggestion);
       setSelectedProject(null);
@@ -691,6 +694,17 @@ const SearchBox = ({
     }
 
     const firstSuggestion = searchText.trim() ? searchSuggestions[0] : null;
+
+    if (
+      !firstSuggestion &&
+      !searchText.trim() &&
+      selectedLocalities.length === 0 &&
+      !visibleSearchCity
+    ) {
+      setShowCityRequiredMessage(true);
+      setSearchOpen(true);
+      return;
+    }
 
     if (firstSuggestion) {
       if (firstSuggestion.kind === "project") {
@@ -743,11 +757,6 @@ const SearchBox = ({
       router.push(targetPath);
       onNavigate?.();
       return;
-    } else {
-      const cleanedSearch = searchText.trim();
-      if (!cleanedSearch && selectedLocalities.length === 0 && !visibleSearchCity) {
-        return;
-      }
     }
 
     const targetPath = buildPropertiesHref({
@@ -917,6 +926,7 @@ const SearchBox = ({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
+                        setShowCityRequiredMessage(false);
                         setActiveSearchCity(null);
                         setIsCityChipDismissed(true);
                         setSelectedProject(null);
@@ -982,6 +992,7 @@ const SearchBox = ({
                   setSearchOpen(true);
                 }}
                 onChange={(e) => {
+                  setShowCityRequiredMessage(false);
                   setSelectedProject(null);
                   dispatch(setSearchText(e.target.value));
                   setSearchOpen(true);
@@ -1009,6 +1020,11 @@ const SearchBox = ({
                 )}
               >
               <div className="space-y-3">
+                {showCityRequiredMessage && (
+                  <p role="alert" className="text-xs font-medium text-red-600">
+                    Please select a city or enter a locality or project.
+                  </p>
+                )}
                 <p className="text-sm font-semibold text-gray-700">
                   {searchText.trim()
                     ? "Search cities, localities and projects"
@@ -1167,21 +1183,32 @@ const SearchBox = ({
           </div>
 
           {!searchOnly && (
-            <button
-              type="button"
-              onClick={handleSearchSubmit}
-              className={clsx(
-                "btn-primary shrink-0 text-sm font-semibold",
-                mobileMode
-                  ? "flex h-10 w-10 items-center justify-center rounded-full p-0"
-                  : "flex items-center gap-2 rounded-lg px-4 py-2",
+            <div className="relative shrink-0">
+              {showCityRequiredMessage && (
+                <div
+                  role="status"
+                  className="pointer-events-none absolute bottom-full right-0 z-50 mb-2 w-max max-w-[min(18rem,85vw)] rounded-md bg-slate-900 px-3 py-2 text-xs font-medium text-white shadow-lg"
+                >
+                  Please select a city or enter a locality or project.
+                  <span className="absolute -bottom-1 right-5 h-2 w-2 rotate-45 bg-slate-900" />
+                </div>
               )}
-            >
-              <IoIosSearch className="h-5 w-5" />
-              <span className={mobileMode ? "hidden" : "hidden sm:inline"}>
-                Search
-              </span>
-            </button>
+              <button
+                type="button"
+                onClick={handleSearchSubmit}
+                className={clsx(
+                  "btn-primary shrink-0 text-sm font-semibold",
+                  mobileMode
+                    ? "flex h-10 w-10 items-center justify-center rounded-full p-0"
+                    : "flex items-center gap-2 rounded-lg px-4 py-2",
+                )}
+              >
+                <IoIosSearch className="h-5 w-5" />
+                <span className={mobileMode ? "hidden" : "hidden sm:inline"}>
+                  Search
+                </span>
+              </button>
+            </div>
           )}
         </div>
 

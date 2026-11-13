@@ -191,10 +191,10 @@ export default function FloorPlan({ project }: FloorPlanProps) {
   const [activeUnitIndex, setActiveUnitIndex] = useState(0);
   const [planZoom, setPlanZoom] = useState(MIN_PLAN_ZOOM);
   const [isDraggingPlan, setIsDraggingPlan] = useState(false);
-  const [isDraggingGroupTabs, setIsDraggingGroupTabs] = useState(false);
-  const [isDraggingUnitTabs, setIsDraggingUnitTabs] = useState(false);
   const [canScrollGroupTabsLeft, setCanScrollGroupTabsLeft] = useState(false);
   const [canScrollGroupTabsRight, setCanScrollGroupTabsRight] = useState(false);
+  const [canScrollUnitTabsLeft, setCanScrollUnitTabsLeft] = useState(false);
+  const [canScrollUnitTabsRight, setCanScrollUnitTabsRight] = useState(false);
   const isLand = project.categoryType?.toLowerCase() === "land";
   const sectionTitle = isLand ? "Layout" : "Floor Plans";
 
@@ -255,6 +255,32 @@ export default function FloorPlan({ project }: FloorPlanProps) {
     updateGroupTabScrollState();
   }, [activeGroupIndex]);
 
+  const updateUnitTabScrollState = () => {
+    const container = unitTabsScrollRef.current;
+    if (!container) return;
+
+    const { scrollLeft, scrollWidth, clientWidth } = container;
+    const maxScrollLeft = Math.max(0, scrollWidth - clientWidth);
+
+    setCanScrollUnitTabsLeft(scrollLeft > 4);
+    setCanScrollUnitTabsRight(scrollLeft < maxScrollLeft - 4);
+  };
+
+  useEffect(() => {
+    updateUnitTabScrollState();
+
+    const container = unitTabsScrollRef.current;
+    if (!container) return;
+
+    container.addEventListener("scroll", updateUnitTabScrollState, { passive: true });
+    window.addEventListener("resize", updateUnitTabScrollState);
+
+    return () => {
+      container.removeEventListener("scroll", updateUnitTabScrollState);
+      window.removeEventListener("resize", updateUnitTabScrollState);
+    };
+  }, [activeGroupIndex, activeGroup?.units.length]);
+
   const zoomPlan = (direction: "in" | "out") => {
     setPlanZoom((currentZoom) => {
       const nextZoom =
@@ -306,8 +332,6 @@ export default function FloorPlan({ project }: FloorPlanProps) {
       clientX: event.clientX,
       scrollLeft: container.scrollLeft,
     };
-    setIsDraggingGroupTabs(true);
-    container.setPointerCapture(event.pointerId);
   };
 
   const handleGroupTabsPointerMove = (event: PointerEvent<HTMLDivElement>) => {
@@ -321,14 +345,12 @@ export default function FloorPlan({ project }: FloorPlanProps) {
     }
 
     container.scrollLeft = dragState.scrollLeft - deltaX;
-    event.preventDefault();
   };
 
   const stopGroupTabsDrag = () => {
     if (!groupTabsDragRef.current.dragging) return;
 
     groupTabsDragRef.current.dragging = false;
-    setIsDraggingGroupTabs(false);
     window.setTimeout(() => {
       groupTabsDragRef.current.moved = false;
     }, 0);
@@ -344,8 +366,6 @@ export default function FloorPlan({ project }: FloorPlanProps) {
       clientX: event.clientX,
       scrollLeft: container.scrollLeft,
     };
-    setIsDraggingUnitTabs(true);
-    container.setPointerCapture(event.pointerId);
   };
 
   const handleUnitTabsPointerMove = (event: PointerEvent<HTMLDivElement>) => {
@@ -359,26 +379,23 @@ export default function FloorPlan({ project }: FloorPlanProps) {
     }
 
     container.scrollLeft = dragState.scrollLeft - deltaX;
-    event.preventDefault();
   };
 
   const stopUnitTabsDrag = () => {
     if (!unitTabsDragRef.current.dragging) return;
 
     unitTabsDragRef.current.dragging = false;
-    setIsDraggingUnitTabs(false);
     window.setTimeout(() => {
       unitTabsDragRef.current.moved = false;
     }, 0);
   };
 
-  const scrollGroupTabs = (direction: "left" | "right") => {
-    const container = groupTabsScrollRef.current;
+  const scrollUnitTabs = (direction: "left" | "right") => {
+    const container = unitTabsScrollRef.current;
     if (!container) return;
 
-    const scrollAmount = Math.max(container.clientWidth * 0.7, 180);
     container.scrollBy({
-      left: direction === "right" ? scrollAmount : -scrollAmount,
+      left: direction === "right" ? container.clientWidth * 0.7 : -container.clientWidth * 0.7,
       behavior: "smooth",
     });
   };
@@ -405,41 +422,16 @@ export default function FloorPlan({ project }: FloorPlanProps) {
                     {groups.length} options available
                   </p>
                 </div>
-                {groups.length > 1 ? (
-                  <div className="flex items-center justify-between gap-1.5 sm:justify-end sm:gap-2">
-                    <p className="text-[11px] font-medium text-slate-400 sm:hidden">
-                      Swipe to see more
-                    </p>
-                    <button
-                      type="button"
-                      aria-label="Scroll floor plan tabs left"
-                      onClick={() => scrollGroupTabs("left")}
-                      disabled={!canScrollGroupTabsLeft}
-                      className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-200 hover:text-emerald-600 disabled:cursor-not-allowed disabled:opacity-35 sm:h-9 sm:w-9"
-                    >
-                      <FiChevronLeft className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Scroll floor plan tabs right"
-                      onClick={() => scrollGroupTabs("right")}
-                      disabled={!canScrollGroupTabsRight}
-                      className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-200 hover:text-emerald-600 disabled:cursor-not-allowed disabled:opacity-35 sm:h-9 sm:w-9"
-                    >
-                      <FiChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                ) : null}
               </div>
 
               <div className="relative rounded-lg border border-slate-200 bg-slate-50/70 px-1.5 py-1.5 sm:rounded-xl sm:px-2.5 sm:py-2">
                 <div
-                  className={`pointer-events-none absolute inset-y-2 left-2 z-10 w-8 rounded-l-xl bg-gradient-to-r from-slate-50 to-transparent transition ${
+                  className={`pointer-events-none absolute inset-y-2 left-2 z-10 w-8 rounded-l-xl bg-linear-to-r from-slate-50 to-transparent transition ${
                     canScrollGroupTabsLeft ? "opacity-100" : "opacity-0"
                   }`}
                 />
                 <div
-                  className={`pointer-events-none absolute inset-y-2 right-2 z-10 w-8 rounded-r-xl bg-gradient-to-l from-slate-50 to-transparent transition ${
+                  className={`pointer-events-none absolute inset-y-2 right-2 z-10 w-8 rounded-r-xl bg-linear-to-l from-slate-50 to-transparent transition ${
                     canScrollGroupTabsRight ? "opacity-100" : "opacity-0"
                   }`}
                 />
@@ -450,9 +442,7 @@ export default function FloorPlan({ project }: FloorPlanProps) {
                   onPointerUp={stopGroupTabsDrag}
                   onPointerCancel={stopGroupTabsDrag}
                   onPointerLeave={stopGroupTabsDrag}
-                  className={`flex w-full min-w-0 max-w-full snap-x snap-mandatory gap-2 overflow-x-auto whitespace-nowrap select-none [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-2.5 [&::-webkit-scrollbar]:hidden ${
-                    isDraggingGroupTabs ? "cursor-grabbing" : "cursor-grab"
-                  }`}
+                  className="flex w-full min-w-0 max-w-full snap-x snap-mandatory gap-2 overflow-x-auto whitespace-nowrap select-none [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-2.5 [&::-webkit-scrollbar]:hidden"
                 >
                   {groups.map((group, index) => (
                     <button
@@ -483,43 +473,71 @@ export default function FloorPlan({ project }: FloorPlanProps) {
               </div>
             </div>
 
-            <div
-              ref={unitTabsScrollRef}
-              onPointerDown={handleUnitTabsPointerDown}
-              onPointerMove={handleUnitTabsPointerMove}
-              onPointerUp={stopUnitTabsDrag}
-              onPointerCancel={stopUnitTabsDrag}
-              onPointerLeave={stopUnitTabsDrag}
-              className={`no-scrollbar mt-3 flex w-full min-w-0 max-w-full overflow-x-auto border-b border-slate-200 select-none sm:mt-4 ${
-                isDraggingUnitTabs ? "cursor-grabbing" : "cursor-grab"
-              }`}
-            >
-              {activeGroup.units.map((unit, index) => (
-                <button
-                  key={`${unit.minSqft}-${unit.price}-${index}`}
-                  type="button"
-                  onClick={(event) => {
-                    if (unitTabsDragRef.current.moved) {
-                      event.preventDefault();
-                      return;
-                    }
-                    setActiveUnitIndex(index);
-                  }}
-                  className={`shrink-0 cursor-pointer border-b-2 px-3 pb-2 text-center transition sm:px-8 sm:pb-3 ${
-                    activeUnitIndex === index
-                      ? "border-emerald-500"
-                      : "border-transparent hover:border-slate-300"
-                  }`}
-                >
-                  <span
-                    className={`block whitespace-nowrap text-[11px] font-medium sm:text-xs ${
-                      activeUnitIndex === index ? "text-slate-900" : "text-slate-400"
+            <div className="relative mt-3 pb-4 sm:mt-4 sm:pb-0">
+              <div
+                ref={unitTabsScrollRef}
+                onPointerDown={handleUnitTabsPointerDown}
+                onPointerMove={handleUnitTabsPointerMove}
+                onPointerUp={stopUnitTabsDrag}
+                onPointerCancel={stopUnitTabsDrag}
+                onPointerLeave={stopUnitTabsDrag}
+                className="no-scrollbar flex w-full min-w-0 max-w-full touch-pan-y overflow-x-auto border-b border-slate-200 select-none"
+              >
+                {activeGroup.units.map((unit, index) => (
+                  <button
+                    key={`${unit.minSqft}-${unit.price}-${index}`}
+                    type="button"
+                    onClick={(event) => {
+                      if (unitTabsDragRef.current.moved) {
+                        event.preventDefault();
+                        return;
+                      }
+                      setActiveUnitIndex(index);
+                    }}
+                    className={`shrink-0 cursor-pointer border-b-2 px-3 pb-2 text-center transition sm:px-8 sm:pb-3 ${
+                      activeUnitIndex === index
+                        ? "border-emerald-500"
+                        : "border-transparent hover:border-slate-300"
                     }`}
                   >
-                    {formatUnitArea(unit, isLand)}
-                  </span>
-                </button>
-              ))}
+                    <span
+                      className={`block whitespace-nowrap text-[11px] font-medium sm:text-xs ${
+                        activeUnitIndex === index ? "text-slate-900" : "text-slate-400"
+                      }`}
+                    >
+                      {formatUnitArea(unit, isLand)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {canScrollUnitTabsLeft ? (
+                <div className="pointer-events-none absolute bottom-4 left-0 top-0 flex items-center bg-linear-to-r from-white via-white/90 to-transparent pl-1 pr-5 sm:bottom-0 sm:pr-8">
+                  <button
+                    type="button"
+                    aria-label="Scroll floor plan sizes left"
+                    onClick={() => scrollUnitTabs("left")}
+                    className="pointer-events-auto flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-emerald-200 hover:text-emerald-600 sm:h-7 sm:w-7"
+                  >
+                    <FiChevronLeft className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : null}
+              {canScrollUnitTabsRight ? (
+                <div className="pointer-events-none absolute bottom-4 right-0 top-0 flex items-center bg-linear-to-l from-white via-white/90 to-transparent pl-5 pr-1 sm:bottom-0 sm:pl-8 sm:pr-2">
+                  
+                  <button
+                    type="button"
+                    aria-label="Scroll floor plan sizes right"
+                    onClick={() => scrollUnitTabs("right")}
+                    className="pointer-events-auto flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-emerald-200 hover:text-emerald-600 sm:h-7 sm:w-7"
+                  >
+                    <FiChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : null}
+              {canScrollUnitTabsRight ? (
+                <span className="absolute bottom-0 right-0 text-[10px] font-medium text-slate-400 sm:hidden">Swipe to see more plans</span>
+              ) : null}
             </div>
 
             <div className="mt-3 min-w-0 rounded-md p-0.5 sm:mt-4 sm:p-1">
@@ -532,13 +550,7 @@ export default function FloorPlan({ project }: FloorPlanProps) {
                     onPointerUp={stopPlanDrag}
                     onPointerCancel={stopPlanDrag}
                     onPointerLeave={stopPlanDrag}
-                    className={`flex h-[210px] items-center justify-center overflow-auto select-none sm:h-[420px] ${
-                      canDragPlan
-                        ? isDraggingPlan
-                          ? "cursor-grabbing"
-                          : "cursor-grab"
-                        : "cursor-default"
-                    }`}
+                    className="flex h-[210px] items-center justify-center overflow-auto select-none sm:h-[420px]"
                   >
                     <img
                       src={planImage}

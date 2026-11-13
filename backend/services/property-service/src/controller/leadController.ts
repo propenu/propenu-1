@@ -1792,9 +1792,22 @@ export const updatePublicLeadIntentionController = async (
       }))
       .filter((item: { question: string; answer: string }) => item.question && item.answer);
 
+    const normalizedQuestion = (value: string) =>
+      value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const timelineAnswer = intention.find((item: { question: string }) => {
+      const question = normalizedQuestion(item.question);
+      return question.includes("plan to buy") || question.includes("planning to purchase");
+    })?.answer;
+    const budgetAnswer = intention.find((item: { question: string }) =>
+      normalizedQuestion(item.question).includes("budget"),
+    )?.answer;
+    const fields: Record<string, unknown> = { intention };
+    if (timelineAnswer) fields.purchaseTimeline = timelineAnswer;
+    if (budgetAnswer) fields.budgetRange = budgetAnswer;
+
     const lead = await PublicLead.findByIdAndUpdate(
       leadId,
-      { $set: { intention } },
+      { $set: fields },
       { new: true },
     );
 

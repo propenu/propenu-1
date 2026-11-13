@@ -30,7 +30,6 @@ export const saveLeadOtp = async (
   phone: string,
   otp: string,
 ) => {
-  console.log(`[lead-otp] projectId=${projectId} phone=${phone} otp=${otp}`);
   await redis.set(otpKey(projectId, phone), hashOtp(otp), {
     ex: OTP_TTL_SECONDS,
   });

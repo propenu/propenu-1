@@ -383,8 +383,7 @@ const FilterBar: React.FC<{ hydrationId: string }> = ({ hydrationId }) => {
 
     setHasRestoredCategory(true);
     setHasHydratedFromUrl(true);
-    markFiltersHydrated(hydrationId, searchParams.toString());
-  }, [hydrationId, searchParams, dispatch]);
+  }, [searchParams, dispatch]);
 
   useEffect(() => {
     if (!hasHydratedFromUrl) return;
@@ -414,7 +413,10 @@ const FilterBar: React.FC<{ hydrationId: string }> = ({ hydrationId }) => {
     const nextQuery = nextParams.toString();
     const currentQuery = searchParams.toString();
 
-    if (nextQuery === currentQuery) return;
+    if (nextQuery === currentQuery) {
+      markFiltersHydrated(hydrationId, currentQuery);
+      return;
+    }
 
     router.replace(`${pathname}?${nextQuery}`, { scroll: false });
   }, [
@@ -425,6 +427,7 @@ const FilterBar: React.FC<{ hydrationId: string }> = ({ hydrationId }) => {
     router,
     searchParams,
     urlSearchPayload,
+    hydrationId,
   ]);
 
   useEffect(() => {

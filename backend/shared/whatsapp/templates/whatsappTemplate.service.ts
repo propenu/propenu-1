@@ -1095,7 +1095,8 @@ export const scheduleWhatsAppUsers = async (req: Request, res: Response) => {
       ]);
       return res.status(503).json({
         success: false,
-        message: "Could not schedule WhatsApp messages. Check that Redis is running.",
+        message:
+          "Could not schedule WhatsApp messages. BullMQ needs a reachable Redis TCP endpoint; configure REDIS_URL (the REST URL/token are not usable here).",
         campaignId,
       });
     }

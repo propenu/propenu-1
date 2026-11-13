@@ -224,6 +224,14 @@ const shapeLeadRow = (row: any, property: any = {}) => {
     snapshot.heroImage ||
     "";
   const category = inferCategory({ ...row, propertyType: row.propertyType || snapshot.category });
+  const intention = Array.isArray(row.intention) ? row.intention : [];
+  const intentionAnswer = (matches: (question: string) => boolean) =>
+    intention.find((item: any) => matches(String(item?.question || "").toLowerCase()))?.answer || "";
+  const purchaseTimeline =
+    row.purchaseTimeline ||
+    intentionAnswer((question) => question.includes("plan to buy") || question.includes("planning to purchase"));
+  const budgetRange =
+    row.budgetRange || intentionAnswer((question) => question.includes("budget"));
 
   return {
     _id: row._id,
@@ -233,8 +241,8 @@ const shapeLeadRow = (row: any, property: any = {}) => {
     status: row.status || "new_lead",
     source: row.source,
     message: row.message || row.remarks || "",
-    purchaseTimeline: row.purchaseTimeline || "",
-    budgetRange: row.budgetRange || "",
+    purchaseTimeline,
+    budgetRange,
     listingType: row.listingType || property.listingType || snapshot.listingType || "",
     createdAt: row.createdAt,
     customer:

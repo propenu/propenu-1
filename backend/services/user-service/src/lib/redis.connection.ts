@@ -7,14 +7,6 @@ dotenv.config({
   quiet: true,
 });
 
-function wantsTls(hostname: string, protocol: string): boolean {
-  if (protocol === "rediss:") return true;
-  if (String(process.env.REDIS_TLS || "").toLowerCase() === "true") return true;
-  // Upstash (and similar) require TLS even when URL is redis://
-  const host = hostname.toLowerCase();
-  return host.includes("upstash.io") || host.includes("redis.cloud");
-}
-
 const QUOTA_RETRY_MS = 5 * 60 * 1000;
 const MAX_RECONNECT_DELAY_MS = 5000;
 const ERROR_LOG_INTERVAL_MS = 60 * 1000;
@@ -62,69 +54,49 @@ function retryStrategy(times: number): number {
   return Math.min(times * 1000, MAX_RECONNECT_DELAY_MS);
 }
 
-// Local campaigns use REDIS_URL. Upstash queue traffic stays off while that database is over its monthly limit.
-
-/** BullMQ requires maxRetriesPerRequest: null or the worker exits on start. */
+/** BullMQ requires the Upstash TLS/TCP URL; its REST API cannot run BullMQ scripts. */
 const buildRedisConnection = (): RedisOptions => {
   const redisUrl = process.env.REDIS_URL?.trim();
-
-  if (redisUrl) {
-    const parsed = new URL(redisUrl);
-
-    if (parsed.protocol !== "redis:" && parsed.protocol !== "rediss:") {
-      throw new Error("REDIS_URL must start with redis:// or rediss://");
-    }
-
-    const useTls = wantsTls(parsed.hostname, parsed.protocol);
-
-    return {
-      host: parsed.hostname,
-      port: Number(parsed.port || 6379),
-      maxRetriesPerRequest: null,
-      enableReadyCheck: false,
-      connectTimeout: 15000,
-      keepAlive: 10000,
-      retryStrategy,
-      ...(parsed.username
-        ? { username: decodeURIComponent(parsed.username) }
-        : {}),
-      ...(parsed.password
-        ? { password: decodeURIComponent(parsed.password) }
-        : {}),
-      ...(useTls ? { tls: {} } : {}),
-    };
+  if (!redisUrl) {
+    throw new Error(
+      "REDIS_URL is required for BullMQ. Set it to the Upstash rediss:// TCP connection URL; UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are REST-only.",
+    );
   }
 
-  const host = process.env.REDIS_HOST || "127.0.0.1";
-  const useTls =
-    String(process.env.REDIS_TLS || "").toLowerCase() === "true" ||
-    wantsTls(host, "redis:");
+  let parsed: URL;
+  try {
+    parsed = new URL(redisUrl);
+  } catch {
+    throw new Error("REDIS_URL must be a valid Upstash rediss:// TCP URL");
+  }
+
+  if (parsed.protocol !== "rediss:") {
+    throw new Error("REDIS_URL must use rediss:// for Upstash TLS connections");
+  }
+  if (!parsed.hostname.toLowerCase().endsWith(".upstash.io")) {
+    throw new Error("REDIS_URL must point to an Upstash .upstash.io endpoint");
+  }
 
   return {
-    host,
-    port: Number(process.env.REDIS_PORT || 6379),
+    host: parsed.hostname,
+    port: Number(parsed.port || 6379),
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
     connectTimeout: 15000,
     keepAlive: 10000,
     retryStrategy,
-    ...(process.env.REDIS_USERNAME
-      ? { username: process.env.REDIS_USERNAME }
+    ...(parsed.username
+      ? { username: decodeURIComponent(parsed.username) }
       : {}),
-    ...(process.env.REDIS_PASSWORD
-      ? { password: process.env.REDIS_PASSWORD }
+    ...(parsed.password
+      ? { password: decodeURIComponent(parsed.password) }
       : {}),
-    ...(useTls ? { tls: {} } : {}),
+    tls: {},
   };
 };
 
 export const redisConnection = buildRedisConnection();
 
 export function describeRedisTarget(): string {
-  const host =
-    (redisConnection as any).host ||
-    process.env.REDIS_HOST ||
-    "unknown";
-  const tls = Boolean((redisConnection as any).tls);
-  return `${host} (tls=${tls ? "on" : "off"})`;
+  return `${(redisConnection as any).host} (tls=on)`;
 }

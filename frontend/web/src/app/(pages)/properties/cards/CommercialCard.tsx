@@ -50,6 +50,7 @@ const CommercialCard: React.FC<Props> = ({
   isSponsored = false, 
 }) => {
   const img = p?.gallery?.[0]?.url ?? "/placeholder.jpg";
+  const formattedPrice = formatINR(p?.price);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isShortlisted, setIsShortlisted] = useState(false);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
@@ -389,8 +390,8 @@ const CommercialCard: React.FC<Props> = ({
                 : "text-lg leading-tight md:text-2xl"
             }`}
           >
-            {formatINR(p?.price)}
-            {isRentListing && (
+            {formattedPrice || "Price on request"}
+            {formattedPrice && isRentListing && (
               <span className="text-sm font-medium"> / month</span>
             )}
           </div>

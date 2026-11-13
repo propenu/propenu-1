@@ -86,6 +86,7 @@ export const LandCard: React.FC<Props> = ({
   const bgPriceColoricon = hexToRGBA("#27AE60", 0.4);
 
   const img = p?.gallery?.[0]?.url ?? "/placeholder.jpg";
+  const formattedPrice = formatINR(p?.price);
   // Senior: use plotArea (not superBuiltUpArea). Keep unit normalized for price label.
   const area = (p as any)?.plotArea;
   const plotAreaUnit = String(p?.plotAreaUnit?.trim() || "sqft").toLowerCase();
@@ -416,8 +417,8 @@ export const LandCard: React.FC<Props> = ({
                 : "text-lg leading-tight md:text-2xl"
             }`}
           >
-            {formatINR(p?.price)}
-            {isRentListing && (
+            {formattedPrice || "Price on request"}
+            {formattedPrice && isRentListing && (
               <span className="text-sm font-medium"> / month</span>
             )}
           </div>

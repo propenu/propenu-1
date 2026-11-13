@@ -51,6 +51,7 @@ const ResidentialCard: React.FC<Props> = ({
   const bgPriceColoricon = hexToRGBA("#27AE60", 0.4);
 
   const img = p?.gallery?.[0]?.url ?? "/placeholder.jpg";
+  const formattedPrice = formatINR(p?.price);
   const pricePerSqft =
     (p as any)?.pricePerSqft ??
     Math.round((p?.price ?? 0) / (p as any)?.builtUpArea || 0);
@@ -415,8 +416,8 @@ const ResidentialCard: React.FC<Props> = ({
                 : "text-lg leading-tight md:text-2xl"
             }`}
           >
-            {formatINR(p?.price)}
-            {isRentListing && (
+            {formattedPrice || "Price on request"}
+            {formattedPrice && isRentListing && (
               <span className="text-sm font-medium"> / month</span>
             )}
           </div>

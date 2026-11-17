@@ -87,6 +87,8 @@ const startWorker = async () => {
       {
         connection: redisConnection,
         concurrency: 1,
+        // Upstash charges every idle queue poll; use Redis' maximum block wait.
+        drainDelay: 10,
         limiter: {
           max: 5,
           duration: 60000,

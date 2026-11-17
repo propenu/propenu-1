@@ -56,10 +56,13 @@ function retryStrategy(times: number): number {
 
 /** BullMQ requires the Upstash TLS/TCP URL; its REST API cannot run BullMQ scripts. */
 const buildRedisConnection = (): RedisOptions => {
-  const redisUrl = process.env.REDIS_URL?.trim();
+  // Keep queue traffic on its own database so worker polling cannot consume
+  // the REST database's quota. Require the dedicated setting to prevent
+  // accidentally reconnecting BullMQ to the shared REST database.
+  const redisUrl = process.env.UPSTASH_QUEUE_REDIS_URL?.trim();
   if (!redisUrl) {
     throw new Error(
-      "REDIS_URL is required for BullMQ. Set it to the Upstash rediss:// TCP connection URL; UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are REST-only.",
+      "UPSTASH_QUEUE_REDIS_URL is required for BullMQ. Set it to a dedicated Upstash rediss:// TCP URL; UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are REST-only.",
     );
   }
 
@@ -67,14 +70,29 @@ const buildRedisConnection = (): RedisOptions => {
   try {
     parsed = new URL(redisUrl);
   } catch {
-    throw new Error("REDIS_URL must be a valid Upstash rediss:// TCP URL");
+    throw new Error("UPSTASH_QUEUE_REDIS_URL must be a valid Upstash rediss:// TCP URL");
   }
 
   if (parsed.protocol !== "rediss:") {
-    throw new Error("REDIS_URL must use rediss:// for Upstash TLS connections");
+    throw new Error("UPSTASH_QUEUE_REDIS_URL must use rediss:// for Upstash TLS connections");
   }
   if (!parsed.hostname.toLowerCase().endsWith(".upstash.io")) {
-    throw new Error("REDIS_URL must point to an Upstash .upstash.io endpoint");
+    throw new Error("UPSTASH_QUEUE_REDIS_URL must point to an Upstash .upstash.io endpoint");
+  }
+
+  const restUrl = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  if (restUrl) {
+    let restHost = "";
+    try {
+      restHost = new URL(restUrl).hostname.toLowerCase();
+    } catch {
+      // The REST client validates its own URL; don't expose its value here.
+    }
+    if (restHost && restHost === parsed.hostname.toLowerCase()) {
+      throw new Error(
+        "UPSTASH_QUEUE_REDIS_URL must use a separate Upstash database from UPSTASH_REDIS_REST_URL",
+      );
+    }
   }
 
   return {

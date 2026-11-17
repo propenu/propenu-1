@@ -40,6 +40,8 @@ export default function PropertyVideoTours() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [atEnd, setAtEnd] = useState(false);
   const [selectedVideoIndex, setSelectedVideoIndex] = useState<number | null>(null);
+  const [isEmbeddedVideoPlaying, setIsEmbeddedVideoPlaying] = useState(true);
+  const videoElementRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -121,6 +123,22 @@ export default function PropertyVideoTours() {
       if (event.key === "Escape") setSelectedVideoIndex(null);
       if (event.key === "ArrowLeft") setSelectedVideoIndex((index) => index === null ? null : (index - 1 + videos.length) % videos.length);
       if (event.key === "ArrowRight") setSelectedVideoIndex((index) => index === null ? null : (index + 1) % videos.length);
+      if (event.code === "Space" && !(event.target instanceof HTMLButtonElement)) {
+        event.preventDefault();
+        if (videoElementRef.current) {
+          if (videoElementRef.current.paused) void videoElementRef.current.play();
+          else videoElementRef.current.pause();
+          return;
+        }
+        const iframe = document.querySelector<HTMLIFrameElement>("[data-video-player-frame]");
+        if (iframe?.contentWindow) {
+          iframe.contentWindow.postMessage(
+            JSON.stringify({ event: "command", func: isEmbeddedVideoPlaying ? "pauseVideo" : "playVideo", args: [] }),
+            "https://www.youtube-nocookie.com",
+          );
+          setIsEmbeddedVideoPlaying((playing) => !playing);
+        }
+      }
     };
     document.addEventListener("keydown", onKeyDown);
     document.body.style.overflow = "hidden";
@@ -128,7 +146,12 @@ export default function PropertyVideoTours() {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-  }, [selectedVideoIndex, videos.length]);
+  }, [selectedVideoIndex, videos.length, isEmbeddedVideoPlaying]);
+
+  useEffect(() => {
+    setIsEmbeddedVideoPlaying(true);
+    videoElementRef.current = null;
+  }, [selectedVideoIndex]);
 
   if (videos.length === 0) return null;
 
@@ -181,7 +204,7 @@ export default function PropertyVideoTours() {
       <div
         ref={railRef}
         onScroll={syncActiveIndex}
-        className="flex snap-x snap-mandatory gap-4 overflow-x-auto scroll-smooth pb-2 no-scrollbar"
+        className="flex items-start snap-x snap-mandatory gap-4 overflow-x-auto scroll-smooth pb-2 no-scrollbar"
       >
         {videos.map((video, index) => (
           <button
@@ -189,9 +212,9 @@ export default function PropertyVideoTours() {
             type="button"
             data-video-card
             onClick={() => setSelectedVideoIndex(index)}
-            className="group w-[78%] shrink-0 snap-start text-left sm:w-[48%] lg:w-[calc((100%-3rem)/4)]"
+            className="group w-[78%] shrink-0 snap-start self-start text-left sm:w-[48%] lg:w-[calc((100%-3rem)/4)]"
           >
-            <div className={`relative overflow-hidden rounded-xl bg-gray-100 ${isShortVideoUrl(video.url, video.videoFormat) ? "aspect-[9/16]" : "aspect-video"}`}>
+            <div className="relative aspect-video overflow-hidden rounded-xl bg-gray-100">
               <Image
                 src={getYouTubeThumbnail(video.url) || video.featuredImage || fallbackImage}
                 alt={video.imageAlt || video.videoTitle || video.title}
@@ -227,52 +250,58 @@ export default function PropertyVideoTours() {
             role="dialog"
             aria-modal="true"
             aria-label={videos[selectedVideoIndex].videoTitle || videos[selectedVideoIndex].title}
-            className={`relative overflow-hidden rounded-xl bg-black shadow-2xl ${selectedIsShort ? "w-fit max-w-[90vw]" : "w-full max-w-5xl"}`}
+            className={`relative rounded-xl bg-black shadow-2xl ${selectedIsShort ? "w-fit max-w-[90vw]" : "w-full max-w-5xl"}`}
           >
-            <button
-              type="button"
-              onClick={() => setSelectedVideoIndex(null)}
-              aria-label="Close video"
-              className="absolute right-3 top-3 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black"
-            >
-              <FiX size={22} />
-            </button>
+            <div className="flex items-center justify-between gap-3 rounded-t-xl bg-black px-3 py-2 text-white sm:px-4">
+              <span className="text-xs text-gray-300" aria-live="polite">
+                {videos.length > 1 ? `${selectedVideoIndex + 1} / ${videos.length}` : ""}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedVideoIndex(null)}
+                aria-label="Close video"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+              >
+                <FiX size={22} />
+              </button>
+            </div>
 
-            {videos.length > 1 && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setSelectedVideoIndex((index) => index === null ? null : (index - 1 + videos.length) % videos.length)}
-                  aria-label="Previous video"
-                  className="absolute left-3 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow hover:bg-white"
-                >
-                  <FiChevronLeft size={22} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedVideoIndex((index) => index === null ? null : (index + 1) % videos.length)}
-                  aria-label="Next video"
-                  className="absolute right-3 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow hover:bg-white"
-                >
-                  <FiChevronRight size={22} />
-                </button>
-              </>
-            )}
-
-            <div className={selectedIsShort ? "mx-auto h-[min(70vh,560px)] aspect-[9/16] max-w-[90vw] bg-black" : "aspect-video w-full bg-black"}>
+            <div className="relative">
+              {videos.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedVideoIndex((index) => index === null ? null : (index - 1 + videos.length) % videos.length)}
+                    aria-label="Previous video"
+                    className="absolute left-1 top-1/2 z-20 flex h-10 w-10 -translate-x-full -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow hover:bg-white sm:left-0"
+                  >
+                    <FiChevronLeft size={22} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedVideoIndex((index) => index === null ? null : (index + 1) % videos.length)}
+                    aria-label="Next video"
+                    className="absolute right-1 top-1/2 z-20 flex h-10 w-10 translate-x-full -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow hover:bg-white sm:right-0"
+                  >
+                    <FiChevronRight size={22} />
+                  </button>
+                </>
+              )}
+              <div className={selectedIsShort ? "mx-auto h-[min(70vh,560px)] aspect-[9/16] max-w-[90vw] bg-black" : "aspect-video w-full bg-black"}>
               {getEmbedUrl(videos[selectedVideoIndex].url) ? (
                 <iframe
                   key={videos[selectedVideoIndex]._id ?? videos[selectedVideoIndex].slug}
-                  src={getEmbedUrl(videos[selectedVideoIndex].url)!}
+                  src={`${getEmbedUrl(videos[selectedVideoIndex].url)!}&enablejsapi=1`}
                   title={videos[selectedVideoIndex].videoTitle || videos[selectedVideoIndex].title}
                   className="h-full w-full"
+                  data-video-player-frame
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   referrerPolicy="strict-origin-when-cross-origin"
                   allowFullScreen
                   autoFocus
                 />
               ) : /\.(mp4|webm|ogg)(?:$|[?#])/i.test(videos[selectedVideoIndex].url || "") ? (
-                <video className="h-full w-full" src={videos[selectedVideoIndex].url} controls autoPlay />
+                <video ref={videoElementRef} className="h-full w-full" src={videos[selectedVideoIndex].url} controls autoPlay />
               ) : (
                 <div className="flex h-full items-center justify-center p-8 text-center text-white">
                   <a href={videos[selectedVideoIndex].url} target="_blank" rel="noreferrer" className="underline">
@@ -280,8 +309,10 @@ export default function PropertyVideoTours() {
                   </a>
                 </div>
               )}
+              </div>
             </div>
-            <div className="bg-black px-4 py-3 text-white sm:px-6">
+            <div className="rounded-b-xl bg-black px-4 py-3 text-white sm:px-6">
+              <p className="mb-2 text-xs text-gray-400">Space: play/pause · Esc: close</p>
               <div className="flex items-start justify-between gap-4">
                 <h3 className="font-semibold">
                   {videos[selectedVideoIndex].videoTitle || videos[selectedVideoIndex].title}

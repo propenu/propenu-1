@@ -1,4 +1,9 @@
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+} from "@aws-sdk/client-s3";
 import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
@@ -130,4 +135,12 @@ export async function uploadFile(
     mimetype,
     size,
   };
+}
+
+export async function getUploadedObject(key: string) {
+  return s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+}
+
+export async function deleteUploadedObject(key: string) {
+  await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
 }

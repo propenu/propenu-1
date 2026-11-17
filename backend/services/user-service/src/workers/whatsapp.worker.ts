@@ -100,6 +100,10 @@ const startWorker = async () => {
                 status: "sent",
                 logId: data.logId,
                 response: response?.data ?? response,
+                language: data.language,
+                variables: data.variables || [],
+                headerImageUrl: data.headerImageUrl,
+                carouselCards: data.carouselCards,
               }).catch((inboxErr) => {
                 console.error("⚠️ Inbox record error:", inboxErr);
               });

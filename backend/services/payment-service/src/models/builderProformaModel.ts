@@ -74,6 +74,7 @@ const BuilderProformaSchema = new Schema(
 
     convertedInvoiceId: { type: Types.ObjectId, ref: "BuilderInvoice", default: null },
     convertedAt: { type: Date },
+    duplicatedFrom: { type: Types.ObjectId, ref: "BuilderProforma", default: null },
 
     createdBy: { type: Types.ObjectId, ref: "User" },
     createdByName: { type: String, trim: true },

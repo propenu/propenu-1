@@ -10,6 +10,9 @@ const url = process.env.NEXT_PUBLIC_API_URL
 export type BlogDetail = {
   _id?: string;
   title: string;
+  url?: string;
+  videoTitle?: string;
+  videoDescription?: string;
   slug: string;
   excerpt: string;
   featuredImage: string;

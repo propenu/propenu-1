@@ -68,6 +68,24 @@ const blogSchema = new Schema(
       unique: true,
     },
 
+    url: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    videoTitle: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    videoFormat: {
+      type: String,
+      enum: ["landscape", "short"],
+      default: "landscape",
+    },
+
     slug: {
       type: String,
       required: true,
@@ -79,6 +97,12 @@ const blogSchema = new Schema(
       type: String,
       trim: true,
       maxlength: 300,
+    },
+
+    videoDescription: {
+      type: String,
+      trim: true,
+      default: "",
     },
 
     /* FEATURE IMAGE */

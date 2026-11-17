@@ -46,6 +46,38 @@ function stripHtml(value?: string) {
   return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function getVideoEmbedUrl(value?: string) {
+  if (!value) return null;
+
+  try {
+    const videoUrl = new URL(value);
+    const host = videoUrl.hostname.replace(/^www\./, "").toLowerCase();
+
+    if (host === "youtu.be") {
+      const id = videoUrl.pathname.split("/").filter(Boolean)[0];
+      return id ? `https://www.youtube-nocookie.com/embed/${id}` : null;
+    }
+
+    if (["youtube.com", "m.youtube.com", "youtube-nocookie.com"].includes(host)) {
+      const id = videoUrl.searchParams.get("v") || videoUrl.pathname.match(/\/(?:embed|shorts|live)\/([^/?]+)/)?.[1];
+      return id ? `https://www.youtube-nocookie.com/embed/${id}` : null;
+    }
+
+    if (["vimeo.com", "player.vimeo.com"].includes(host)) {
+      const id = videoUrl.pathname.split("/").filter(Boolean).pop();
+      return id && /^\d+$/.test(id) ? `https://player.vimeo.com/video/${id}` : null;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function isDirectVideoUrl(value?: string) {
+  return !!value && /\.(mp4|webm|ogg)(?:$|[?#])/i.test(value);
+}
+
 function normalizeBlogHtml(content: string) {
   return content
     .replace(/<p>(?:&nbsp;|\s|<span[^>]*>&nbsp;<\/span>)*<\/p>/gi, "")
@@ -327,14 +359,65 @@ export default async function Page({ params }: PageProps) {
 
   
 
-            <div className="mt-6">
-              {blog.excerpt && (
-                <div className="mb-6">
-                  <ContentBlock content={blog.excerpt} />
-                </div>
-              )}
+            {blog.excerpt && (
+              <div className="mt-6">
+                <ContentBlock content={blog.excerpt} />
+              </div>
+            )}
 
+            <div className="mt-6">
               <ContentBlock content={blog.content} />
+
+              {(blog.url || blog.videoTitle || blog.videoDescription) && (
+                <section className="mt-8 overflow-hidden rounded-2xl border border-gray-200 bg-white">
+                  {blog.videoTitle && (
+                    <div className="px-5 pt-5 sm:px-6 sm:pt-6">
+                      <h2 className="text-xl font-semibold text-gray-950 sm:text-2xl">
+                        {blog.videoTitle}
+                      </h2>
+                    </div>
+                  )}
+                  {blog.url && getVideoEmbedUrl(blog.url) && (
+                    <div className="mt-4 aspect-video w-full bg-black">
+                      <iframe
+                        src={getVideoEmbedUrl(blog.url)!}
+                        title={blog.videoTitle || blog.title}
+                        className="h-full w-full"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        referrerPolicy="strict-origin-when-cross-origin"
+                        allowFullScreen
+                      />
+                    </div>
+                  )}
+                  {blog.url && isDirectVideoUrl(blog.url) && (
+                    <video
+                      className="mt-4 aspect-video w-full bg-black"
+                      src={blog.url}
+                      controls
+                      preload="metadata"
+                    >
+                      Your browser does not support video playback.
+                    </video>
+                  )}
+                  {blog.videoDescription && (
+                    <p className="px-5 py-4 text-sm leading-6 text-gray-600 sm:px-6">
+                      {blog.videoDescription}
+                    </p>
+                  )}
+                  {blog.url && !getVideoEmbedUrl(blog.url) && !isDirectVideoUrl(blog.url) && (
+                    <div className="px-5 pb-5 pt-4 sm:px-6">
+                      <a
+                        href={blog.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm font-semibold text-[#26ad5f] underline"
+                      >
+                        Watch video
+                      </a>
+                    </div>
+                  )}
+                </section>
+              )}
 
               {blog.articleSections?.map((section, index) => (
                 <section
@@ -433,7 +516,7 @@ export default async function Page({ params }: PageProps) {
             </div>
           </article>
 
-          <aside className="space-y-5 lg:sticky lg:top-6">
+          <aside className="space-y-5 self-start lg:sticky lg:top-20">
             <div className="space-y-3 text-xs text-gray-500">
               <p className="flex items-center gap-2">
                 <FiEye size={14} />

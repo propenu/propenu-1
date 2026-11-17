@@ -85,6 +85,9 @@ function withPublishDate(payload: Record<string, any>) {
   }
 
   if (next.content == null) next.content = "";
+  if (next.url == null) next.url = "";
+  if (next.videoTitle == null) next.videoTitle = "";
+  if (next.videoDescription == null) next.videoDescription = "";
   if (next.category == null) next.category = "";
   if (next.metaTitle == null || next.metaTitle === "") {
     next.metaTitle = next.title || "";

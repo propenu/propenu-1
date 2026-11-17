@@ -164,7 +164,7 @@ export default function Footer() {
               </Link>
 
               <Link
-                href="https://wa.me/9182334233"
+                href="https://wa.me/9182334233?text=Hi%21"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm transition-all duration-300 hover:shadow-md group hover:bg-[#25D366]"

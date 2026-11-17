@@ -85,10 +85,10 @@ export default function ExploreOurServices() {
                     </p>
                     <span
                       aria-hidden="true"
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#383838] text-white transition-all duration-200 group-hover:bg-black group-hover:scale-105 sm:h-9 sm:w-9 lg:h-10 lg:w-10"
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#383838] text-white transition-all duration-200 group-hover:bg-black group-hover:scale-105 sm:h-8 sm:w-8 lg:h-9 lg:w-9"
                     >
                       <FiArrowRight
-                        className="h-3.5 w-3.5 sm:h-4.5 sm:w-4.5 lg:h-5 lg:w-5 transition-transform duration-200 group-hover:translate-x-0.5"
+                        className="h-3 w-3 sm:h-4 sm:w-4 lg:h-4.5 lg:w-4.5 transition-transform duration-200 group-hover:translate-x-0.5"
                       />
                     </span>
                   </div>

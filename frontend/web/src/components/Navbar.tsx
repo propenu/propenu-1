@@ -37,6 +37,12 @@ const Dropdown = dynamic<DropdownProps>(() => import("@/ui/SingleDropDown"), {
 });
 
 const BRAND_GREEN = "#27AE60";
+const serviceLinks = [
+  { label: "Home Loans", description: "Find the right home financing", href: "/home-loans", icon: "₹" },
+  { label: "Construction & Renovation", description: "Plan and build with expert support", href: "/construction-services", icon: "⌂" },
+  { label: "Interior Design", description: "Create a space that feels like home", href: "/interior-designer", icon: "✳" },
+  { label: "Home Care", description: "Cleaning, repairs, and maintenance", href: "/home-care", icon: "✓" },
+];
 const LOGO_SLOT_CLASS =
   "relative flex h-10 w-[150px] shrink-0 items-center sm:h-12 sm:w-[140px]";
 const MOBILE_LOGO_SLOT_CLASS =
@@ -66,6 +72,7 @@ function getSafeRedirect(value: string | null) {
 
 const Navbar = () => {
   const pathname = usePathname();
+  const isServiceProviderPage = pathname.startsWith("/service-provider");
   const router = useRouter();
   const dispatch = useAppDispatch();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -75,6 +82,8 @@ const Navbar = () => {
   const [loginRedirect, setLoginRedirect] = useState("/");
   const [cityDropdownOpen, setCityDropdownOpen] = useState(false); // Separate state for city dropdown
   const [mobileOpen_city, setMobileOpen_city] = useState(false);
+  const [servicesOpen, setServicesOpen] = useState(false);
+  const [mobileServicesOpen, setMobileServicesOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const mobileDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -89,6 +98,14 @@ const Navbar = () => {
   const { selectedCity: storedCity, locations, selectCity } = useCity();
   const [hasMounted, setHasMounted] = useState(false);
   useEffect(() => setHasMounted(true), []);
+  useEffect(() => {
+    if (!servicesOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setServicesOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [servicesOpen]);
   // Stored city comes from localStorage, so it must not affect the server-matching first render.
   const selectedCity = hasMounted ? storedCity : null;
   const hideMobileNavSearchRow = pathname.startsWith("/properties");
@@ -435,7 +452,14 @@ const Navbar = () => {
                   </div>
                 </Link>
 
-                {!isUserLoading && !isBuilder && (
+                {isServiceProviderPage ? (
+                  <Link
+                    href="/service-provider#provider-plan"
+                    className="inline-flex h-10 shrink-0 items-center rounded-md bg-[#27AE60] px-3 text-[12px] font-semibold text-white"
+                  >
+                    Join as a provider
+                  </Link>
+                ) : !isUserLoading && !isBuilder && (
                   <Link
                     href="/postproperty"
                     className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-[#d6ebdb] bg-white px-3 text-[12px] font-semibold text-[#4a7a5d]"
@@ -447,7 +471,7 @@ const Navbar = () => {
                   </Link>
                 )}
 
-                <button
+                {!isServiceProviderPage && <button
                   type="button"
                   onClick={() => {
                     if (!isAuthenticated) {
@@ -466,7 +490,7 @@ const Navbar = () => {
                       {notificationCount > 9 ? "9+" : notificationCount}
                     </span>
                   )}
-                </button>
+                </button>}
               </div>
 
               {!hideMobileNavSearchRow && (
@@ -558,7 +582,7 @@ const Navbar = () => {
           </div>
 
           <div className="container mx-auto hidden px-1 sm:px-4 md:block lg:px-3">
-            <div className="flex h-14 items-center justify-between sm:h-16">
+            <div className="flex h-14 items-center justify-start gap-3 sm:h-16 sm:gap-4">
               {/* LEFT */}
               <div className="flex items-center gap-2 sm:gap-4 min-w-0">
                 {/* Hamburger for mobile */}
@@ -705,9 +729,46 @@ const Navbar = () => {
                 </div>
               </div>
 
+              <div className="hidden shrink-0 md:block">
+                <FilterDropdown
+                  open={servicesOpen}
+                  onOpenChange={setServicesOpen}
+                  width="w-[300px] max-w-[calc(100vw-2rem)]"
+                  align="left"
+                  backdropClassName="fixed inset-0 bg-black/25 z-40 transition-all duration-100"
+                  showDoneButton={false}
+                  triggerLabel={
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 px-2 py-2 text-base text-primary transition-colors duration-200 hover:text-[#218c4c] active:scale-[0.98]"
+                    >
+                      Services
+                      <svg className={`h-4 w-4 transition-transform duration-200 ease-out ${servicesOpen ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                    </button>
+                  }
+                  renderContent={(close) => (
+                    <div className="services-dropdown-enter -m-3 overflow-hidden rounded-xl">
+                      <div className="px-3 py-1">
+                        {serviceLinks.map((item) => (
+                          <Link key={item.href} href={item.href} onClick={close} className="services-dropdown-item group flex items-center justify-between rounded-lg px-3 py-3 transition-colors hover:bg-[#f6fbf7] focus-visible:outline-2 focus-visible:outline-[#27AE60]">
+                            <span className="text-sm font-semibold text-gray-800 transition-colors group-hover:text-[#218c4c]">{item.label}</span>
+                          </Link>
+                        ))}
+                      </div>
+                      <div className="border-t border-[#dcebe0] px-4 py-3">
+                        <Link href="/service-provider" onClick={close} className="group inline-flex items-center gap-2 text-sm font-semibold text-primary transition-colors hover:text-[#218c4c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#218c4c]">
+                          Register as a service provider
+                          <svg aria-hidden="true" className="h-4 w-4 transition-transform group-hover:translate-x-0.5" viewBox="0 0 20 20" fill="none"><path d="M4 10h11m-4.5-4.5L15 10l-4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                />
+              </div>
+
               {/* RIGHT - desktop */}
-              <div className="hidden md:flex items-center gap-4 lg:gap-6 text-[#1A1A1A] shrink-0">
-                <>
+              <div className="ml-auto hidden md:flex items-center gap-4 lg:gap-6 text-[#1A1A1A] shrink-0">
+                {!isServiceProviderPage && <>
                   {isUserLoading ? (
                     <UserGreetingSkeleton />
                   ) : !isAuthenticated ? (
@@ -722,10 +783,17 @@ const Navbar = () => {
                       <UserGreeting user={user} />
                     </div>
                   )}
-                </>
+                </>}
 
                 {/* CTA - secondary outlined */}
-                {!isBuilder && (
+                {isServiceProviderPage ? (
+                  <Link
+                    href="/service-provider#provider-plan"
+                    className="inline-flex items-center rounded-md bg-[#27AE60] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#218c4c]"
+                  >
+                    Join as a provider
+                  </Link>
+                ) : !isBuilder && (
                   <Link
                     href="/postproperty"
                     className="btn btn-secondary text-xs sm:text-sm whitespace-nowrap"
@@ -811,7 +879,7 @@ const Navbar = () => {
               </svg>
             </button>
 
-            <div className="border-b border-gray-200 bg-gray-50">
+            {!isServiceProviderPage && <div className="border-b border-gray-200 bg-gray-50">
               {isUserLoading ? (
                 <div className="flex items-center gap-3 px-4 py-4 pr-14 bg-gray-50">
                   <UserGreetingSkeleton />
@@ -849,7 +917,7 @@ const Navbar = () => {
                   </div>
                 </div>
               )}
-            </div>
+            </div>}
 
             <div className="flex-1 overflow-y-auto py-2">
               <nav className="px-2">
@@ -907,6 +975,28 @@ const Navbar = () => {
                     </svg>
                   </button>
                 ))}
+                <div className="border-b border-gray-200">
+                  <button
+                    type="button"
+                    aria-expanded={mobileServicesOpen}
+                    onClick={() => setMobileServicesOpen((open) => !open)}
+                    className="flex w-full items-center justify-between px-1 py-3 text-left group"
+                  >
+                    <span className="text-sm font-medium text-gray-700 group-hover:text-primary">Services</span>
+                    <svg className={`h-4 w-4 text-gray-400 transition-transform ${mobileServicesOpen ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  </button>
+                  {mobileServicesOpen && (
+                    <div className="mb-2 ml-2 border-l-2 border-[#d8efdf] pl-3">
+                      {serviceLinks.map((item) => (
+                        <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} className="block rounded-lg px-2 py-2.5 hover:bg-[#f2fbf5]">
+                          <span className="block text-[13px] font-medium text-gray-800">{item.label}</span>
+                          <span className="mt-0.5 block text-[11px] text-gray-500">{item.description}</span>
+                        </Link>
+                      ))}
+                      <Link href="/explore-properties" onClick={() => setMobileOpen(false)} className="block px-2 py-2 text-xs font-semibold text-[#218c4c]">Explore all services</Link>
+                    </div>
+                  )}
+                </div>
               </nav>
 
               {user && (

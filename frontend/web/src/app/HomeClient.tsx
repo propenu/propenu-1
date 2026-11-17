@@ -12,6 +12,7 @@ import Banner from "@/components/Banner";
 import DiscoverRealestate from "@/components/discoverRealestate/DiscoverRealestate";
 import PropertyTypeExplorer from "@/components/quickLinks/PropertyTypeExplorer";
 import BlogsClient from "./(pages)/blogs/BlogsClient";
+import PropertyVideoTours from "@/components/blogs/PropertyVideoTours";
 
 export default function HomeClient() {
   return (
@@ -26,6 +27,7 @@ export default function HomeClient() {
         <ExploreMorePropertiesPage />
         <TestomianalHome />
         <DiscoverRealestate />
+        <PropertyVideoTours />
         <BlogsClient />
         <PropertyTypeExplorer />
       </div>

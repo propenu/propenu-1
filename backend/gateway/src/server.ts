@@ -162,7 +162,7 @@ app.get("/", (_req, res) => {
   res.json({ message: "✅ Gateway running" });
 });
 
-app.get("/health", async (_req: Request, res: Response) => {
+app.get("/healths", async (_req: Request, res: Response) => {
   let aiReachable = false;
 
   try {

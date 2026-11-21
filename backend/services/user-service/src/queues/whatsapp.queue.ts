@@ -98,7 +98,7 @@ export async function addWhatsAppJobWithTimeout(
             reject(
               new Error(
                 isRedisQuotaPaused()
-                  ? "Upstash Redis monthly request limit is used up — upgrade the Upstash plan or point REDIS_URL to another Redis"
+                  ? "Redis request limit is used up — point REDIS_URL to a self-hosted Redis"
                   : `Redis did not respond within ${timeoutMs / 1000}s — check REDIS_URL and that Redis is reachable from this server`,
               ),
             ),

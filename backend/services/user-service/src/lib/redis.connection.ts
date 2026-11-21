@@ -38,7 +38,7 @@ export function noteRedisError(err: unknown) {
   if (now - lastQuotaLogAt < QUOTA_RETRY_MS) return;
   lastQuotaLogAt = now;
   console.warn(
-    "Redis paused: Upstash monthly request limit is used up. Workers will retry in 5 minutes.",
+    "Redis paused: provider request limit is used up. Workers will retry in 5 minutes.",
   );
 }
 
@@ -54,15 +54,17 @@ function retryStrategy(times: number): number {
   return Math.min(times * 1000, MAX_RECONNECT_DELAY_MS);
 }
 
-/** BullMQ requires the Upstash TLS/TCP URL; its REST API cannot run BullMQ scripts. */
+/**
+ * BullMQ needs a Redis TCP endpoint (not the Upstash REST API).
+ * Prefer REDIS_URL (self-hosted, e.g. redis://:pw@127.0.0.1:6379);
+ * UPSTASH_QUEUE_REDIS_URL is kept as a legacy fallback.
+ */
 const buildRedisConnection = (): RedisOptions => {
-  // Keep queue traffic on its own database so worker polling cannot consume
-  // the REST database's quota. Require the dedicated setting to prevent
-  // accidentally reconnecting BullMQ to the shared REST database.
-  const redisUrl = process.env.UPSTASH_QUEUE_REDIS_URL?.trim();
+  const envName = process.env.REDIS_URL?.trim() ? "REDIS_URL" : "UPSTASH_QUEUE_REDIS_URL";
+  const redisUrl = process.env[envName]?.trim();
   if (!redisUrl) {
     throw new Error(
-      "UPSTASH_QUEUE_REDIS_URL is required for BullMQ. Set it to a dedicated Upstash rediss:// TCP URL; UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are REST-only.",
+      "REDIS_URL is required for BullMQ (e.g. redis://:password@127.0.0.1:6379).",
     );
   }
 
@@ -70,30 +72,13 @@ const buildRedisConnection = (): RedisOptions => {
   try {
     parsed = new URL(redisUrl);
   } catch {
-    throw new Error("UPSTASH_QUEUE_REDIS_URL must be a valid Upstash rediss:// TCP URL");
+    throw new Error(`${envName} must be a valid redis:// or rediss:// URL`);
   }
-
-  if (parsed.protocol !== "rediss:") {
-    throw new Error("UPSTASH_QUEUE_REDIS_URL must use rediss:// for Upstash TLS connections");
+  if (parsed.protocol !== "redis:" && parsed.protocol !== "rediss:") {
+    throw new Error(`${envName} must use redis:// or rediss://`);
   }
-  if (!parsed.hostname.toLowerCase().endsWith(".upstash.io")) {
-    throw new Error("UPSTASH_QUEUE_REDIS_URL must point to an Upstash .upstash.io endpoint");
-  }
-
-  const restUrl = process.env.UPSTASH_REDIS_REST_URL?.trim();
-  if (restUrl) {
-    let restHost = "";
-    try {
-      restHost = new URL(restUrl).hostname.toLowerCase();
-    } catch {
-      // The REST client validates its own URL; don't expose its value here.
-    }
-    if (restHost && restHost === parsed.hostname.toLowerCase()) {
-      throw new Error(
-        "UPSTASH_QUEUE_REDIS_URL must use a separate Upstash database from UPSTASH_REDIS_REST_URL",
-      );
-    }
-  }
+  const useTls = parsed.protocol === "rediss:";
+  const db = Number(parsed.pathname.replace("/", "") || 0);
 
   return {
     host: parsed.hostname,
@@ -109,12 +94,13 @@ const buildRedisConnection = (): RedisOptions => {
     ...(parsed.password
       ? { password: decodeURIComponent(parsed.password) }
       : {}),
-    tls: {},
+    ...(db ? { db } : {}),
+    ...(useTls ? { tls: {} } : {}),
   };
 };
 
 export const redisConnection = buildRedisConnection();
 
 export function describeRedisTarget(): string {
-  return `${(redisConnection as any).host} (tls=on)`;
+  return `${(redisConnection as any).host}:${(redisConnection as any).port} (tls=${(redisConnection as any).tls ? "on" : "off"})`;
 }
